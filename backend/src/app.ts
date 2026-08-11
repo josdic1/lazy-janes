@@ -1,4 +1,5 @@
 import express from "express";
+import { menuRouter } from "./routes/menu.js";
 
 export function createApp() {
   const app = express();
@@ -12,6 +13,8 @@ export function createApp() {
       status: "ok",
     });
   });
+
+  app.use("/api/menu", menuRouter);
 
   return app;
 }

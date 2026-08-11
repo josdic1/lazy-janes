@@ -2,16 +2,6 @@
 -- Source: supplied Ritz Diner menu JSON
 -- This file is intentionally explicit and runs only against an empty menu.
 
-BEGIN;
-
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM menu_items) THEN
-    RAISE EXCEPTION 'menu_items is not empty; seed cancelled';
-  END IF;
-END
-$$;
-
 -- Chicken Cutlet Sandwiches
 INSERT INTO menu_items (
   name,
@@ -834,10 +824,3 @@ VALUES
   ('Traditional Ice Cream Soda', NULL, 'Drinks - From the Fountain', 6.95, false, 425),
   ('Delicious Ice Cream Sundae', NULL, 'Drinks - From the Fountain', 7.95, false, 426),
   ('Dish of Ice Cream (Chocolate, Vanilla or Strawberry)', NULL, 'Drinks - From the Fountain', 5.25, false, 427);
-
-COMMIT;
-
-SELECT
-  count(*) AS menu_items,
-  count(DISTINCT category) AS categories
-FROM menu_items;

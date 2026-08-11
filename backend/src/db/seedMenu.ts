@@ -10,12 +10,35 @@ const seedPath = resolve(
 );
 
 async function seedMenu() {
+  const sql = await readFile(seedPath, "utf8");
+  const client = await pool.connect();
+
   try {
-    const sql = await readFile(seedPath, "utf8");
+    await client.query("BEGIN");
+    await client.query(
+      "LOCK TABLE menu_items IN EXCLUSIVE MODE",
+    );
 
-    await pool.query(sql);
+    const existingResult = await client.query<{
+      menu_items: string;
+    }>(`
+      SELECT count(*) AS menu_items
+      FROM menu_items
+    `);
 
-    const result = await pool.query<{
+    const existingCount = Number(
+      existingResult.rows[0]?.menu_items ?? "0",
+    );
+
+    if (existingCount > 0) {
+      throw new Error(
+        `menu_items already contains ${existingCount} rows; seed cancelled`,
+      );
+    }
+
+    await client.query(sql);
+
+    const result = await client.query<{
       menu_items: string;
       categories: string;
     }>(`
@@ -25,6 +48,8 @@ async function seedMenu() {
       FROM menu_items
     `);
 
+    await client.query("COMMIT");
+
     const totals = result.rows[0];
 
     console.log(
@@ -32,7 +57,11 @@ async function seedMenu() {
         totals?.categories ?? "0"
       } categories`,
     );
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
+    client.release();
     await pool.end();
   }
 }
