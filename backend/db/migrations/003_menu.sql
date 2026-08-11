@@ -1,40 +1,31 @@
-CREATE TABLE menu_categories (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  display_order integer NOT NULL DEFAULT 0,
-  is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE menu_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  category_id uuid NOT NULL REFERENCES menu_categories(id),
+  parent_item_id uuid REFERENCES menu_items(id) ON DELETE SET NULL,
   name text NOT NULL,
   description text,
-  kitchen_name text,
-  display_order integer NOT NULL DEFAULT 0,
-  is_active boolean NOT NULL DEFAULT true,
+  category text NOT NULL,
+  price numeric(10, 2) NOT NULL CHECK (price >= 0),
+  status text NOT NULL DEFAULT 'available' CHECK (
+    status IN ('available', 'eighty_sixed', 'inactive')
+  ),
+  is_special boolean NOT NULL DEFAULT false,
+  is_modifier boolean NOT NULL DEFAULT false,
+  dietary_flags text[] NOT NULL DEFAULT '{}',
+  sort_order integer NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
 
-  UNIQUE (category_id, name)
+  CHECK (
+    is_modifier = false
+    OR parent_item_id IS NOT NULL
+  )
 );
 
-CREATE TABLE menu_item_variants (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  menu_item_id uuid NOT NULL REFERENCES menu_items(id),
-  name text NOT NULL DEFAULT 'Regular',
-  price_cents integer NOT NULL CHECK (price_cents >= 0),
-  is_default boolean NOT NULL DEFAULT false,
-  display_order integer NOT NULL DEFAULT 0,
-  is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
+CREATE INDEX menu_items_parent_idx
+  ON menu_items (parent_item_id);
 
-  UNIQUE (menu_item_id, name)
-);
+CREATE INDEX menu_items_category_order_idx
+  ON menu_items (category, sort_order, name);
 
-CREATE UNIQUE INDEX one_default_variant_per_item_idx
-  ON menu_item_variants (menu_item_id)
-  WHERE is_default = true;
+CREATE INDEX menu_items_status_idx
+  ON menu_items (status);
