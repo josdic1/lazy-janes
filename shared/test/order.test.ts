@@ -3,6 +3,7 @@ import {
   FULFILLMENT_TYPES,
   ORDER_ITEM_STATUSES,
   createOrderInputSchema,
+  orderSchema,
   fulfillmentTypeSchema,
   orderItemStatusSchema,
 } from "../src/index.js";
@@ -97,5 +98,47 @@ describe("order contract", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("order response", () => {
+  it("accepts a submitted order with its items", () => {
+    const order = {
+      id: "959083d6-538c-465d-9c4b-b16da2565744",
+      partyId: null,
+      fulfillmentType: "takeout",
+      createdByStaffId:
+        "96a370c4-c87d-465c-99fd-d41d480a102d",
+      customerName: "Jane",
+      customerPhone: null,
+      requestedFor: null,
+      submittedAt: "2026-08-12T15:00:00.000Z",
+      cancelledAt: null,
+      cancelledByStaffId: null,
+      cancellationReason: null,
+      createdAt: "2026-08-12T15:00:00.000Z",
+      items: [
+        {
+          id: "629836bb-811f-40dd-b686-61136c981597",
+          menuItemId,
+          seatNumber: null,
+          itemName: "Coffee",
+          unitPrice: 3,
+          quantity: 1,
+          kitchenNote: null,
+          status: "submitted",
+          submittedAt: "2026-08-12T15:00:00.000Z",
+          firedAt: null,
+          readyAt: null,
+          fulfilledAt: null,
+          voidedAt: null,
+          voidedByStaffId: null,
+          voidReason: null,
+          modifiers: [],
+        },
+      ],
+    };
+
+    expect(orderSchema.parse(order)).toEqual(order);
   });
 });

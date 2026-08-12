@@ -115,3 +115,53 @@ export const createOrderInputSchema = z
 export type CreateOrderInput = z.infer<
   typeof createOrderInputSchema
 >;
+
+export const orderItemModifierSchema = z.object({
+  id: z.string().uuid(),
+  menuItemId: z.string().uuid(),
+  modifierName: z.string(),
+  priceAdjustment: z.number().finite(),
+});
+
+export type OrderItemModifier = z.infer<
+  typeof orderItemModifierSchema
+>;
+
+export const orderItemSchema = z.object({
+  id: z.string().uuid(),
+  menuItemId: z.string().uuid(),
+  seatNumber: z.number().int().positive().nullable(),
+  itemName: z.string(),
+  unitPrice: z.number().finite().nonnegative(),
+  quantity: z.number().int().positive(),
+  kitchenNote: z.string().nullable(),
+  status: orderItemStatusSchema,
+  submittedAt: z.string().datetime(),
+  firedAt: z.string().datetime().nullable(),
+  readyAt: z.string().datetime().nullable(),
+  fulfilledAt: z.string().datetime().nullable(),
+  voidedAt: z.string().datetime().nullable(),
+  voidedByStaffId: z.string().uuid().nullable(),
+  voidReason: z.string().nullable(),
+  modifiers: z.array(orderItemModifierSchema),
+});
+
+export type OrderItem = z.infer<typeof orderItemSchema>;
+
+export const orderSchema = z.object({
+  id: z.string().uuid(),
+  partyId: z.string().uuid().nullable(),
+  fulfillmentType: fulfillmentTypeSchema,
+  createdByStaffId: z.string().uuid(),
+  customerName: z.string().nullable(),
+  customerPhone: z.string().nullable(),
+  requestedFor: z.string().datetime().nullable(),
+  submittedAt: z.string().datetime(),
+  cancelledAt: z.string().datetime().nullable(),
+  cancelledByStaffId: z.string().uuid().nullable(),
+  cancellationReason: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  items: z.array(orderItemSchema),
+});
+
+export type Order = z.infer<typeof orderSchema>;
