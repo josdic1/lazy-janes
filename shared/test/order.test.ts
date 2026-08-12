@@ -3,6 +3,7 @@ import {
   FULFILLMENT_TYPES,
   ORDER_ITEM_STATUSES,
   createOrderInputSchema,
+  deliverOrderItemsInputSchema,
   fireOrderInputSchema,
   orderSchema,
   fulfillmentTypeSchema,
@@ -168,6 +169,33 @@ describe("fire order contract", () => {
 
     expect(
       fireOrderInputSchema.safeParse({
+        orderItemIds: [orderItemId, orderItemId],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("deliver order items contract", () => {
+  it("requires unique order item IDs", () => {
+    const orderItemId =
+      "629836bb-811f-40dd-b686-61136c981597";
+
+    expect(
+      deliverOrderItemsInputSchema.parse({
+        orderItemIds: [orderItemId],
+      }),
+    ).toEqual({
+      orderItemIds: [orderItemId],
+    });
+
+    expect(
+      deliverOrderItemsInputSchema.safeParse({
+        orderItemIds: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      deliverOrderItemsInputSchema.safeParse({
         orderItemIds: [orderItemId, orderItemId],
       }).success,
     ).toBe(false);

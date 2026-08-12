@@ -188,3 +188,18 @@ export const fireOrderInputSchema = z.object({
 export type FireOrderInput = z.infer<
   typeof fireOrderInputSchema
 >;
+
+export const deliverOrderItemsInputSchema = z.object({
+  orderItemIds: z
+    .array(z.string().uuid())
+    .min(1, "Choose at least one order item")
+    .refine(
+      (orderItemIds) =>
+        new Set(orderItemIds).size === orderItemIds.length,
+      "An order item cannot be selected twice",
+    ),
+});
+
+export type DeliverOrderItemsInput = z.infer<
+  typeof deliverOrderItemsInputSchema
+>;
