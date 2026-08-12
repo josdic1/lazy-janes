@@ -524,3 +524,143 @@ describe("POST /api/orders/:orderId/ready", () => {
     }
   });
 });
+
+describe("POST /api/orders/:orderId/deliver", () => {
+  it("delivers ready items and records history", async () => {
+    const staffId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO staff (id, display_name)
+          VALUES ($1, 'Delivery Test Server')
+        `,
+        [staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category,
+            price
+          )
+          VALUES ($1, 'Delivery Test Burger', 'Test', 15.00)
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            fulfillment_type,
+            created_by_staff_id
+          )
+          VALUES ($1, 'takeout', $2)
+        `,
+        [orderId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_staff_id,
+            item_name,
+            unit_price,
+            status,
+            fired_at,
+            ready_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Delivery Test Burger',
+            15.00,
+            'ready',
+            now(),
+            now()
+          )
+        `,
+        [orderItemId, orderId, menuItemId, staffId],
+      );
+
+      const response = await request(createApp())
+        .post(`/api/orders/${orderId}/deliver`)
+        .set("x-staff-id", staffId)
+        .send({
+          orderItemIds: [orderItemId],
+        });
+
+      expect(response.status).toBe(204);
+
+      const item = await pool.query<{
+        status: string;
+        fulfilled_at: Date | null;
+      }>(
+        `
+          SELECT status, fulfilled_at
+          FROM order_items
+          WHERE id = $1
+        `,
+        [orderItemId],
+      );
+
+      expect(item.rows[0]?.status).toBe("fulfilled");
+      expect(item.rows[0]?.fulfilled_at).toBeInstanceOf(Date);
+
+      const events = await pool.query<{
+        event_type: string;
+        actor_staff_id: string;
+      }>(
+        `
+          SELECT event_type, actor_staff_id
+          FROM order_item_events
+          WHERE order_item_id = $1
+        `,
+        [orderItemId],
+      );
+
+      expect(events.rows).toEqual([
+        {
+          event_type: "fulfilled",
+          actor_staff_id: staffId,
+        },
+      ]);
+    } finally {
+      await pool.query(
+        "DELETE FROM order_item_events WHERE order_item_id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM staff WHERE id = $1",
+        [staffId],
+      );
+    }
+  });
+});
