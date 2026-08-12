@@ -1,5 +1,6 @@
 import express from "express";
 import { menuRouter } from "./routes/menu.js";
+import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
 
 export function createApp() {
@@ -16,6 +17,7 @@ export function createApp() {
   });
 
   app.use("/api/menu", menuRouter);
+  app.use("/api/orders", ordersRouter);
   app.use("/api/parties", partiesRouter);
 
   return app;
