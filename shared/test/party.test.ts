@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PARTY_STATUSES,
+  cancelPartyInputSchema,
   createPartyInputSchema,
   partySchema,
   partyStatusSchema,
@@ -44,6 +45,8 @@ describe("party contract", () => {
       statusChangedAt: "2026-08-12T14:00:00.000Z",
       completedAt: null,
       cancelledAt: null,
+      cancelledByStaffId: null,
+      cancellationReason: null,
     };
 
     expect(partySchema.parse(party)).toEqual(party);
@@ -67,6 +70,24 @@ describe("party contract", () => {
     expect(
       seatPartyInputSchema.safeParse({
         tableIds: [tableId, tableId],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("cancel party contract", () => {
+  it("requires a meaningful reason", () => {
+    expect(
+      cancelPartyInputSchema.parse({
+        reason: "Party left before ordering",
+      }),
+    ).toEqual({
+      reason: "Party left before ordering",
+    });
+
+    expect(
+      cancelPartyInputSchema.safeParse({
+        reason: " ",
       }).success,
     ).toBe(false);
   });

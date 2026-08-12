@@ -216,3 +216,211 @@ describe("POST /api/parties/:partyId/seat", () => {
     }
   });
 });
+
+describe("POST /api/parties/:partyId/cancel", () => {
+  it("preserves the reason and releases the table", async () => {
+    const staffId = randomUUID();
+    const sectionId = randomUUID();
+    const tableId = randomUUID();
+    const partyId = randomUUID();
+    const seatingId = randomUUID();
+    const seatingTableId = randomUUID();
+    const orderId = randomUUID();
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO staff (id, display_name)
+          VALUES ($1, 'Party Cancellation Test Host')
+        `,
+        [staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO sections (id, name)
+          VALUES ($1, $2)
+        `,
+        [sectionId, `Cancel Test ${sectionId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO dining_tables (
+            id,
+            section_id,
+            label,
+            capacity
+          )
+          VALUES ($1, $2, $3, 4)
+        `,
+        [tableId, sectionId, `Cancel ${tableId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO parties (
+            id,
+            guest_count,
+            status,
+            created_by_staff_id
+          )
+          VALUES ($1, 2, 'seated', $2)
+        `,
+        [partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO seatings (
+            id,
+            party_id,
+            seated_by_staff_id
+          )
+          VALUES ($1, $2, $3)
+        `,
+        [seatingId, partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO seating_tables (
+            id,
+            seating_id,
+            dining_table_id
+          )
+          VALUES ($1, $2, $3)
+        `,
+        [seatingTableId, seatingId, tableId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            party_id,
+            fulfillment_type,
+            created_by_staff_id
+          )
+          VALUES ($1, $2, 'dine_in', $3)
+        `,
+        [orderId, partyId, staffId],
+      );
+
+      const blocked = await request(createApp())
+        .post(`/api/parties/${partyId}/cancel`)
+        .set("x-staff-id", staffId)
+        .send({
+          reason: "Party left",
+        });
+
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toBe(
+        "Cancel the party's active orders before cancelling the party",
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      const response = await request(createApp())
+        .post(`/api/parties/${partyId}/cancel`)
+        .set("x-staff-id", staffId)
+        .send({
+          reason: "Party left before ordering",
+        });
+
+      expect(response.status).toBe(200);
+
+      const party = partySchema.parse(response.body);
+
+      expect(party.status).toBe("cancelled");
+      expect(party.cancelledAt).not.toBeNull();
+      expect(party.cancelledByStaffId).toBe(staffId);
+      expect(party.cancellationReason).toBe(
+        "Party left before ordering",
+      );
+
+      const seating = await pool.query<{
+        ended_at: Date | null;
+        released_at: Date | null;
+      }>(
+        `
+          SELECT
+            seatings.ended_at,
+            seating_tables.released_at
+          FROM seatings
+          JOIN seating_tables
+            ON seating_tables.seating_id = seatings.id
+          WHERE seatings.id = $1
+        `,
+        [seatingId],
+      );
+
+      expect(seating.rows[0]?.ended_at).not.toBeNull();
+      expect(seating.rows[0]?.released_at).not.toBeNull();
+
+      const event = await pool.query<{
+        event_type: string;
+        actor_staff_id: string | null;
+        reason: string | null;
+      }>(
+        `
+          SELECT event_type, actor_staff_id, reason
+          FROM party_events
+          WHERE party_id = $1
+        `,
+        [partyId],
+      );
+
+      expect(event.rows).toEqual([
+        {
+          event_type: "cancelled",
+          actor_staff_id: staffId,
+          reason: "Party left before ordering",
+        },
+      ]);
+    } finally {
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM party_events WHERE party_id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM seating_tables WHERE seating_id = $1",
+        [seatingId],
+      );
+
+      await pool.query(
+        "DELETE FROM seatings WHERE id = $1",
+        [seatingId],
+      );
+
+      await pool.query(
+        "DELETE FROM parties WHERE id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM dining_tables WHERE id = $1",
+        [tableId],
+      );
+
+      await pool.query(
+        "DELETE FROM sections WHERE id = $1",
+        [sectionId],
+      );
+
+      await pool.query(
+        "DELETE FROM staff WHERE id = $1",
+        [staffId],
+      );
+    }
+  });
+});

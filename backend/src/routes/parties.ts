@@ -1,4 +1,5 @@
 import {
+  cancelPartyInputSchema,
   createPartyInputSchema,
   seatPartyInputSchema,
   type Party,
@@ -17,6 +18,8 @@ type PartyRow = {
   status_changed_at: Date;
   completed_at: Date | null;
   cancelled_at: Date | null;
+  cancelled_by_staff_id: string | null;
+  cancellation_reason: string | null;
 };
 
 const staffIdSchema = z.string().uuid();
@@ -30,7 +33,9 @@ const partySelect = `
     arrived_at,
     status_changed_at,
     completed_at,
-    cancelled_at
+    cancelled_at,
+    cancelled_by_staff_id,
+    cancellation_reason
   FROM parties
 `;
 
@@ -44,6 +49,8 @@ function toParty(row: PartyRow): Party {
     statusChangedAt: row.status_changed_at.toISOString(),
     completedAt: row.completed_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
+    cancelledByStaffId: row.cancelled_by_staff_id,
+    cancellationReason: row.cancellation_reason,
   };
 }
 
@@ -119,7 +126,9 @@ partiesRouter.post("/", async (request, response) => {
           arrived_at,
           status_changed_at,
           completed_at,
-          cancelled_at
+          cancelled_at,
+          cancelled_by_staff_id,
+          cancellation_reason
       `,
       [input.data.guestCount, staffId.data],
     );
@@ -347,6 +356,202 @@ partiesRouter.post(
         return;
       }
 
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+partiesRouter.post(
+  "/:partyId/cancel",
+  async (request, response) => {
+    const partyId = z
+      .string()
+      .uuid()
+      .safeParse(request.params.partyId);
+    const input = cancelPartyInputSchema.safeParse(
+      request.body,
+    );
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!partyId.success) {
+      response.status(400).json({
+        error: "Invalid party ID",
+      });
+      return;
+    }
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid cancellation",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const current = await client.query<{
+        status: PartyStatus;
+      }>(
+        `
+          SELECT status
+          FROM parties
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [partyId.data],
+      );
+
+      const party = current.rows[0];
+
+      if (!party) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Party not found",
+        });
+        return;
+      }
+
+      if (
+        party.status === "completed" ||
+        party.status === "cancelled"
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Party is already finished",
+        });
+        return;
+      }
+
+      const existingOrders = await client.query<{
+        id: string;
+      }>(
+        `
+          SELECT id
+          FROM orders
+          WHERE party_id = $1
+            AND cancelled_at IS NULL
+          LIMIT 1
+        `,
+        [partyId.data],
+      );
+
+      if (existingOrders.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error:
+            "Cancel the party's active orders before cancelling the party",
+        });
+        return;
+      }
+
+      await client.query(
+        `
+          UPDATE seating_tables
+          SET released_at = now()
+          WHERE seating_id IN (
+            SELECT id
+            FROM seatings
+            WHERE party_id = $1
+              AND ended_at IS NULL
+          )
+            AND released_at IS NULL
+        `,
+        [partyId.data],
+      );
+
+      await client.query(
+        `
+          UPDATE seatings
+          SET ended_at = now()
+          WHERE party_id = $1
+            AND ended_at IS NULL
+        `,
+        [partyId.data],
+      );
+
+      const updated = await client.query<PartyRow>(
+        `
+          UPDATE parties
+          SET
+            status = 'cancelled',
+            status_changed_at = now(),
+            cancelled_at = now(),
+            cancelled_by_staff_id = $2,
+            cancellation_reason = $3
+          WHERE id = $1
+          RETURNING
+            id,
+            guest_count,
+            status,
+            created_by_staff_id,
+            arrived_at,
+            status_changed_at,
+            completed_at,
+            cancelled_at,
+            cancelled_by_staff_id,
+            cancellation_reason
+        `,
+        [partyId.data, staffId.data, input.data.reason],
+      );
+
+      const cancelledParty = updated.rows[0];
+
+      if (!cancelledParty) {
+        throw new Error(
+          "Party cancellation returned no record",
+        );
+      }
+
+      await client.query(
+        `
+          INSERT INTO party_events (
+            party_id,
+            event_type,
+            actor_staff_id,
+            reason
+          )
+          VALUES ($1, 'cancelled', $2, $3)
+        `,
+        [partyId.data, staffId.data, input.data.reason],
+      );
+
+      await client.query("COMMIT");
+      response.json(toParty(cancelledParty));
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();

@@ -44,6 +44,20 @@ export const partySchema = z.object({
   statusChangedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
+  cancelledByStaffId: z.string().uuid().nullable(),
+  cancellationReason: z.string().nullable(),
 });
 
 export type Party = z.infer<typeof partySchema>;
+
+export const cancelPartyInputSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(1, "A reason is required")
+    .max(500),
+});
+
+export type CancelPartyInput = z.infer<
+  typeof cancelPartyInputSchema
+>;
