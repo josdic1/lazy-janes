@@ -155,6 +155,7 @@ export const orderSchema = z.object({
   createdByStaffId: z.string().uuid(),
   customerName: z.string().nullable(),
   customerPhone: z.string().nullable(),
+  deliveryAddress: z.string().nullable(),
   requestedFor: z.string().datetime().nullable(),
   submittedAt: z.string().datetime(),
   cancelledAt: z.string().datetime().nullable(),

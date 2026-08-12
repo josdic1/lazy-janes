@@ -51,6 +51,7 @@ describe("order contract", () => {
       fulfillmentType: "takeout",
       customerName: null,
       customerPhone: null,
+      deliveryAddress: null,
       requestedFor: null,
       deliveryAddress: null,
       items: [
@@ -111,6 +112,7 @@ describe("order response", () => {
         "96a370c4-c87d-465c-99fd-d41d480a102d",
       customerName: "Jane",
       customerPhone: null,
+      deliveryAddress: null,
       requestedFor: null,
       submittedAt: "2026-08-12T15:00:00.000Z",
       cancelledAt: null,
