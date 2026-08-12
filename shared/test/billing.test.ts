@@ -8,6 +8,7 @@ import {
   createCheckInputSchema,
   takePaymentInputSchema,
   paymentMethodSchema,
+  paymentSchema,
   paymentStatusSchema,
 } from "../src/index.js";
 
@@ -236,5 +237,40 @@ describe("take payment contract", () => {
         cashReceivedAmount: 20,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("payment response contract", () => {
+  it("preserves cash, change, drawer, and allocation", () => {
+    const payment = {
+      id: "61281c06-b78c-44e6-a747-529e21654b62",
+      method: "cash" as const,
+      status: "succeeded" as const,
+      paymentAmount: 18.07,
+      tipAmount: 1.93,
+      receivedByStaffId:
+        "1994b589-470a-4d15-930f-cd59bc149c15",
+      processorReference: null,
+      cashReceivedAmount: 20,
+      changeGivenAmount: 0,
+      drawerSessionId:
+        "eff1d8c8-252a-471d-a999-a082b4ef9be1",
+      succeededAt: "2026-08-12T17:00:00.000Z",
+      failedAt: null,
+      voidedAt: null,
+      voidedByStaffId: null,
+      voidReason: null,
+      createdAt: "2026-08-12T17:00:00.000Z",
+      allocations: [
+        {
+          checkId:
+            "b5e6b80d-bdf6-4c50-86ba-a763b49c665e",
+          allocatedAmount: 18.07,
+          createdAt: "2026-08-12T17:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(paymentSchema.parse(payment)).toEqual(payment);
   });
 });

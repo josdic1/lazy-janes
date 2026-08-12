@@ -155,3 +155,35 @@ export const takePaymentInputSchema = z.discriminatedUnion(
 export type TakePaymentInput = z.infer<
   typeof takePaymentInputSchema
 >;
+
+export const paymentCheckAllocationSchema = z.object({
+  checkId: z.string().uuid(),
+  allocatedAmount: z.number().positive(),
+  createdAt: z.string().datetime(),
+});
+
+export type PaymentCheckAllocation = z.infer<
+  typeof paymentCheckAllocationSchema
+>;
+
+export const paymentSchema = z.object({
+  id: z.string().uuid(),
+  method: paymentMethodSchema,
+  status: paymentStatusSchema,
+  paymentAmount: z.number().positive(),
+  tipAmount: z.number().nonnegative(),
+  receivedByStaffId: z.string().uuid(),
+  processorReference: z.string().nullable(),
+  cashReceivedAmount: z.number().positive().nullable(),
+  changeGivenAmount: z.number().nonnegative().nullable(),
+  drawerSessionId: z.string().uuid().nullable(),
+  succeededAt: z.string().datetime().nullable(),
+  failedAt: z.string().datetime().nullable(),
+  voidedAt: z.string().datetime().nullable(),
+  voidedByStaffId: z.string().uuid().nullable(),
+  voidReason: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  allocations: z.array(paymentCheckAllocationSchema).min(1),
+});
+
+export type Payment = z.infer<typeof paymentSchema>;
