@@ -73,3 +73,19 @@ export const updateUserInputSchema = z
 export type UpdateUserInput = z.infer<
   typeof updateUserInputSchema
 >;
+
+export const usersResponseSchema = z.object({
+  users: z.array(userRecordSchema),
+});
+
+export type UsersResponse = z.infer<
+  typeof usersResponseSchema
+>;
+
+export const resetUserPinInputSchema = z.object({
+  pin: userPinSchema,
+});
+
+export type ResetUserPinInput = z.infer<
+  typeof resetUserPinInputSchema
+>;
