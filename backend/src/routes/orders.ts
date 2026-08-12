@@ -1,8 +1,10 @@
 import {
+  cancelOrderInputSchema,
   createOrderInputSchema,
   deliverOrderItemsInputSchema,
   fireOrderInputSchema,
   markKitchenItemsReadyInputSchema,
+  voidOrderItemsInputSchema,
   type KitchenChit,
   type Order,
   type OrderItem,
@@ -1080,6 +1082,379 @@ ordersRouter.post(
             AS selected(order_item_id)
         `,
         [input.data.orderItemIds, staffId.data],
+      );
+
+      await client.query("COMMIT");
+      response.status(204).send();
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+ordersRouter.post(
+  "/:orderId/cancel",
+  async (request, response) => {
+    const orderId = z
+      .string()
+      .uuid()
+      .safeParse(request.params.orderId);
+    const input = cancelOrderInputSchema.safeParse(
+      request.body,
+    );
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!orderId.success) {
+      response.status(400).json({ error: "Invalid order ID" });
+      return;
+    }
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid cancellation",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const order = await client.query<{
+        cancelled_at: Date | null;
+      }>(
+        `
+          SELECT cancelled_at
+          FROM orders
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [orderId.data],
+      );
+
+      if (!order.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Order not found",
+        });
+        return;
+      }
+
+      if (order.rows[0].cancelled_at !== null) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Order is already cancelled",
+        });
+        return;
+      }
+
+      const checkedItems = await client.query<{ id: string }>(
+        `
+          SELECT check_items.id
+          FROM check_items
+          JOIN order_items
+            ON order_items.id = check_items.order_item_id
+          WHERE order_items.order_id = $1
+          LIMIT 1
+        `,
+        [orderId.data],
+      );
+
+      if (checkedItems.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error:
+            "An order cannot be cancelled after items are checked",
+        });
+        return;
+      }
+
+      const voidedItems = await client.query<{ id: string }>(
+        `
+          UPDATE order_items
+          SET
+            status = 'voided',
+            voided_at = now(),
+            voided_by_staff_id = $2,
+            void_reason = $3
+          WHERE order_id = $1
+            AND status <> 'voided'
+          RETURNING id
+        `,
+        [orderId.data, staffId.data, input.data.reason],
+      );
+
+      if (voidedItems.rows.length > 0) {
+        await client.query(
+          `
+            INSERT INTO order_item_events (
+              order_item_id,
+              event_type,
+              actor_kind,
+              actor_staff_id,
+              reason
+            )
+            SELECT
+              unnest($1::uuid[]),
+              'voided',
+              'staff',
+              $2,
+              $3
+          `,
+          [
+            voidedItems.rows.map((item) => item.id),
+            staffId.data,
+            input.data.reason,
+          ],
+        );
+      }
+
+      await client.query(
+        `
+          UPDATE orders
+          SET
+            cancelled_at = now(),
+            cancelled_by_staff_id = $2,
+            cancellation_reason = $3
+          WHERE id = $1
+        `,
+        [orderId.data, staffId.data, input.data.reason],
+      );
+
+      await client.query(
+        `
+          INSERT INTO order_events (
+            order_id,
+            event_type,
+            actor_kind,
+            actor_staff_id,
+            reason
+          )
+          VALUES ($1, 'cancelled', 'staff', $2, $3)
+        `,
+        [orderId.data, staffId.data, input.data.reason],
+      );
+
+      await client.query("COMMIT");
+      response.status(204).send();
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+ordersRouter.post(
+  "/:orderId/void",
+  async (request, response) => {
+    const orderId = z
+      .string()
+      .uuid()
+      .safeParse(request.params.orderId);
+    const input = voidOrderItemsInputSchema.safeParse(
+      request.body,
+    );
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!orderId.success) {
+      response.status(400).json({ error: "Invalid order ID" });
+      return;
+    }
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid item void",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const order = await client.query<{
+        cancelled_at: Date | null;
+      }>(
+        `
+          SELECT cancelled_at
+          FROM orders
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [orderId.data],
+      );
+
+      if (!order.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Order not found",
+        });
+        return;
+      }
+
+      if (order.rows[0].cancelled_at !== null) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Items cannot be voided on a cancelled order",
+        });
+        return;
+      }
+
+      const items = await client.query<{
+        id: string;
+        status: string;
+      }>(
+        `
+          SELECT id, status
+          FROM order_items
+          WHERE order_id = $1
+            AND id = ANY($2::uuid[])
+          FOR UPDATE
+        `,
+        [orderId.data, input.data.orderItemIds],
+      );
+
+      if (
+        items.rows.length !== input.data.orderItemIds.length
+      ) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error:
+            "One or more order items were not found on this order",
+        });
+        return;
+      }
+
+      if (
+        items.rows.some((item) => item.status === "voided")
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "An order item is already voided",
+        });
+        return;
+      }
+
+      const checkedItems = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM check_items
+          WHERE order_item_id = ANY($1::uuid[])
+          LIMIT 1
+        `,
+        [input.data.orderItemIds],
+      );
+
+      if (checkedItems.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error:
+            "An item cannot be voided after it is placed on a check",
+        });
+        return;
+      }
+
+      await client.query(
+        `
+          UPDATE order_items
+          SET
+            status = 'voided',
+            voided_at = now(),
+            voided_by_staff_id = $2,
+            void_reason = $3
+          WHERE id = ANY($1::uuid[])
+        `,
+        [
+          input.data.orderItemIds,
+          staffId.data,
+          input.data.reason,
+        ],
+      );
+
+      await client.query(
+        `
+          INSERT INTO order_item_events (
+            order_item_id,
+            event_type,
+            actor_kind,
+            actor_staff_id,
+            reason
+          )
+          SELECT
+            unnest($1::uuid[]),
+            'voided',
+            'staff',
+            $2,
+            $3
+        `,
+        [
+          input.data.orderItemIds,
+          staffId.data,
+          input.data.reason,
+        ],
       );
 
       await client.query("COMMIT");
