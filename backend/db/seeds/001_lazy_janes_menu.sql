@@ -810,7 +810,7 @@ VALUES
   ('Orange Juice To-Go — 10 oz.', NULL, 'Drinks - Beverages', 5.50, false, 422),
   ('Orange Juice To-Go — 16 oz.', NULL, 'Drinks - Beverages', 6.95, false, 423);
 
--- Drinks - From the Fountain
+-- Shakes, Sundaes & Ice Cream
 INSERT INTO menu_items (
   name,
   description,
@@ -820,7 +820,7 @@ INSERT INTO menu_items (
   sort_order
 )
 VALUES
-  ('Old Fashioned Shake', 'Extra Thick $7.95', 'Drinks - From the Fountain', 6.95, false, 424),
-  ('Traditional Ice Cream Soda', NULL, 'Drinks - From the Fountain', 6.95, false, 425),
-  ('Delicious Ice Cream Sundae', NULL, 'Drinks - From the Fountain', 7.95, false, 426),
-  ('Dish of Ice Cream (Chocolate, Vanilla or Strawberry)', NULL, 'Drinks - From the Fountain', 5.25, false, 427);
+  ('Old Fashioned Shake', 'Extra Thick $7.95', 'Shakes, Sundaes & Ice Cream', 6.95, false, 424),
+  ('Traditional Ice Cream Soda', NULL, 'Shakes, Sundaes & Ice Cream', 6.95, false, 425),
+  ('Delicious Ice Cream Sundae', NULL, 'Shakes, Sundaes & Ice Cream', 7.95, false, 426),
+  ('Dish of Ice Cream (Chocolate, Vanilla or Strawberry)', NULL, 'Shakes, Sundaes & Ice Cream', 5.25, false, 427);
