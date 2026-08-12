@@ -11,7 +11,7 @@ afterAll(async () => {
 
 describe("GET /api/stack", () => {
   it("derives the observable diner state", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const sectionId = randomUUID();
     const tableId = randomUUID();
     const partyId = randomUUID();
@@ -27,10 +27,10 @@ describe("GET /api/stack", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Stack Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -60,11 +60,11 @@ describe("GET /api/stack", () => {
             id,
             guest_count,
             status,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 2, 'in_service', $2)
         `,
-        [partyId, staffId],
+        [partyId, userId],
       );
 
       await pool.query(
@@ -72,13 +72,13 @@ describe("GET /api/stack", () => {
           INSERT INTO party_events (
             party_id,
             event_type,
-            actor_staff_id
+            actor_user_id
           )
           VALUES
             ($1, 'arrived', $2),
             ($1, 'service_started', $2)
         `,
-        [partyId, staffId],
+        [partyId, userId],
       );
 
       await pool.query(
@@ -86,11 +86,11 @@ describe("GET /api/stack", () => {
           INSERT INTO seatings (
             id,
             party_id,
-            seated_by_staff_id
+            seated_by_user_id
           )
           VALUES ($1, $2, $3)
         `,
-        [seatingId, partyId, staffId],
+        [seatingId, partyId, userId],
       );
 
       await pool.query(
@@ -124,11 +124,11 @@ describe("GET /api/stack", () => {
             id,
             party_id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, $2, 'dine_in', $3)
         `,
-        [orderId, partyId, staffId],
+        [orderId, partyId, userId],
       );
 
       await pool.query(
@@ -137,7 +137,7 @@ describe("GET /api/stack", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             seat_number,
             item_name,
             unit_price,
@@ -158,7 +158,7 @@ describe("GET /api/stack", () => {
             now()
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       await pool.query(
@@ -168,7 +168,7 @@ describe("GET /api/stack", () => {
             party_id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             tax_amount,
             total_amount,
@@ -186,7 +186,7 @@ describe("GET /api/stack", () => {
             now()
           )
         `,
-        [checkId, partyId, staffId],
+        [checkId, partyId, userId],
       );
 
       await pool.query(
@@ -218,7 +218,7 @@ describe("GET /api/stack", () => {
             method,
             status,
             payment_amount,
-            received_by_staff_id,
+            received_by_user_id,
             processor_reference,
             succeeded_at
           )
@@ -234,7 +234,7 @@ describe("GET /api/stack", () => {
         `,
         [
           paymentId,
-          staffId,
+          userId,
           `stack-terminal-${paymentId}`,
         ],
       );
@@ -253,7 +253,7 @@ describe("GET /api/stack", () => {
 
       const response = await request(createApp())
         .get("/api/stack")
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(response.status).toBe(200);
 
@@ -379,8 +379,8 @@ describe("GET /api/stack", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

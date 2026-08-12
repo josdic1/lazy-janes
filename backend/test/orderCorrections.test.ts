@@ -10,7 +10,7 @@ afterAll(async () => {
 
 describe("order correction APIs", () => {
   it("cancels an order and voids selected items with reasons", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
 
     const cancelledOrderId = randomUUID();
@@ -26,10 +26,10 @@ describe("order correction APIs", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Order Correction Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -50,13 +50,13 @@ describe("order correction APIs", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES
             ($1, 'takeout', $3),
             ($2, 'takeout', $3)
         `,
-        [cancelledOrderId, correctedOrderId, staffId],
+        [cancelledOrderId, correctedOrderId, userId],
       );
 
       await pool.query(
@@ -65,7 +65,7 @@ describe("order correction APIs", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price
           )
@@ -111,13 +111,13 @@ describe("order correction APIs", () => {
           cancelledOrderId,
           correctedOrderId,
           menuItemId,
-          staffId,
+          userId,
         ],
       );
 
       const cancelled = await request(createApp())
         .post(`/api/orders/${cancelledOrderId}/cancel`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           reason: "Customer cancelled takeout",
         });
@@ -126,13 +126,13 @@ describe("order correction APIs", () => {
 
       const cancelledOrder = await pool.query<{
         cancelled_at: Date | null;
-        cancelled_by_staff_id: string | null;
+        cancelled_by_user_id: string | null;
         cancellation_reason: string | null;
       }>(
         `
           SELECT
             cancelled_at,
-            cancelled_by_staff_id,
+            cancelled_by_user_id,
             cancellation_reason
           FROM orders
           WHERE id = $1
@@ -144,8 +144,8 @@ describe("order correction APIs", () => {
         cancelledOrder.rows[0]?.cancelled_at,
       ).not.toBeNull();
       expect(
-        cancelledOrder.rows[0]?.cancelled_by_staff_id,
-      ).toBe(staffId);
+        cancelledOrder.rows[0]?.cancelled_by_user_id,
+      ).toBe(userId);
       expect(
         cancelledOrder.rows[0]?.cancellation_reason,
       ).toBe("Customer cancelled takeout");
@@ -176,7 +176,7 @@ describe("order correction APIs", () => {
 
       const voided = await request(createApp())
         .post(`/api/orders/${correctedOrderId}/void`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           orderItemIds: [voidedItemId],
           reason: "Item entered twice",
@@ -294,8 +294,8 @@ describe("order correction APIs", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

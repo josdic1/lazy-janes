@@ -14,7 +14,7 @@ type PaymentRow = {
   status: Payment["status"];
   payment_amount: string;
   tip_amount: string;
-  received_by_staff_id: string;
+  received_by_user_id: string;
   processor_reference: string | null;
   cash_received_amount: string | null;
   change_given_amount: string | null;
@@ -22,7 +22,7 @@ type PaymentRow = {
   succeeded_at: Date | null;
   failed_at: Date | null;
   voided_at: Date | null;
-  voided_by_staff_id: string | null;
+  voided_by_user_id: string | null;
   void_reason: string | null;
   created_at: Date;
 };
@@ -44,7 +44,7 @@ type ExistingPaymentRow = {
   paid_amount: string;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 function toAllocation(
   row: PaymentAllocationRow,
@@ -66,7 +66,7 @@ function toPayment(
     status: row.status,
     paymentAmount: Number(row.payment_amount),
     tipAmount: Number(row.tip_amount),
-    receivedByStaffId: row.received_by_staff_id,
+    receivedByUserId: row.received_by_user_id,
     processorReference: row.processor_reference,
     cashReceivedAmount:
       row.cash_received_amount === null
@@ -80,7 +80,7 @@ function toPayment(
     succeededAt: row.succeeded_at?.toISOString() ?? null,
     failedAt: row.failed_at?.toISOString() ?? null,
     voidedAt: row.voided_at?.toISOString() ?? null,
-    voidedByStaffId: row.voided_by_staff_id,
+    voidedByUserId: row.voided_by_user_id,
     voidReason: row.void_reason,
     createdAt: row.created_at.toISOString(),
     allocations,
@@ -104,13 +104,13 @@ paymentsRouter.post("/", async (request, response) => {
     return;
   }
 
-  const staffId = staffIdSchema.safeParse(
-    request.header("x-staff-id"),
+  const userId = userIdSchema.safeParse(
+    request.header("x-user-id"),
   );
 
-  if (!staffId.success) {
+  if (!userId.success) {
     response.status(401).json({
-      error: "A valid staff identity is required",
+      error: "A valid user identity is required",
     });
     return;
   }
@@ -120,20 +120,20 @@ paymentsRouter.post("/", async (request, response) => {
   try {
     await client.query("BEGIN");
 
-    const staff = await client.query<{ id: string }>(
+    const user = await client.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staff.rows[0]) {
+    if (!user.rows[0]) {
       await client.query("ROLLBACK");
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -275,7 +275,7 @@ paymentsRouter.post("/", async (request, response) => {
             status,
             payment_amount,
             tip_amount,
-            received_by_staff_id,
+            received_by_user_id,
             processor_reference,
             cash_received_amount,
             change_given_amount,
@@ -300,7 +300,7 @@ paymentsRouter.post("/", async (request, response) => {
             status,
             payment_amount,
             tip_amount,
-            received_by_staff_id,
+            received_by_user_id,
             processor_reference,
             cash_received_amount,
             change_given_amount,
@@ -308,7 +308,7 @@ paymentsRouter.post("/", async (request, response) => {
             succeeded_at,
             failed_at,
             voided_at,
-            voided_by_staff_id,
+            voided_by_user_id,
             void_reason,
             created_at
         `,
@@ -316,7 +316,7 @@ paymentsRouter.post("/", async (request, response) => {
           input.data.method,
           paymentAmountCents / 100,
           tipAmountCents / 100,
-          staffId.data,
+          userId.data,
           processorReference,
           cashReceivedCents === null
             ? null
@@ -379,13 +379,13 @@ paymentsRouter.post("/", async (request, response) => {
           payment_id,
           event_type,
           actor_kind,
-          actor_staff_id
+          actor_user_id
         )
         VALUES
-          ($1, 'created', 'staff', $2),
-          ($1, 'succeeded', 'staff', $2)
+          ($1, 'created', 'user', $2),
+          ($1, 'succeeded', 'user', $2)
       `,
-      [payment.id, staffId.data],
+      [payment.id, userId.data],
     );
 
     if (drawerSessionId !== null) {
@@ -396,7 +396,7 @@ paymentsRouter.post("/", async (request, response) => {
             event_type,
             amount,
             payment_id,
-            actor_staff_id
+            actor_user_id
           )
           VALUES (
             $1,
@@ -410,7 +410,7 @@ paymentsRouter.post("/", async (request, response) => {
           drawerSessionId,
           (paymentAmountCents + tipAmountCents) / 100,
           payment.id,
-          staffId.data,
+          userId.data,
         ],
       );
     }

@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 import {
   createSessionToken,
   hashSessionToken,
-  hashStaffPin,
-  verifyStaffPin,
+  hashUserPin,
+  verifyUserPin,
 } from "../src/auth/security.js";
 
-describe("staff authentication security", () => {
-  it("hashes and verifies a staff PIN", async () => {
-    const hash = await hashStaffPin("4826");
+describe("user authentication security", () => {
+  it("hashes and verifies a user PIN", async () => {
+    const hash = await hashUserPin("4826");
 
     expect(hash).not.toContain("4826");
-    await expect(verifyStaffPin("4826", hash)).resolves.toBe(
+    await expect(verifyUserPin("4826", hash)).resolves.toBe(
       true,
     );
-    await expect(verifyStaffPin("1111", hash)).resolves.toBe(
+    await expect(verifyUserPin("1111", hash)).resolves.toBe(
       false,
     );
   });

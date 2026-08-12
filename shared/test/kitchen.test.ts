@@ -22,7 +22,7 @@ describe("kitchen chit contract", () => {
       orderId:
         "88e8ebf3-fcda-4a83-927e-bc29d1af3110",
       printKind: "initial",
-      printedByStaffId:
+      printedByUserId:
         "bbfabd62-527b-4999-aaaf-6d35ed86716f",
       note: null,
       printedAt: "2026-08-12T15:30:00.000Z",

@@ -110,7 +110,7 @@ describe("order response", () => {
       id: "959083d6-538c-465d-9c4b-b16da2565744",
       partyId: null,
       fulfillmentType: "takeout",
-      createdByStaffId:
+      createdByUserId:
         "96a370c4-c87d-465c-99fd-d41d480a102d",
       customerName: "Jane",
       customerPhone: null,
@@ -118,7 +118,7 @@ describe("order response", () => {
       requestedFor: null,
       submittedAt: "2026-08-12T15:00:00.000Z",
       cancelledAt: null,
-      cancelledByStaffId: null,
+      cancelledByUserId: null,
       cancellationReason: null,
       createdAt: "2026-08-12T15:00:00.000Z",
       items: [
@@ -136,7 +136,7 @@ describe("order response", () => {
           readyAt: null,
           fulfilledAt: null,
           voidedAt: null,
-          voidedByStaffId: null,
+          voidedByUserId: null,
           voidReason: null,
           modifiers: [],
         },

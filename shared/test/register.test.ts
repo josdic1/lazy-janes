@@ -27,11 +27,11 @@ describe("register contract", () => {
   it("preserves the complete drawer session", () => {
     const drawer = {
       id: "369c99a9-824a-444a-9a4c-f98904873239",
-      openedByStaffId:
+      openedByUserId:
         "a49a6205-9db2-43c7-a917-3a6dc71c44f2",
       openingCashAmount: 150,
       openedAt: "2026-08-12T13:00:00.000Z",
-      closedByStaffId: null,
+      closedByUserId: null,
       expectedCashAmount: null,
       countedCashAmount: null,
       varianceAmount: null,

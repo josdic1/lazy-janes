@@ -11,7 +11,7 @@ afterAll(async () => {
 
 describe("POST /api/checks", () => {
   it("creates a taxed check and prevents over-allocation", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
     const modifierMenuItemId = randomUUID();
     const orderId = randomUUID();
@@ -21,10 +21,10 @@ describe("POST /api/checks", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Check Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -67,11 +67,11 @@ describe("POST /api/checks", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 'takeout', $2)
         `,
-        [orderId, staffId],
+        [orderId, userId],
       );
 
       await pool.query(
@@ -80,7 +80,7 @@ describe("POST /api/checks", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price,
             quantity
@@ -95,7 +95,7 @@ describe("POST /api/checks", () => {
             2
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       await pool.query(
@@ -113,7 +113,7 @@ describe("POST /api/checks", () => {
 
       const created = await request(createApp())
         .post("/api/checks")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           label: "First half",
           items: [
@@ -161,7 +161,7 @@ describe("POST /api/checks", () => {
 
       const overAllocated = await request(createApp())
         .post("/api/checks")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           label: "Too much",
           items: [
@@ -223,8 +223,8 @@ describe("POST /api/checks", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -232,7 +232,7 @@ describe("POST /api/checks", () => {
 
 describe("POST /api/checks/:checkId/present", () => {
   it("presents an open check and records the action", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
     const orderId = randomUUID();
     const orderItemId = randomUUID();
@@ -241,10 +241,10 @@ describe("POST /api/checks/:checkId/present", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Present Check Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -265,11 +265,11 @@ describe("POST /api/checks/:checkId/present", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 'takeout', $2)
         `,
-        [orderId, staffId],
+        [orderId, userId],
       );
 
       await pool.query(
@@ -278,7 +278,7 @@ describe("POST /api/checks/:checkId/present", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price
           )
@@ -291,7 +291,7 @@ describe("POST /api/checks/:checkId/present", () => {
             3.00
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       await pool.query(
@@ -299,14 +299,14 @@ describe("POST /api/checks/:checkId/present", () => {
           INSERT INTO checks (
             id,
             label,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             tax_amount,
             total_amount
           )
           VALUES ($1, 'Takeout', $2, 3.00, 0.20, 3.20)
         `,
-        [checkId, staffId],
+        [checkId, userId],
       );
 
       await pool.query(
@@ -325,7 +325,7 @@ describe("POST /api/checks/:checkId/present", () => {
 
       const response = await request(createApp())
         .post(`/api/checks/${checkId}/present`)
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(response.status).toBe(200);
 
@@ -345,10 +345,10 @@ describe("POST /api/checks/:checkId/present", () => {
 
       const events = await pool.query<{
         event_type: string;
-        actor_staff_id: string | null;
+        actor_user_id: string | null;
       }>(
         `
-          SELECT event_type, actor_staff_id
+          SELECT event_type, actor_user_id
           FROM check_events
           WHERE check_id = $1
           ORDER BY occurred_at, id
@@ -359,13 +359,13 @@ describe("POST /api/checks/:checkId/present", () => {
       expect(events.rows).toEqual([
         {
           event_type: "presented",
-          actor_staff_id: staffId,
+          actor_user_id: userId,
         },
       ]);
 
       const repeated = await request(createApp())
         .post(`/api/checks/${checkId}/present`)
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(repeated.status).toBe(409);
       expect(repeated.body.error).toBe(
@@ -403,8 +403,8 @@ describe("POST /api/checks/:checkId/present", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

@@ -62,7 +62,7 @@ export const stackPartyEventTypeSchema = z.enum(
 export const stackPartyEventSchema = z.object({
   id: z.string().regex(/^[1-9][0-9]*$/),
   eventType: stackPartyEventTypeSchema,
-  actorStaffId: z.string().uuid().nullable(),
+  actorUserId: z.string().uuid().nullable(),
   reason: z.string().nullable(),
   occurredAt: z.string().datetime(),
 });

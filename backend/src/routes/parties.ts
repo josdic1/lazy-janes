@@ -13,28 +13,28 @@ type PartyRow = {
   id: string;
   guest_count: number;
   status: PartyStatus;
-  created_by_staff_id: string;
+  created_by_user_id: string;
   arrived_at: Date;
   status_changed_at: Date;
   completed_at: Date | null;
   cancelled_at: Date | null;
-  cancelled_by_staff_id: string | null;
+  cancelled_by_user_id: string | null;
   cancellation_reason: string | null;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 const partySelect = `
   SELECT
     id,
     guest_count,
     status,
-    created_by_staff_id,
+    created_by_user_id,
     arrived_at,
     status_changed_at,
     completed_at,
     cancelled_at,
-    cancelled_by_staff_id,
+    cancelled_by_user_id,
     cancellation_reason
   FROM parties
 `;
@@ -44,12 +44,12 @@ function toParty(row: PartyRow): Party {
     id: row.id,
     guestCount: row.guest_count,
     status: row.status,
-    createdByStaffId: row.created_by_staff_id,
+    createdByUserId: row.created_by_user_id,
     arrivedAt: row.arrived_at.toISOString(),
     statusChangedAt: row.status_changed_at.toISOString(),
     completedAt: row.completed_at?.toISOString() ?? null,
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
-    cancelledByStaffId: row.cancelled_by_staff_id,
+    cancelledByUserId: row.cancelled_by_user_id,
     cancellationReason: row.cancellation_reason,
   };
 }
@@ -76,13 +76,13 @@ partiesRouter.post("/", async (request, response) => {
     return;
   }
 
-  const staffId = staffIdSchema.safeParse(
-    request.header("x-staff-id"),
+  const userId = userIdSchema.safeParse(
+    request.header("x-user-id"),
   );
 
-  if (!staffId.success) {
+  if (!userId.success) {
     response.status(401).json({
-      error: "A valid staff identity is required",
+      error: "A valid user identity is required",
     });
     return;
   }
@@ -92,20 +92,20 @@ partiesRouter.post("/", async (request, response) => {
   try {
     await client.query("BEGIN");
 
-    const staffResult = await client.query<{ id: string }>(
+    const userResult = await client.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staffResult.rows[0]) {
+    if (!userResult.rows[0]) {
       await client.query("ROLLBACK");
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -115,22 +115,22 @@ partiesRouter.post("/", async (request, response) => {
         INSERT INTO parties (
           guest_count,
           status,
-          created_by_staff_id
+          created_by_user_id
         )
         VALUES ($1, 'waiting', $2)
         RETURNING
           id,
           guest_count,
           status,
-          created_by_staff_id,
+          created_by_user_id,
           arrived_at,
           status_changed_at,
           completed_at,
           cancelled_at,
-          cancelled_by_staff_id,
+          cancelled_by_user_id,
           cancellation_reason
       `,
-      [input.data.guestCount, staffId.data],
+      [input.data.guestCount, userId.data],
     );
 
     const party = partyResult.rows[0];
@@ -144,11 +144,11 @@ partiesRouter.post("/", async (request, response) => {
         INSERT INTO party_events (
           party_id,
           event_type,
-          actor_staff_id
+          actor_user_id
         )
         VALUES ($1, 'arrived', $2)
       `,
-      [party.id, staffId.data],
+      [party.id, userId.data],
     );
 
     await client.query("COMMIT");
@@ -171,8 +171,8 @@ partiesRouter.post(
 
     const input = seatPartyInputSchema.safeParse(request.body);
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!partyId.success) {
@@ -190,9 +190,9 @@ partiesRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -202,22 +202,22 @@ partiesRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staffResult = await client.query<{
+      const userResult = await client.query<{
         id: string;
       }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staffResult.rows[0]) {
+      if (!userResult.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -275,12 +275,12 @@ partiesRouter.post(
         `
           INSERT INTO seatings (
             party_id,
-            seated_by_staff_id
+            seated_by_user_id
           )
           VALUES ($1, $2)
           RETURNING id
         `,
-        [partyId.data, staffId.data],
+        [partyId.data, userId.data],
       );
 
       const seatingId = seating.rows[0]?.id;
@@ -312,12 +312,12 @@ partiesRouter.post(
             id,
             guest_count,
             status,
-            created_by_staff_id,
+            created_by_user_id,
             arrived_at,
             status_changed_at,
             completed_at,
             cancelled_at,
-            cancelled_by_staff_id,
+            cancelled_by_user_id,
             cancellation_reason
         `,
         [partyId.data],
@@ -334,11 +334,11 @@ partiesRouter.post(
           INSERT INTO party_events (
             party_id,
             event_type,
-            actor_staff_id
+            actor_user_id
           )
           VALUES ($1, 'seated', $2)
         `,
-        [party.id, staffId.data],
+        [party.id, userId.data],
       );
 
       await client.query("COMMIT");
@@ -375,8 +375,8 @@ partiesRouter.post(
     const input = cancelPartyInputSchema.safeParse(
       request.body,
     );
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!partyId.success) {
@@ -394,9 +394,9 @@ partiesRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -406,20 +406,20 @@ partiesRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -511,22 +511,22 @@ partiesRouter.post(
             status = 'cancelled',
             status_changed_at = now(),
             cancelled_at = now(),
-            cancelled_by_staff_id = $2,
+            cancelled_by_user_id = $2,
             cancellation_reason = $3
           WHERE id = $1
           RETURNING
             id,
             guest_count,
             status,
-            created_by_staff_id,
+            created_by_user_id,
             arrived_at,
             status_changed_at,
             completed_at,
             cancelled_at,
-            cancelled_by_staff_id,
+            cancelled_by_user_id,
             cancellation_reason
         `,
-        [partyId.data, staffId.data, input.data.reason],
+        [partyId.data, userId.data, input.data.reason],
       );
 
       const cancelledParty = updated.rows[0];
@@ -542,12 +542,12 @@ partiesRouter.post(
           INSERT INTO party_events (
             party_id,
             event_type,
-            actor_staff_id,
+            actor_user_id,
             reason
           )
           VALUES ($1, 'cancelled', $2, $3)
         `,
-        [partyId.data, staffId.data, input.data.reason],
+        [partyId.data, userId.data, input.data.reason],
       );
 
       await client.query("COMMIT");

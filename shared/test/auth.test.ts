@@ -1,41 +1,41 @@
 import { describe, expect, it } from "vitest";
 import {
-  staffIdentitySchema,
-  staffLoginInputSchema,
-  staffPinSchema,
+  userIdentitySchema,
+  userLoginInputSchema,
+  userPinSchema,
 } from "../src/index.js";
 
-describe("staff authentication contract", () => {
+describe("user authentication contract", () => {
   it("accepts exactly four numeric PIN digits", () => {
-    expect(staffPinSchema.parse("0123")).toBe("0123");
-    expect(staffPinSchema.safeParse("123").success).toBe(false);
-    expect(staffPinSchema.safeParse("12345").success).toBe(false);
-    expect(staffPinSchema.safeParse("12ab").success).toBe(false);
+    expect(userPinSchema.parse("0123")).toBe("0123");
+    expect(userPinSchema.safeParse("123").success).toBe(false);
+    expect(userPinSchema.safeParse("12345").success).toBe(false);
+    expect(userPinSchema.safeParse("12ab").success).toBe(false);
   });
 
-  it("accepts staff login credentials", () => {
-    const staffId =
+  it("accepts user login credentials", () => {
+    const userId =
       "12dfde8a-7d80-4d68-90ce-bf12a9e754fd";
 
     expect(
-      staffLoginInputSchema.parse({
-        staffId,
+      userLoginInputSchema.parse({
+        userId,
         pin: "4826",
       }),
     ).toEqual({
-      staffId,
+      userId,
       pin: "4826",
     });
   });
 
-  it("accepts the authenticated staff identity", () => {
+  it("accepts the authenticated user identity", () => {
     const identity = {
       id: "12dfde8a-7d80-4d68-90ce-bf12a9e754fd",
       displayName: "Jane",
       roles: ["server", "manager"],
     };
 
-    expect(staffIdentitySchema.parse(identity)).toEqual(
+    expect(userIdentitySchema.parse(identity)).toEqual(
       identity,
     );
   });

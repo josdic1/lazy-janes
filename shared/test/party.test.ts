@@ -39,13 +39,13 @@ describe("party contract", () => {
       id: "12b88f3f-7ce6-4e31-9a58-dfd849754f57",
       guestCount: 7,
       status: "waiting",
-      createdByStaffId:
+      createdByUserId:
         "0b30767c-6642-4683-a394-c04cb140e3be",
       arrivedAt: "2026-08-12T14:00:00.000Z",
       statusChangedAt: "2026-08-12T14:00:00.000Z",
       completedAt: null,
       cancelledAt: null,
-      cancelledByStaffId: null,
+      cancelledByUserId: null,
       cancellationReason: null,
     };
 

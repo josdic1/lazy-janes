@@ -11,7 +11,7 @@ afterAll(async () => {
 
 describe("POST /api/orders", () => {
   it("submits a dine-in order and starts service", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const partyId = randomUUID();
     const menuItemId = randomUUID();
     const modifierId = randomUUID();
@@ -20,10 +20,10 @@ describe("POST /api/orders", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Order Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -32,11 +32,11 @@ describe("POST /api/orders", () => {
             id,
             guest_count,
             status,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 4, 'seated', $2)
         `,
-        [partyId, staffId],
+        [partyId, userId],
       );
 
       await pool.query(
@@ -76,7 +76,7 @@ describe("POST /api/orders", () => {
 
       const response = await request(createApp())
         .post("/api/orders")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           partyId,
           fulfillmentType: "dine_in",
@@ -198,8 +198,8 @@ describe("POST /api/orders", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -207,7 +207,7 @@ describe("POST /api/orders", () => {
 
 describe("POST /api/orders/:orderId/fire", () => {
   it("fires submitted items and creates one kitchen chit", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
     const orderId = randomUUID();
     const orderItemId = randomUUID();
@@ -215,10 +215,10 @@ describe("POST /api/orders/:orderId/fire", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Kitchen Fire Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -239,11 +239,11 @@ describe("POST /api/orders/:orderId/fire", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 'takeout', $2)
         `,
-        [orderId, staffId],
+        [orderId, userId],
       );
 
       await pool.query(
@@ -252,7 +252,7 @@ describe("POST /api/orders/:orderId/fire", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price
           )
@@ -265,12 +265,12 @@ describe("POST /api/orders/:orderId/fire", () => {
             15.00
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       const response = await request(createApp())
         .post(`/api/orders/${orderId}/fire`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
           note: "Rush",
@@ -378,8 +378,8 @@ describe("POST /api/orders/:orderId/fire", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -387,7 +387,7 @@ describe("POST /api/orders/:orderId/fire", () => {
 
 describe("POST /api/orders/:orderId/ready", () => {
   it("marks fired items ready and records history", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
     const orderId = randomUUID();
     const orderItemId = randomUUID();
@@ -395,10 +395,10 @@ describe("POST /api/orders/:orderId/ready", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Kitchen Ready Test Chef')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -419,11 +419,11 @@ describe("POST /api/orders/:orderId/ready", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 'takeout', $2)
         `,
-        [orderId, staffId],
+        [orderId, userId],
       );
 
       await pool.query(
@@ -432,7 +432,7 @@ describe("POST /api/orders/:orderId/ready", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price,
             status,
@@ -449,12 +449,12 @@ describe("POST /api/orders/:orderId/ready", () => {
             now()
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       const response = await request(createApp())
         .post(`/api/orders/${orderId}/ready`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
         });
@@ -480,10 +480,10 @@ describe("POST /api/orders/:orderId/ready", () => {
 
       const events = await pool.query<{
         event_type: string;
-        actor_staff_id: string;
+        actor_user_id: string;
       }>(
         `
-          SELECT event_type, actor_staff_id
+          SELECT event_type, actor_user_id
           FROM order_item_events
           WHERE order_item_id = $1
         `,
@@ -493,7 +493,7 @@ describe("POST /api/orders/:orderId/ready", () => {
       expect(events.rows).toEqual([
         {
           event_type: "ready",
-          actor_staff_id: staffId,
+          actor_user_id: userId,
         },
       ]);
     } finally {
@@ -518,8 +518,8 @@ describe("POST /api/orders/:orderId/ready", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -527,7 +527,7 @@ describe("POST /api/orders/:orderId/ready", () => {
 
 describe("POST /api/orders/:orderId/deliver", () => {
   it("delivers ready items and records history", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const menuItemId = randomUUID();
     const orderId = randomUUID();
     const orderItemId = randomUUID();
@@ -535,10 +535,10 @@ describe("POST /api/orders/:orderId/deliver", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Delivery Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -559,11 +559,11 @@ describe("POST /api/orders/:orderId/deliver", () => {
           INSERT INTO orders (
             id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 'takeout', $2)
         `,
-        [orderId, staffId],
+        [orderId, userId],
       );
 
       await pool.query(
@@ -572,7 +572,7 @@ describe("POST /api/orders/:orderId/deliver", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price,
             status,
@@ -591,12 +591,12 @@ describe("POST /api/orders/:orderId/deliver", () => {
             now()
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       const response = await request(createApp())
         .post(`/api/orders/${orderId}/deliver`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
         });
@@ -620,10 +620,10 @@ describe("POST /api/orders/:orderId/deliver", () => {
 
       const events = await pool.query<{
         event_type: string;
-        actor_staff_id: string;
+        actor_user_id: string;
       }>(
         `
-          SELECT event_type, actor_staff_id
+          SELECT event_type, actor_user_id
           FROM order_item_events
           WHERE order_item_id = $1
         `,
@@ -633,7 +633,7 @@ describe("POST /api/orders/:orderId/deliver", () => {
       expect(events.rows).toEqual([
         {
           event_type: "fulfilled",
-          actor_staff_id: staffId,
+          actor_user_id: userId,
         },
       ]);
     } finally {
@@ -658,8 +658,8 @@ describe("POST /api/orders/:orderId/deliver", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

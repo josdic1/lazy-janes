@@ -9,24 +9,24 @@ import { pool } from "../db/pool.js";
 
 type DrawerSessionRow = {
   id: string;
-  opened_by_staff_id: string;
+  opened_by_user_id: string;
   opening_cash_amount: string;
   opened_at: Date;
-  closed_by_staff_id: string | null;
+  closed_by_user_id: string | null;
   expected_cash_amount: string | null;
   counted_cash_amount: string | null;
   variance_amount: string | null;
   closed_at: Date | null;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 const drawerColumns = `
   id,
-  opened_by_staff_id,
+  opened_by_user_id,
   opening_cash_amount,
   opened_at,
-  closed_by_staff_id,
+  closed_by_user_id,
   expected_cash_amount,
   counted_cash_amount,
   variance_amount,
@@ -38,10 +38,10 @@ function toDrawerSession(
 ): DrawerSession {
   return {
     id: row.id,
-    openedByStaffId: row.opened_by_staff_id,
+    openedByUserId: row.opened_by_user_id,
     openingCashAmount: Number(row.opening_cash_amount),
     openedAt: row.opened_at.toISOString(),
-    closedByStaffId: row.closed_by_staff_id,
+    closedByUserId: row.closed_by_user_id,
     expectedCashAmount:
       row.expected_cash_amount === null
         ? null
@@ -63,30 +63,30 @@ export const registerRouter = Router();
 registerRouter.get(
   "/current",
   async (request, response) => {
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
 
-    const staff = await pool.query<{ id: string }>(
+    const user = await pool.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staff.rows[0]) {
+    if (!user.rows[0]) {
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -113,8 +113,8 @@ registerRouter.post(
     const input = openDrawerInputSchema.safeParse(
       request.body,
     );
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!input.success) {
@@ -125,9 +125,9 @@ registerRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -137,20 +137,20 @@ registerRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -158,13 +158,13 @@ registerRouter.post(
       const inserted = await client.query<DrawerSessionRow>(
         `
           INSERT INTO drawer_sessions (
-            opened_by_staff_id,
+            opened_by_user_id,
             opening_cash_amount
           )
           VALUES ($1, $2)
           RETURNING ${drawerColumns}
         `,
-        [staffId.data, input.data.openingCashAmount],
+        [userId.data, input.data.openingCashAmount],
       );
 
       const drawer = inserted.rows[0];
@@ -181,7 +181,7 @@ registerRouter.post(
             drawer_session_id,
             count_kind,
             counted_amount,
-            counted_by_staff_id
+            counted_by_user_id
           )
           VALUES ($1, 'opening', $2, $3)
           RETURNING id
@@ -189,7 +189,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.openingCashAmount,
-          staffId.data,
+          userId.data,
         ],
       );
 
@@ -208,7 +208,7 @@ registerRouter.post(
             event_type,
             amount,
             cash_count_id,
-            actor_staff_id
+            actor_user_id
           )
           VALUES
             ($1, 'opened', $2, NULL, $3),
@@ -217,7 +217,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.openingCashAmount,
-          staffId.data,
+          userId.data,
           cashCountId,
         ],
       );
@@ -254,8 +254,8 @@ registerRouter.post(
     const input = closeDrawerInputSchema.safeParse(
       request.body,
     );
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!input.success) {
@@ -266,9 +266,9 @@ registerRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -278,20 +278,20 @@ registerRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -372,7 +372,7 @@ registerRouter.post(
             drawer_session_id,
             count_kind,
             counted_amount,
-            counted_by_staff_id
+            counted_by_user_id
           )
           VALUES ($1, 'closing', $2, $3)
           RETURNING id
@@ -380,7 +380,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.countedCashAmount,
-          staffId.data,
+          userId.data,
         ],
       );
 
@@ -396,7 +396,7 @@ registerRouter.post(
         `
           UPDATE drawer_sessions
           SET
-            closed_by_staff_id = $2,
+            closed_by_user_id = $2,
             expected_cash_amount = $3,
             counted_cash_amount = $4,
             variance_amount = $5,
@@ -406,7 +406,7 @@ registerRouter.post(
         `,
         [
           drawer.id,
-          staffId.data,
+          userId.data,
           expectedCashAmount,
           input.data.countedCashAmount,
           varianceAmount,
@@ -428,7 +428,7 @@ registerRouter.post(
             event_type,
             amount,
             cash_count_id,
-            actor_staff_id
+            actor_user_id
           )
           VALUES
             ($1, 'counted', $2, $3, $4),
@@ -438,7 +438,7 @@ registerRouter.post(
           drawer.id,
           input.data.countedCashAmount,
           cashCountId,
-          staffId.data,
+          userId.data,
         ],
       );
 

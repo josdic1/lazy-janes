@@ -39,12 +39,12 @@ export const partySchema = z.object({
   id: z.string().uuid(),
   guestCount: z.number().int().positive(),
   status: partyStatusSchema,
-  createdByStaffId: z.string().uuid(),
+  createdByUserId: z.string().uuid(),
   arrivedAt: z.string().datetime(),
   statusChangedAt: z.string().datetime(),
   completedAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
-  cancelledByStaffId: z.string().uuid().nullable(),
+  cancelledByUserId: z.string().uuid().nullable(),
   cancellationReason: z.string().nullable(),
 });
 

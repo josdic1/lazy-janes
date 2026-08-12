@@ -1,41 +1,41 @@
 import { z } from "zod";
 
-export const staffPinSchema = z
+export const userPinSchema = z
   .string()
   .regex(/^\d{4}$/, "PIN must contain exactly four digits");
 
-export const staffLoginOptionSchema = z.object({
+export const userLoginOptionSchema = z.object({
   id: z.string().uuid(),
   displayName: z.string().trim().min(1),
 });
 
-export type StaffLoginOption = z.infer<
-  typeof staffLoginOptionSchema
+export type UserLoginOption = z.infer<
+  typeof userLoginOptionSchema
 >;
 
-export const staffLoginInputSchema = z.object({
-  staffId: z.string().uuid(),
-  pin: staffPinSchema,
+export const userLoginInputSchema = z.object({
+  userId: z.string().uuid(),
+  pin: userPinSchema,
 });
 
-export type StaffLoginInput = z.infer<
-  typeof staffLoginInputSchema
+export type UserLoginInput = z.infer<
+  typeof userLoginInputSchema
 >;
 
-export const staffIdentitySchema = z.object({
+export const userIdentitySchema = z.object({
   id: z.string().uuid(),
   displayName: z.string().trim().min(1),
   roles: z.array(z.string().trim().min(1)),
 });
 
-export type StaffIdentity = z.infer<
-  typeof staffIdentitySchema
+export type UserIdentity = z.infer<
+  typeof userIdentitySchema
 >;
 
-export const setStaffPinInputSchema = z.object({
-  pin: staffPinSchema,
+export const setUserPinInputSchema = z.object({
+  pin: userPinSchema,
 });
 
-export type SetStaffPinInput = z.infer<
-  typeof setStaffPinInputSchema
+export type SetUserPinInput = z.infer<
+  typeof setUserPinInputSchema
 >;

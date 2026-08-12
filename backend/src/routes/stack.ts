@@ -55,12 +55,12 @@ type EventRow = {
   party_id: string;
   id: string;
   event_type: StackPartyEvent["eventType"];
-  actor_staff_id: string | null;
+  actor_user_id: string | null;
   reason: string | null;
   occurred_at: Date;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 function addToGroup<T>(
   groups: Map<string, T[]>,
@@ -79,13 +79,13 @@ function money(amount: number): number {
 export const stackRouter = Router();
 
 stackRouter.get("/", async (request, response) => {
-  const staffId = staffIdSchema.safeParse(
-    request.header("x-staff-id"),
+  const userId = userIdSchema.safeParse(
+    request.header("x-user-id"),
   );
 
-  if (!staffId.success) {
+  if (!userId.success) {
     response.status(401).json({
-      error: "A valid staff identity is required",
+      error: "A valid user identity is required",
     });
     return;
   }
@@ -97,20 +97,20 @@ stackRouter.get("/", async (request, response) => {
       "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY",
     );
 
-    const staff = await client.query<{ id: string }>(
+    const user = await client.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staff.rows[0]) {
+    if (!user.rows[0]) {
       await client.query("ROLLBACK");
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -236,7 +236,7 @@ stackRouter.get("/", async (request, response) => {
           party_id,
           id::text,
           event_type,
-          actor_staff_id,
+          actor_user_id,
           reason,
           occurred_at
         FROM party_events
@@ -306,7 +306,7 @@ stackRouter.get("/", async (request, response) => {
       addToGroup(eventsByParty, event.party_id, {
         id: event.id,
         eventType: event.event_type,
-        actorStaffId: event.actor_staff_id,
+        actorUserId: event.actor_user_id,
         reason: event.reason,
         occurredAt: event.occurred_at.toISOString(),
       });

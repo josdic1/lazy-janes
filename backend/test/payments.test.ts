@@ -11,7 +11,7 @@ afterAll(async () => {
 
 describe("POST /api/payments", () => {
   it("takes cash, records the drawer, and closes a paid check", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const drawerSessionId = randomUUID();
     const checkId = randomUUID();
     let paymentId: string | undefined;
@@ -19,22 +19,22 @@ describe("POST /api/payments", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Cash Payment Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
         `
           INSERT INTO drawer_sessions (
             id,
-            opened_by_staff_id,
+            opened_by_user_id,
             opening_cash_amount
           )
           VALUES ($1, $2, 100.00)
         `,
-        [drawerSessionId, staffId],
+        [drawerSessionId, userId],
       );
 
       await pool.query(
@@ -43,7 +43,7 @@ describe("POST /api/payments", () => {
             id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             tax_amount,
             total_amount,
@@ -60,12 +60,12 @@ describe("POST /api/payments", () => {
             now()
           )
         `,
-        [checkId, staffId],
+        [checkId, userId],
       );
 
       const response = await request(createApp())
         .post("/api/payments")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           method: "cash",
           allocations: [
@@ -185,14 +185,14 @@ describe("POST /api/payments", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
 
   it("takes a partial card payment only once", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const checkId = randomUUID();
     const processorReference =
       `terminal-${randomUUID()}`;
@@ -201,10 +201,10 @@ describe("POST /api/payments", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Card Payment Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -213,7 +213,7 @@ describe("POST /api/payments", () => {
             id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             tax_amount,
             total_amount,
@@ -230,7 +230,7 @@ describe("POST /api/payments", () => {
             now()
           )
         `,
-        [checkId, staffId],
+        [checkId, userId],
       );
 
       const body = {
@@ -247,7 +247,7 @@ describe("POST /api/payments", () => {
 
       const response = await request(createApp())
         .post("/api/payments")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send(body);
 
       expect(response.status).toBe(201);
@@ -272,7 +272,7 @@ describe("POST /api/payments", () => {
 
       const repeated = await request(createApp())
         .post("/api/payments")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send(body);
 
       expect(repeated.status).toBe(409);
@@ -311,8 +311,8 @@ describe("POST /api/payments", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -320,7 +320,7 @@ describe("POST /api/payments", () => {
 
 describe("automatic party completion", () => {
   it("completes the paid party and releases its table", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const sectionId = randomUUID();
     const tableId = randomUUID();
     const partyId = randomUUID();
@@ -335,10 +335,10 @@ describe("automatic party completion", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Completion Test Server')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -368,11 +368,11 @@ describe("automatic party completion", () => {
             id,
             guest_count,
             status,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 2, 'in_service', $2)
         `,
-        [partyId, staffId],
+        [partyId, userId],
       );
 
       await pool.query(
@@ -380,11 +380,11 @@ describe("automatic party completion", () => {
           INSERT INTO seatings (
             id,
             party_id,
-            seated_by_staff_id
+            seated_by_user_id
           )
           VALUES ($1, $2, $3)
         `,
-        [seatingId, partyId, staffId],
+        [seatingId, partyId, userId],
       );
 
       await pool.query(
@@ -418,11 +418,11 @@ describe("automatic party completion", () => {
             id,
             party_id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, $2, 'dine_in', $3)
         `,
-        [orderId, partyId, staffId],
+        [orderId, partyId, userId],
       );
 
       await pool.query(
@@ -431,7 +431,7 @@ describe("automatic party completion", () => {
             id,
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             item_name,
             unit_price
           )
@@ -444,7 +444,7 @@ describe("automatic party completion", () => {
             10
           )
         `,
-        [orderItemId, orderId, menuItemId, staffId],
+        [orderItemId, orderId, menuItemId, userId],
       );
 
       await pool.query(
@@ -454,7 +454,7 @@ describe("automatic party completion", () => {
             party_id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             tax_amount,
             total_amount,
@@ -472,7 +472,7 @@ describe("automatic party completion", () => {
             now()
           )
         `,
-        [checkId, partyId, staffId],
+        [checkId, partyId, userId],
       );
 
       await pool.query(
@@ -497,7 +497,7 @@ describe("automatic party completion", () => {
 
       const response = await request(createApp())
         .post("/api/payments")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           method: "card",
           allocations: [
@@ -548,10 +548,10 @@ describe("automatic party completion", () => {
 
       const events = await pool.query<{
         event_type: string;
-        actor_staff_id: string | null;
+        actor_user_id: string | null;
       }>(
         `
-          SELECT event_type, actor_staff_id
+          SELECT event_type, actor_user_id
           FROM party_events
           WHERE party_id = $1
         `,
@@ -561,7 +561,7 @@ describe("automatic party completion", () => {
       expect(events.rows).toEqual([
         {
           event_type: "completed",
-          actor_staff_id: null,
+          actor_user_id: null,
         },
       ]);
     } finally {
@@ -646,8 +646,8 @@ describe("automatic party completion", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

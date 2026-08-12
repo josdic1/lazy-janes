@@ -11,21 +11,21 @@ afterAll(async () => {
 
 describe("POST /api/parties", () => {
   it("creates a waiting party and records arrival", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     let partyId: string | undefined;
 
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Party API Test Host')
         `,
-        [staffId],
+        [userId],
       );
 
       const response = await request(createApp())
         .post("/api/parties")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({ guestCount: 7 });
 
       expect(response.status).toBe(201);
@@ -35,14 +35,14 @@ describe("POST /api/parties", () => {
 
       expect(party.guestCount).toBe(7);
       expect(party.status).toBe("waiting");
-      expect(party.createdByStaffId).toBe(staffId);
+      expect(party.createdByUserId).toBe(userId);
 
       const event = await pool.query<{
         event_type: string;
-        actor_staff_id: string;
+        actor_user_id: string;
       }>(
         `
-          SELECT event_type, actor_staff_id
+          SELECT event_type, actor_user_id
           FROM party_events
           WHERE party_id = $1
         `,
@@ -52,7 +52,7 @@ describe("POST /api/parties", () => {
       expect(event.rows).toEqual([
         {
           event_type: "arrived",
-          actor_staff_id: staffId,
+          actor_user_id: userId,
         },
       ]);
     } finally {
@@ -69,8 +69,8 @@ describe("POST /api/parties", () => {
       }
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -78,7 +78,7 @@ describe("POST /api/parties", () => {
 
 describe("POST /api/parties/:partyId/seat", () => {
   it("seats one party and rejects an occupied table", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const sectionId = randomUUID();
     const tableId = randomUUID();
     const firstPartyId = randomUUID();
@@ -87,10 +87,10 @@ describe("POST /api/parties/:partyId/seat", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Seating Test Host')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -120,23 +120,23 @@ describe("POST /api/parties/:partyId/seat", () => {
             id,
             guest_count,
             status,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES
             ($1, 4, 'waiting', $3),
             ($2, 2, 'waiting', $3)
         `,
-        [firstPartyId, secondPartyId, staffId],
+        [firstPartyId, secondPartyId, userId],
       );
 
       const firstResponse = await request(createApp())
         .post(`/api/parties/${firstPartyId}/seat`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({ tableIds: [tableId] });
 
       const secondResponse = await request(createApp())
         .post(`/api/parties/${secondPartyId}/seat`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({ tableIds: [tableId] });
 
       expect(firstResponse.status).toBe(200);
@@ -210,8 +210,8 @@ describe("POST /api/parties/:partyId/seat", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });
@@ -219,7 +219,7 @@ describe("POST /api/parties/:partyId/seat", () => {
 
 describe("POST /api/parties/:partyId/cancel", () => {
   it("preserves the reason and releases the table", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     const sectionId = randomUUID();
     const tableId = randomUUID();
     const partyId = randomUUID();
@@ -230,10 +230,10 @@ describe("POST /api/parties/:partyId/cancel", () => {
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
+          INSERT INTO users (id, display_name)
           VALUES ($1, 'Party Cancellation Test Host')
         `,
-        [staffId],
+        [userId],
       );
 
       await pool.query(
@@ -263,11 +263,11 @@ describe("POST /api/parties/:partyId/cancel", () => {
             id,
             guest_count,
             status,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, 2, 'seated', $2)
         `,
-        [partyId, staffId],
+        [partyId, userId],
       );
 
       await pool.query(
@@ -275,11 +275,11 @@ describe("POST /api/parties/:partyId/cancel", () => {
           INSERT INTO seatings (
             id,
             party_id,
-            seated_by_staff_id
+            seated_by_user_id
           )
           VALUES ($1, $2, $3)
         `,
-        [seatingId, partyId, staffId],
+        [seatingId, partyId, userId],
       );
 
       await pool.query(
@@ -300,16 +300,16 @@ describe("POST /api/parties/:partyId/cancel", () => {
             id,
             party_id,
             fulfillment_type,
-            created_by_staff_id
+            created_by_user_id
           )
           VALUES ($1, $2, 'dine_in', $3)
         `,
-        [orderId, partyId, staffId],
+        [orderId, partyId, userId],
       );
 
       const blocked = await request(createApp())
         .post(`/api/parties/${partyId}/cancel`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           reason: "Party left",
         });
@@ -326,7 +326,7 @@ describe("POST /api/parties/:partyId/cancel", () => {
 
       const response = await request(createApp())
         .post(`/api/parties/${partyId}/cancel`)
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           reason: "Party left before ordering",
         });
@@ -337,7 +337,7 @@ describe("POST /api/parties/:partyId/cancel", () => {
 
       expect(party.status).toBe("cancelled");
       expect(party.cancelledAt).not.toBeNull();
-      expect(party.cancelledByStaffId).toBe(staffId);
+      expect(party.cancelledByUserId).toBe(userId);
       expect(party.cancellationReason).toBe(
         "Party left before ordering",
       );
@@ -363,11 +363,11 @@ describe("POST /api/parties/:partyId/cancel", () => {
 
       const event = await pool.query<{
         event_type: string;
-        actor_staff_id: string | null;
+        actor_user_id: string | null;
         reason: string | null;
       }>(
         `
-          SELECT event_type, actor_staff_id, reason
+          SELECT event_type, actor_user_id, reason
           FROM party_events
           WHERE party_id = $1
         `,
@@ -377,7 +377,7 @@ describe("POST /api/parties/:partyId/cancel", () => {
       expect(event.rows).toEqual([
         {
           event_type: "cancelled",
-          actor_staff_id: staffId,
+          actor_user_id: userId,
           reason: "Party left before ordering",
         },
       ]);
@@ -418,8 +418,8 @@ describe("POST /api/parties/:partyId/cancel", () => {
       );
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

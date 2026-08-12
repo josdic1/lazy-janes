@@ -23,10 +23,10 @@ export type CloseDrawerInput = z.infer<
 
 export const drawerSessionSchema = z.object({
   id: z.string().uuid(),
-  openedByStaffId: z.string().uuid(),
+  openedByUserId: z.string().uuid(),
   openingCashAmount: moneySchema,
   openedAt: z.string().datetime(),
-  closedByStaffId: z.string().uuid().nullable(),
+  closedByUserId: z.string().uuid().nullable(),
   expectedCashAmount: moneySchema.nullable(),
   countedCashAmount: moneySchema.nullable(),
   varianceAmount: z.number().multipleOf(0.01).nullable(),

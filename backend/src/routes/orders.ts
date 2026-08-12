@@ -28,14 +28,14 @@ type OrderRow = {
   id: string;
   party_id: string | null;
   fulfillment_type: Order["fulfillmentType"];
-  created_by_staff_id: string;
+  created_by_user_id: string;
   customer_name: string | null;
   customer_phone: string | null;
   requested_for: Date | null;
   delivery_address: string | null;
   submitted_at: Date;
   cancelled_at: Date | null;
-  cancelled_by_staff_id: string | null;
+  cancelled_by_user_id: string | null;
   cancellation_reason: string | null;
   created_at: Date;
 };
@@ -54,7 +54,7 @@ type OrderItemRow = {
   ready_at: Date | null;
   fulfilled_at: Date | null;
   voided_at: Date | null;
-  voided_by_staff_id: string | null;
+  voided_by_user_id: string | null;
   void_reason: string | null;
 };
 
@@ -65,7 +65,7 @@ type ModifierRow = {
   price_adjustment: string;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 function toModifier(row: ModifierRow): OrderItemModifier {
   return {
@@ -94,7 +94,7 @@ function toOrderItem(
     readyAt: row.ready_at?.toISOString() ?? null,
     fulfilledAt: row.fulfilled_at?.toISOString() ?? null,
     voidedAt: row.voided_at?.toISOString() ?? null,
-    voidedByStaffId: row.voided_by_staff_id,
+    voidedByUserId: row.voided_by_user_id,
     voidReason: row.void_reason,
     modifiers,
   };
@@ -105,14 +105,14 @@ function toOrder(row: OrderRow, items: OrderItem[]): Order {
     id: row.id,
     partyId: row.party_id,
     fulfillmentType: row.fulfillment_type,
-    createdByStaffId: row.created_by_staff_id,
+    createdByUserId: row.created_by_user_id,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
     deliveryAddress: row.delivery_address,
     requestedFor: row.requested_for?.toISOString() ?? null,
     submittedAt: row.submitted_at.toISOString(),
     cancelledAt: row.cancelled_at?.toISOString() ?? null,
-    cancelledByStaffId: row.cancelled_by_staff_id,
+    cancelledByUserId: row.cancelled_by_user_id,
     cancellationReason: row.cancellation_reason,
     createdAt: row.created_at.toISOString(),
     items,
@@ -132,13 +132,13 @@ ordersRouter.post("/", async (request, response) => {
     return;
   }
 
-  const staffId = staffIdSchema.safeParse(
-    request.header("x-staff-id"),
+  const userId = userIdSchema.safeParse(
+    request.header("x-user-id"),
   );
 
-  if (!staffId.success) {
+  if (!userId.success) {
     response.status(401).json({
-      error: "A valid staff identity is required",
+      error: "A valid user identity is required",
     });
     return;
   }
@@ -148,20 +148,20 @@ ordersRouter.post("/", async (request, response) => {
   try {
     await client.query("BEGIN");
 
-    const staff = await client.query<{ id: string }>(
+    const user = await client.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staff.rows[0]) {
+    if (!user.rows[0]) {
       await client.query("ROLLBACK");
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -283,7 +283,7 @@ ordersRouter.post("/", async (request, response) => {
         INSERT INTO orders (
           party_id,
           fulfillment_type,
-          created_by_staff_id,
+          created_by_user_id,
           customer_name,
           customer_phone,
           requested_for,
@@ -294,21 +294,21 @@ ordersRouter.post("/", async (request, response) => {
           id,
           party_id,
           fulfillment_type,
-          created_by_staff_id,
+          created_by_user_id,
           customer_name,
           customer_phone,
           requested_for,
           delivery_address,
           submitted_at,
           cancelled_at,
-          cancelled_by_staff_id,
+          cancelled_by_user_id,
           cancellation_reason,
           created_at
       `,
       [
         input.data.partyId,
         input.data.fulfillmentType,
-        staffId.data,
+        userId.data,
         input.data.customerName,
         input.data.customerPhone,
         input.data.requestedFor,
@@ -328,11 +328,11 @@ ordersRouter.post("/", async (request, response) => {
           order_id,
           event_type,
           actor_kind,
-          actor_staff_id
+          actor_user_id
         )
-        VALUES ($1, 'submitted', 'staff', $2)
+        VALUES ($1, 'submitted', 'user', $2)
       `,
-      [orderRow.id, staffId.data],
+      [orderRow.id, userId.data],
     );
 
     const orderItems: OrderItem[] = [];
@@ -349,7 +349,7 @@ ordersRouter.post("/", async (request, response) => {
           INSERT INTO order_items (
             order_id,
             menu_item_id,
-            created_by_staff_id,
+            created_by_user_id,
             seat_number,
             item_name,
             unit_price,
@@ -371,13 +371,13 @@ ordersRouter.post("/", async (request, response) => {
             ready_at,
             fulfilled_at,
             voided_at,
-            voided_by_staff_id,
+            voided_by_user_id,
             void_reason
         `,
         [
           orderRow.id,
           menuItem.id,
-          staffId.data,
+          userId.data,
           requestedItem.seatNumber,
           menuItem.name,
           menuItem.price,
@@ -398,11 +398,11 @@ ordersRouter.post("/", async (request, response) => {
             order_item_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
-          VALUES ($1, 'submitted', 'staff', $2)
+          VALUES ($1, 'submitted', 'user', $2)
         `,
-        [itemRow.id, staffId.data],
+        [itemRow.id, userId.data],
       );
 
       const modifiers: OrderItemModifier[] = [];
@@ -473,11 +473,11 @@ ordersRouter.post("/", async (request, response) => {
           INSERT INTO party_events (
             party_id,
             event_type,
-            actor_staff_id
+            actor_user_id
           )
           VALUES ($1, 'service_started', $2)
         `,
-        [input.data.partyId, staffId.data],
+        [input.data.partyId, userId.data],
       );
     }
 
@@ -504,8 +504,8 @@ ordersRouter.post(
 
     const input = fireOrderInputSchema.safeParse(request.body);
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!orderId.success) {
@@ -523,9 +523,9 @@ ordersRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -535,20 +535,20 @@ ordersRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -627,7 +627,7 @@ ordersRouter.post(
         chit_number: string;
         order_id: string;
         print_kind: "initial";
-        printed_by_staff_id: string;
+        printed_by_user_id: string;
         note: string | null;
         printed_at: Date;
         cancelled_at: Date | null;
@@ -636,7 +636,7 @@ ordersRouter.post(
           INSERT INTO kitchen_chits (
             order_id,
             print_kind,
-            printed_by_staff_id,
+            printed_by_user_id,
             note
           )
           VALUES ($1, 'initial', $2, $3)
@@ -645,12 +645,12 @@ ordersRouter.post(
             chit_number,
             order_id,
             print_kind,
-            printed_by_staff_id,
+            printed_by_user_id,
             note,
             printed_at,
             cancelled_at
         `,
-        [orderId.data, staffId.data, input.data.note],
+        [orderId.data, userId.data, input.data.note],
       );
 
       const chitRow = chitResult.rows[0];
@@ -700,17 +700,17 @@ ordersRouter.post(
             order_item_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
           SELECT
             selected.order_item_id,
             'fired',
-            'staff',
+            'user',
             $2
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, staffId.data],
+        [input.data.orderItemIds, userId.data],
       );
 
       await client.query(
@@ -718,11 +718,11 @@ ordersRouter.post(
           INSERT INTO kitchen_chit_events (
             kitchen_chit_id,
             event_type,
-            actor_staff_id
+            actor_user_id
           )
           VALUES ($1, 'printed', $2)
         `,
-        [chitRow.id, staffId.data],
+        [chitRow.id, userId.data],
       );
 
       await client.query("COMMIT");
@@ -732,7 +732,7 @@ ordersRouter.post(
         chitNumber: Number(chitRow.chit_number),
         orderId: chitRow.order_id,
         printKind: chitRow.print_kind,
-        printedByStaffId: chitRow.printed_by_staff_id,
+        printedByUserId: chitRow.printed_by_user_id,
         note: chitRow.note,
         printedAt: chitRow.printed_at.toISOString(),
         cancelledAt:
@@ -766,8 +766,8 @@ ordersRouter.post(
     const input =
       markKitchenItemsReadyInputSchema.safeParse(request.body);
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!orderId.success) {
@@ -785,9 +785,9 @@ ordersRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -797,20 +797,20 @@ ordersRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -901,17 +901,17 @@ ordersRouter.post(
             order_item_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
           SELECT
             selected.order_item_id,
             'ready',
-            'staff',
+            'user',
             $2
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, staffId.data],
+        [input.data.orderItemIds, userId.data],
       );
 
       await client.query("COMMIT");
@@ -936,8 +936,8 @@ ordersRouter.post(
     const input =
       deliverOrderItemsInputSchema.safeParse(request.body);
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!orderId.success) {
@@ -955,9 +955,9 @@ ordersRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -967,20 +967,20 @@ ordersRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -1071,17 +1071,17 @@ ordersRouter.post(
             order_item_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
           SELECT
             selected.order_item_id,
             'fulfilled',
-            'staff',
+            'user',
             $2
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, staffId.data],
+        [input.data.orderItemIds, userId.data],
       );
 
       await client.query("COMMIT");
@@ -1105,8 +1105,8 @@ ordersRouter.post(
     const input = cancelOrderInputSchema.safeParse(
       request.body,
     );
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!orderId.success) {
@@ -1122,9 +1122,9 @@ ordersRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -1134,20 +1134,20 @@ ordersRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -1207,13 +1207,13 @@ ordersRouter.post(
           SET
             status = 'voided',
             voided_at = now(),
-            voided_by_staff_id = $2,
+            voided_by_user_id = $2,
             void_reason = $3
           WHERE order_id = $1
             AND status <> 'voided'
           RETURNING id
         `,
-        [orderId.data, staffId.data, input.data.reason],
+        [orderId.data, userId.data, input.data.reason],
       );
 
       if (voidedItems.rows.length > 0) {
@@ -1223,19 +1223,19 @@ ordersRouter.post(
               order_item_id,
               event_type,
               actor_kind,
-              actor_staff_id,
+              actor_user_id,
               reason
             )
             SELECT
               unnest($1::uuid[]),
               'voided',
-              'staff',
+              'user',
               $2,
               $3
           `,
           [
             voidedItems.rows.map((item) => item.id),
-            staffId.data,
+            userId.data,
             input.data.reason,
           ],
         );
@@ -1246,11 +1246,11 @@ ordersRouter.post(
           UPDATE orders
           SET
             cancelled_at = now(),
-            cancelled_by_staff_id = $2,
+            cancelled_by_user_id = $2,
             cancellation_reason = $3
           WHERE id = $1
         `,
-        [orderId.data, staffId.data, input.data.reason],
+        [orderId.data, userId.data, input.data.reason],
       );
 
       await client.query(
@@ -1259,12 +1259,12 @@ ordersRouter.post(
             order_id,
             event_type,
             actor_kind,
-            actor_staff_id,
+            actor_user_id,
             reason
           )
-          VALUES ($1, 'cancelled', 'staff', $2, $3)
+          VALUES ($1, 'cancelled', 'user', $2, $3)
         `,
-        [orderId.data, staffId.data, input.data.reason],
+        [orderId.data, userId.data, input.data.reason],
       );
 
       await client.query("COMMIT");
@@ -1288,8 +1288,8 @@ ordersRouter.post(
     const input = voidOrderItemsInputSchema.safeParse(
       request.body,
     );
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
     if (!orderId.success) {
@@ -1305,9 +1305,9 @@ ordersRouter.post(
       return;
     }
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -1317,20 +1317,20 @@ ordersRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -1423,13 +1423,13 @@ ordersRouter.post(
           SET
             status = 'voided',
             voided_at = now(),
-            voided_by_staff_id = $2,
+            voided_by_user_id = $2,
             void_reason = $3
           WHERE id = ANY($1::uuid[])
         `,
         [
           input.data.orderItemIds,
-          staffId.data,
+          userId.data,
           input.data.reason,
         ],
       );
@@ -1440,19 +1440,19 @@ ordersRouter.post(
             order_item_id,
             event_type,
             actor_kind,
-            actor_staff_id,
+            actor_user_id,
             reason
           )
           SELECT
             unnest($1::uuid[]),
             'voided',
-            'staff',
+            'user',
             $2,
             $3
         `,
         [
           input.data.orderItemIds,
-          staffId.data,
+          userId.data,
           input.data.reason,
         ],
       );

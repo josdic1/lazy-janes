@@ -111,7 +111,7 @@ describe("check response contract", () => {
       partyId: "7370e33a-a4c8-4183-8f49-984a59aa09c2",
       label: "Seats 1 and 2",
       status: "open" as const,
-      openedByStaffId:
+      openedByUserId:
         "1994b589-470a-4d15-930f-cd59bc149c15",
       subtotalAmount: 16.95,
       salesTaxRate: 0.06625,
@@ -248,7 +248,7 @@ describe("payment response contract", () => {
       status: "succeeded" as const,
       paymentAmount: 18.07,
       tipAmount: 1.93,
-      receivedByStaffId:
+      receivedByUserId:
         "1994b589-470a-4d15-930f-cd59bc149c15",
       processorReference: null,
       cashReceivedAmount: 20,
@@ -258,7 +258,7 @@ describe("payment response contract", () => {
       succeededAt: "2026-08-12T17:00:00.000Z",
       failedAt: null,
       voidedAt: null,
-      voidedByStaffId: null,
+      voidedByUserId: null,
       voidReason: null,
       createdAt: "2026-08-12T17:00:00.000Z",
       allocations: [

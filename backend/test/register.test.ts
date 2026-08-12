@@ -11,28 +11,28 @@ afterAll(async () => {
 
 describe("register API", () => {
   it("opens, reports, and closes the cash drawer", async () => {
-    const staffId = randomUUID();
+    const userId = randomUUID();
     let drawerSessionId: string | undefined;
 
     try {
       await pool.query(
         `
-          INSERT INTO staff (id, display_name)
-          VALUES ($1, 'Register Test Staff')
+          INSERT INTO users (id, display_name)
+          VALUES ($1, 'Register Test User')
         `,
-        [staffId],
+        [userId],
       );
 
       const initiallyClosed = await request(createApp())
         .get("/api/register/current")
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(initiallyClosed.status).toBe(200);
       expect(initiallyClosed.body).toBeNull();
 
       const opened = await request(createApp())
         .post("/api/register/open")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           openingCashAmount: 150,
         });
@@ -49,7 +49,7 @@ describe("register API", () => {
 
       const duplicate = await request(createApp())
         .post("/api/register/open")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           openingCashAmount: 100,
         });
@@ -61,7 +61,7 @@ describe("register API", () => {
 
       const current = await request(createApp())
         .get("/api/register/current")
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(current.status).toBe(200);
       expect(
@@ -70,7 +70,7 @@ describe("register API", () => {
 
       const closed = await request(createApp())
         .post("/api/register/close")
-        .set("x-staff-id", staffId)
+        .set("x-user-id", userId)
         .send({
           countedCashAmount: 149.5,
         });
@@ -84,12 +84,12 @@ describe("register API", () => {
       expect(closedDrawer.expectedCashAmount).toBe(150);
       expect(closedDrawer.countedCashAmount).toBe(149.5);
       expect(closedDrawer.varianceAmount).toBe(-0.5);
-      expect(closedDrawer.closedByStaffId).toBe(staffId);
+      expect(closedDrawer.closedByUserId).toBe(userId);
       expect(closedDrawer.closedAt).not.toBeNull();
 
       const afterClose = await request(createApp())
         .get("/api/register/current")
-        .set("x-staff-id", staffId);
+        .set("x-user-id", userId);
 
       expect(afterClose.status).toBe(200);
       expect(afterClose.body).toBeNull();
@@ -142,8 +142,8 @@ describe("register API", () => {
       }
 
       await pool.query(
-        "DELETE FROM staff WHERE id = $1",
-        [staffId],
+        "DELETE FROM users WHERE id = $1",
+        [userId],
       );
     }
   });

@@ -12,7 +12,7 @@ type CheckRow = {
   party_id: string | null;
   label: string;
   status: Check["status"];
-  opened_by_staff_id: string;
+  opened_by_user_id: string;
   subtotal_amount: string;
   sales_tax_rate: string;
   tax_amount: string;
@@ -52,7 +52,7 @@ type ModifierTotalRow = {
   modifier_total: string;
 };
 
-const staffIdSchema = z.string().uuid();
+const userIdSchema = z.string().uuid();
 
 function toCheckItem(row: CheckItemRow): CheckItem {
   return {
@@ -74,7 +74,7 @@ function toCheck(
     partyId: row.party_id,
     label: row.label,
     status: row.status,
-    openedByStaffId: row.opened_by_staff_id,
+    openedByUserId: row.opened_by_user_id,
     subtotalAmount: Number(row.subtotal_amount),
     salesTaxRate: Number(row.sales_tax_rate),
     taxAmount: Number(row.tax_amount),
@@ -100,13 +100,13 @@ checksRouter.post("/", async (request, response) => {
     return;
   }
 
-  const staffId = staffIdSchema.safeParse(
-    request.header("x-staff-id"),
+  const userId = userIdSchema.safeParse(
+    request.header("x-user-id"),
   );
 
-  if (!staffId.success) {
+  if (!userId.success) {
     response.status(401).json({
-      error: "A valid staff identity is required",
+      error: "A valid user identity is required",
     });
     return;
   }
@@ -116,20 +116,20 @@ checksRouter.post("/", async (request, response) => {
   try {
     await client.query("BEGIN");
 
-    const staff = await client.query<{ id: string }>(
+    const user = await client.query<{ id: string }>(
       `
         SELECT id
-        FROM staff
+        FROM users
         WHERE id = $1
           AND is_active = true
       `,
-      [staffId.data],
+      [userId.data],
     );
 
-    if (!staff.rows[0]) {
+    if (!user.rows[0]) {
       await client.query("ROLLBACK");
       response.status(403).json({
-        error: "Active staff member not found",
+        error: "Active user not found",
       });
       return;
     }
@@ -370,7 +370,7 @@ checksRouter.post("/", async (request, response) => {
         INSERT INTO checks (
           party_id,
           label,
-          opened_by_staff_id,
+          opened_by_user_id,
           subtotal_amount,
           sales_tax_rate,
           tax_amount,
@@ -382,7 +382,7 @@ checksRouter.post("/", async (request, response) => {
           party_id,
           label,
           status,
-          opened_by_staff_id,
+          opened_by_user_id,
           subtotal_amount,
           sales_tax_rate,
           tax_amount,
@@ -395,7 +395,7 @@ checksRouter.post("/", async (request, response) => {
       [
         input.data.partyId,
         input.data.label,
-        staffId.data,
+        userId.data,
         subtotalAmount,
         salesTaxRate,
         taxAmount,
@@ -457,13 +457,13 @@ checksRouter.post("/", async (request, response) => {
           check_id,
           event_type,
           actor_kind,
-          actor_staff_id,
+          actor_user_id,
           details
         )
         VALUES (
           $1,
           'created',
-          'staff',
+          'user',
           $2,
           jsonb_build_object(
             'itemCount',
@@ -471,7 +471,7 @@ checksRouter.post("/", async (request, response) => {
           )
         )
       `,
-      [check.id, staffId.data, createdItems.length],
+      [check.id, userId.data, createdItems.length],
     );
 
     await client.query("COMMIT");
@@ -502,13 +502,13 @@ checksRouter.post(
       return;
     }
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -518,20 +518,20 @@ checksRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -579,7 +579,7 @@ checksRouter.post(
             party_id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             sales_tax_rate,
             tax_amount,
@@ -606,11 +606,11 @@ checksRouter.post(
             check_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
-          VALUES ($1, 'presented', 'staff', $2)
+          VALUES ($1, 'presented', 'user', $2)
         `,
-        [checkId.data, staffId.data],
+        [checkId.data, userId.data],
       );
 
       const items = await client.query<CheckItemRow>(
@@ -660,13 +660,13 @@ checksRouter.post(
       return;
     }
 
-    const staffId = staffIdSchema.safeParse(
-      request.header("x-staff-id"),
+    const userId = userIdSchema.safeParse(
+      request.header("x-user-id"),
     );
 
-    if (!staffId.success) {
+    if (!userId.success) {
       response.status(401).json({
-        error: "A valid staff identity is required",
+        error: "A valid user identity is required",
       });
       return;
     }
@@ -676,20 +676,20 @@ checksRouter.post(
     try {
       await client.query("BEGIN");
 
-      const staff = await client.query<{ id: string }>(
+      const user = await client.query<{ id: string }>(
         `
           SELECT id
-          FROM staff
+          FROM users
           WHERE id = $1
             AND is_active = true
         `,
-        [staffId.data],
+        [userId.data],
       );
 
-      if (!staff.rows[0]) {
+      if (!user.rows[0]) {
         await client.query("ROLLBACK");
         response.status(403).json({
-          error: "Active staff member not found",
+          error: "Active user not found",
         });
         return;
       }
@@ -737,7 +737,7 @@ checksRouter.post(
             party_id,
             label,
             status,
-            opened_by_staff_id,
+            opened_by_user_id,
             subtotal_amount,
             sales_tax_rate,
             tax_amount,
@@ -764,11 +764,11 @@ checksRouter.post(
             check_id,
             event_type,
             actor_kind,
-            actor_staff_id
+            actor_user_id
           )
-          VALUES ($1, 'presented', 'staff', $2)
+          VALUES ($1, 'presented', 'user', $2)
         `,
-        [checkId.data, staffId.data],
+        [checkId.data, userId.data],
       );
 
       const items = await client.query<CheckItemRow>(

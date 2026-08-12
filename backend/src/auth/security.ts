@@ -25,7 +25,7 @@ async function derivePinHash(
   )) as Buffer;
 }
 
-export async function hashStaffPin(
+export async function hashUserPin(
   pin: string,
 ): Promise<string> {
   const salt = randomBytes(SALT_BYTES);
@@ -38,7 +38,7 @@ export async function hashStaffPin(
   ].join("$");
 }
 
-export async function verifyStaffPin(
+export async function verifyUserPin(
   pin: string,
   storedHash: string,
 ): Promise<boolean> {

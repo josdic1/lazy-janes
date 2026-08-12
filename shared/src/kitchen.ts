@@ -27,7 +27,7 @@ export const kitchenChitSchema = z.object({
   chitNumber: z.number().int().positive(),
   orderId: z.string().uuid(),
   printKind: kitchenChitPrintKindSchema,
-  printedByStaffId: z.string().uuid(),
+  printedByUserId: z.string().uuid(),
   note: z.string().nullable(),
   printedAt: z.string().datetime(),
   cancelledAt: z.string().datetime().nullable(),
