@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  authSetupStatusSchema,
+  createInitialAdminInputSchema,
   userIdentitySchema,
   userLoginInputSchema,
   userPinSchema,
@@ -38,5 +40,29 @@ describe("user authentication contract", () => {
     expect(userIdentitySchema.parse(identity)).toEqual(
       identity,
     );
+  });
+});
+
+describe("initial authentication setup", () => {
+  it("accepts the first administrator identity and PIN", () => {
+    expect(
+      createInitialAdminInputSchema.parse({
+        displayName: "Josh",
+        pin: "4826",
+      }),
+    ).toEqual({
+      displayName: "Josh",
+      pin: "4826",
+    });
+  });
+
+  it("represents whether first-run setup is required", () => {
+    expect(
+      authSetupStatusSchema.parse({
+        requiresSetup: true,
+      }),
+    ).toEqual({
+      requiresSetup: true,
+    });
   });
 });

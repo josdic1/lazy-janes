@@ -6,3 +6,4 @@ export * from "./party.js";
 export * from "./register.js";
 export * from "./stack.js";
 export * from "./auth.js";
+export * from "./users.js";

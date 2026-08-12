@@ -39,3 +39,20 @@ export const setUserPinInputSchema = z.object({
 export type SetUserPinInput = z.infer<
   typeof setUserPinInputSchema
 >;
+
+export const authSetupStatusSchema = z.object({
+  requiresSetup: z.boolean(),
+});
+
+export type AuthSetupStatus = z.infer<
+  typeof authSetupStatusSchema
+>;
+
+export const createInitialAdminInputSchema = z.object({
+  displayName: z.string().trim().min(1).max(200),
+  pin: userPinSchema,
+});
+
+export type CreateInitialAdminInput = z.infer<
+  typeof createInitialAdminInputSchema
+>;

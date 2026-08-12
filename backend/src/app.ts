@@ -1,4 +1,5 @@
 import express from "express";
+import { authRouter } from "./routes/auth.js";
 import { checksRouter } from "./routes/checks.js";
 import { menuRouter } from "./routes/menu.js";
 import { ordersRouter } from "./routes/orders.js";
@@ -20,6 +21,7 @@ export function createApp() {
     });
   });
 
+  app.use("/api/auth", authRouter);
   app.use("/api/checks", checksRouter);
   app.use("/api/menu", menuRouter);
   app.use("/api/orders", ordersRouter);
