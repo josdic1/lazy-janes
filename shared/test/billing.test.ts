@@ -4,6 +4,7 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   checkStatusSchema,
+  createCheckInputSchema,
   paymentMethodSchema,
   paymentStatusSchema,
 } from "../src/index.js";
@@ -34,5 +35,64 @@ describe("billing contract", () => {
     for (const method of PAYMENT_METHODS) {
       expect(paymentMethodSchema.parse(method)).toBe(method);
     }
+  });
+});
+
+describe("create check contract", () => {
+  it("accepts whole and split item quantities", () => {
+    const firstItemId =
+      "59cef250-353c-451f-bbba-dba6ff724225";
+    const sharedItemId =
+      "292c45bf-cefb-47d0-899f-b7ded3a5c65b";
+
+    expect(
+      createCheckInputSchema.parse({
+        label: "Seats 1, 6, and 7",
+        items: [
+          {
+            orderItemId: firstItemId,
+            allocatedQuantity: 1,
+          },
+          {
+            orderItemId: sharedItemId,
+            allocatedQuantity: 0.5,
+          },
+        ],
+      }),
+    ).toEqual({
+      partyId: null,
+      label: "Seats 1, 6, and 7",
+      items: [
+        {
+          orderItemId: firstItemId,
+          allocatedQuantity: 1,
+        },
+        {
+          orderItemId: sharedItemId,
+          allocatedQuantity: 0.5,
+        },
+      ],
+    });
+  });
+
+  it("rejects duplicate items on one check", () => {
+    const orderItemId =
+      "59cef250-353c-451f-bbba-dba6ff724225";
+
+    expect(
+      createCheckInputSchema.safeParse({
+        label: "Duplicate",
+        items: [
+          {
+            orderItemId,
+            allocatedQuantity: 0.5,
+          },
+          {
+            orderItemId,
+            allocatedQuantity: 0.5,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });
