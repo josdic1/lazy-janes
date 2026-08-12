@@ -3,6 +3,7 @@ import { checksRouter } from "./routes/checks.js";
 import { menuRouter } from "./routes/menu.js";
 import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
+import { paymentsRouter } from "./routes/payments.js";
 
 export function createApp() {
   const app = express();
@@ -21,6 +22,7 @@ export function createApp() {
   app.use("/api/menu", menuRouter);
   app.use("/api/orders", ordersRouter);
   app.use("/api/parties", partiesRouter);
+  app.use("/api/payments", paymentsRouter);
 
   return app;
 }
