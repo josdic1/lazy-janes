@@ -16,4 +16,19 @@ export const createPartyInputSchema = z.object({
   guestCount: z.number().int().positive(),
 });
 
-export type CreatePartyInput = z.infer<typeof createPartyInputSchema>;
+export type CreatePartyInput = z.infer<
+  typeof createPartyInputSchema
+>;
+
+export const partySchema = z.object({
+  id: z.string().uuid(),
+  guestCount: z.number().int().positive(),
+  status: partyStatusSchema,
+  createdByStaffId: z.string().uuid(),
+  arrivedAt: z.string().datetime(),
+  statusChangedAt: z.string().datetime(),
+  completedAt: z.string().datetime().nullable(),
+  cancelledAt: z.string().datetime().nullable(),
+});
+
+export type Party = z.infer<typeof partySchema>;
