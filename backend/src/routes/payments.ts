@@ -4,6 +4,7 @@ import {
   type PaymentCheckAllocation,
 } from "@lazy-janes/shared";
 import { Router } from "express";
+import type { PoolClient } from "pg";
 import { z } from "zod";
 import { pool } from "../db/pool.js";
 
@@ -459,6 +460,11 @@ paymentsRouter.post("/", async (request, response) => {
       );
     }
 
+    await completePaidParties(
+      client,
+      checkIds,
+    );
+
     await client.query("COMMIT");
 
     response.status(201).json(
@@ -485,3 +491,135 @@ paymentsRouter.post("/", async (request, response) => {
     client.release();
   }
 });
+
+async function completePaidParties(
+  client: PoolClient,
+  checkIds: string[],
+): Promise<void> {
+  const parties = await client.query<{
+    id: string;
+    status: string;
+  }>(
+    `
+      SELECT id, status
+      FROM parties
+      WHERE id IN (
+        SELECT party_id
+        FROM checks
+        WHERE id = ANY($1::uuid[])
+          AND party_id IS NOT NULL
+      )
+      ORDER BY id
+      FOR UPDATE
+    `,
+    [checkIds],
+  );
+
+  for (const party of parties.rows) {
+    if (party.status !== "in_service") {
+      continue;
+    }
+
+    const readiness = await client.query<{
+      has_open_checks: boolean;
+      has_unallocated_items: boolean;
+    }>(
+      `
+        SELECT
+          EXISTS (
+            SELECT 1
+            FROM checks
+            WHERE party_id = $1
+              AND status <> 'closed'
+          ) AS has_open_checks,
+
+          EXISTS (
+            SELECT 1
+            FROM order_items
+            JOIN orders
+              ON orders.id = order_items.order_id
+            LEFT JOIN (
+              SELECT
+                order_item_id,
+                SUM(allocated_quantity) AS allocated_quantity
+              FROM check_items
+              GROUP BY order_item_id
+            ) AS allocations
+              ON allocations.order_item_id = order_items.id
+            WHERE orders.party_id = $1
+              AND orders.cancelled_at IS NULL
+              AND order_items.status <> 'voided'
+              AND COALESCE(
+                allocations.allocated_quantity,
+                0
+              ) < order_items.quantity
+          ) AS has_unallocated_items
+      `,
+      [party.id],
+    );
+
+    const state = readiness.rows[0];
+
+    if (
+      !state ||
+      state.has_open_checks ||
+      state.has_unallocated_items
+    ) {
+      continue;
+    }
+
+    const completed = await client.query<{ id: string }>(
+      `
+        UPDATE parties
+        SET
+          status = 'completed',
+          status_changed_at = now(),
+          completed_at = now()
+        WHERE id = $1
+          AND status = 'in_service'
+        RETURNING id
+      `,
+      [party.id],
+    );
+
+    if (!completed.rows[0]) {
+      continue;
+    }
+
+    await client.query(
+      `
+        UPDATE seating_tables
+        SET released_at = now()
+        WHERE seating_id IN (
+          SELECT id
+          FROM seatings
+          WHERE party_id = $1
+            AND ended_at IS NULL
+        )
+          AND released_at IS NULL
+      `,
+      [party.id],
+    );
+
+    await client.query(
+      `
+        UPDATE seatings
+        SET ended_at = now()
+        WHERE party_id = $1
+          AND ended_at IS NULL
+      `,
+      [party.id],
+    );
+
+    await client.query(
+      `
+        INSERT INTO party_events (
+          party_id,
+          event_type
+        )
+        VALUES ($1, 'completed')
+      `,
+      [party.id],
+    );
+  }
+}

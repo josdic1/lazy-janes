@@ -317,3 +317,338 @@ describe("POST /api/payments", () => {
     }
   });
 });
+
+describe("automatic party completion", () => {
+  it("completes the paid party and releases its table", async () => {
+    const staffId = randomUUID();
+    const sectionId = randomUUID();
+    const tableId = randomUUID();
+    const partyId = randomUUID();
+    const seatingId = randomUUID();
+    const seatingTableId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+    const checkId = randomUUID();
+    let paymentId: string | undefined;
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO staff (id, display_name)
+          VALUES ($1, 'Completion Test Server')
+        `,
+        [staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO sections (id, name)
+          VALUES ($1, $2)
+        `,
+        [sectionId, `Test Section ${sectionId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO dining_tables (
+            id,
+            section_id,
+            label,
+            capacity
+          )
+          VALUES ($1, $2, $3, 4)
+        `,
+        [tableId, sectionId, `Test ${tableId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO parties (
+            id,
+            guest_count,
+            status,
+            created_by_staff_id
+          )
+          VALUES ($1, 2, 'in_service', $2)
+        `,
+        [partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO seatings (
+            id,
+            party_id,
+            seated_by_staff_id
+          )
+          VALUES ($1, $2, $3)
+        `,
+        [seatingId, partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO seating_tables (
+            id,
+            seating_id,
+            dining_table_id
+          )
+          VALUES ($1, $2, $3)
+        `,
+        [seatingTableId, seatingId, tableId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category,
+            price
+          )
+          VALUES ($1, 'Completion Test Meal', 'Test', 10)
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            party_id,
+            fulfillment_type,
+            created_by_staff_id
+          )
+          VALUES ($1, $2, 'dine_in', $3)
+        `,
+        [orderId, partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_staff_id,
+            item_name,
+            unit_price
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Completion Test Meal',
+            10
+          )
+        `,
+        [orderItemId, orderId, menuItemId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO checks (
+            id,
+            party_id,
+            label,
+            status,
+            opened_by_staff_id,
+            subtotal_amount,
+            tax_amount,
+            total_amount,
+            presented_at
+          )
+          VALUES (
+            $1,
+            $2,
+            'Final Check',
+            'presented',
+            $3,
+            10.00,
+            0.66,
+            10.66,
+            now()
+          )
+        `,
+        [checkId, partyId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO check_items (
+            check_id,
+            order_item_id,
+            item_name,
+            allocated_quantity,
+            allocated_amount
+          )
+          VALUES (
+            $1,
+            $2,
+            'Completion Test Meal',
+            1,
+            10.00
+          )
+        `,
+        [checkId, orderItemId],
+      );
+
+      const response = await request(createApp())
+        .post("/api/payments")
+        .set("x-staff-id", staffId)
+        .send({
+          method: "card",
+          allocations: [
+            {
+              checkId,
+              allocatedAmount: 10.66,
+            },
+          ],
+          processorReference: `terminal-${randomUUID()}`,
+        });
+
+      expect(response.status).toBe(201);
+      paymentId = paymentSchema.parse(response.body).id;
+
+      const party = await pool.query<{
+        status: string;
+        completed_at: Date | null;
+      }>(
+        `
+          SELECT status, completed_at
+          FROM parties
+          WHERE id = $1
+        `,
+        [partyId],
+      );
+
+      expect(party.rows[0]?.status).toBe("completed");
+      expect(party.rows[0]?.completed_at).not.toBeNull();
+
+      const seating = await pool.query<{
+        ended_at: Date | null;
+        released_at: Date | null;
+      }>(
+        `
+          SELECT
+            seatings.ended_at,
+            seating_tables.released_at
+          FROM seatings
+          JOIN seating_tables
+            ON seating_tables.seating_id = seatings.id
+          WHERE seatings.id = $1
+        `,
+        [seatingId],
+      );
+
+      expect(seating.rows[0]?.ended_at).not.toBeNull();
+      expect(seating.rows[0]?.released_at).not.toBeNull();
+
+      const events = await pool.query<{
+        event_type: string;
+        actor_staff_id: string | null;
+      }>(
+        `
+          SELECT event_type, actor_staff_id
+          FROM party_events
+          WHERE party_id = $1
+        `,
+        [partyId],
+      );
+
+      expect(events.rows).toEqual([
+        {
+          event_type: "completed",
+          actor_staff_id: null,
+        },
+      ]);
+    } finally {
+      if (paymentId) {
+        await pool.query(
+          "DELETE FROM payment_events WHERE payment_id = $1",
+          [paymentId],
+        );
+
+        await pool.query(
+          `
+            DELETE FROM payment_check_allocations
+            WHERE payment_id = $1
+          `,
+          [paymentId],
+        );
+
+        await pool.query(
+          "DELETE FROM payments WHERE id = $1",
+          [paymentId],
+        );
+      }
+
+      await pool.query(
+        "DELETE FROM check_events WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM check_items WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM checks WHERE id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM party_events WHERE party_id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM seating_tables WHERE seating_id = $1",
+        [seatingId],
+      );
+
+      await pool.query(
+        "DELETE FROM seatings WHERE id = $1",
+        [seatingId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM parties WHERE id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM dining_tables WHERE id = $1",
+        [tableId],
+      );
+
+      await pool.query(
+        "DELETE FROM sections WHERE id = $1",
+        [sectionId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM staff WHERE id = $1",
+        [staffId],
+      );
+    }
+  });
+});
