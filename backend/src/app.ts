@@ -1,4 +1,5 @@
 import express from "express";
+import { checksRouter } from "./routes/checks.js";
 import { menuRouter } from "./routes/menu.js";
 import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
@@ -16,6 +17,7 @@ export function createApp() {
     });
   });
 
+  app.use("/api/checks", checksRouter);
   app.use("/api/menu", menuRouter);
   app.use("/api/orders", ordersRouter);
   app.use("/api/parties", partiesRouter);
