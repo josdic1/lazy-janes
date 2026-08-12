@@ -204,3 +204,183 @@ describe("POST /api/orders", () => {
     }
   });
 });
+
+describe("POST /api/orders/:orderId/fire", () => {
+  it("fires submitted items and creates one kitchen chit", async () => {
+    const staffId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO staff (id, display_name)
+          VALUES ($1, 'Kitchen Fire Test Server')
+        `,
+        [staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category,
+            price
+          )
+          VALUES ($1, 'Fire Test Burger', 'Test', 15.00)
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            fulfillment_type,
+            created_by_staff_id
+          )
+          VALUES ($1, 'takeout', $2)
+        `,
+        [orderId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_staff_id,
+            item_name,
+            unit_price
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Fire Test Burger',
+            15.00
+          )
+        `,
+        [orderItemId, orderId, menuItemId, staffId],
+      );
+
+      const response = await request(createApp())
+        .post(`/api/orders/${orderId}/fire`)
+        .set("x-staff-id", staffId)
+        .send({
+          orderItemIds: [orderItemId],
+          note: "Rush",
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          orderId,
+          printKind: "initial",
+          note: "Rush",
+          items: [
+            {
+              orderItemId,
+              displayOrder: 0,
+            },
+          ],
+        }),
+      );
+
+      const item = await pool.query<{
+        status: string;
+        fired_at: Date | null;
+      }>(
+        `
+          SELECT status, fired_at
+          FROM order_items
+          WHERE id = $1
+        `,
+        [orderItemId],
+      );
+
+      expect(item.rows[0]?.status).toBe("fired");
+      expect(item.rows[0]?.fired_at).toBeInstanceOf(Date);
+
+      const history = await pool.query<{
+        order_item_event: string;
+        chit_event: string;
+      }>(
+        `
+          SELECT
+            order_item_events.event_type
+              AS order_item_event,
+            kitchen_chit_events.event_type
+              AS chit_event
+          FROM kitchen_chit_items
+          JOIN kitchen_chit_events
+            ON kitchen_chit_events.kitchen_chit_id =
+               kitchen_chit_items.kitchen_chit_id
+          JOIN order_item_events
+            ON order_item_events.order_item_id =
+               kitchen_chit_items.order_item_id
+          WHERE kitchen_chit_items.order_item_id = $1
+        `,
+        [orderItemId],
+      );
+
+      expect(history.rows).toEqual([
+        {
+          order_item_event: "fired",
+          chit_event: "printed",
+        },
+      ]);
+    } finally {
+      await pool.query(
+        `
+          DELETE FROM kitchen_chit_events
+          WHERE kitchen_chit_id IN (
+            SELECT kitchen_chit_id
+            FROM kitchen_chit_items
+            WHERE order_item_id = $1
+          )
+        `,
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM kitchen_chit_items WHERE order_item_id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM kitchen_chits WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_item_events WHERE order_item_id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM staff WHERE id = $1",
+        [staffId],
+      );
+    }
+  });
+});
