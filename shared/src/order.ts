@@ -203,3 +203,33 @@ export const deliverOrderItemsInputSchema = z.object({
 export type DeliverOrderItemsInput = z.infer<
   typeof deliverOrderItemsInputSchema
 >;
+
+const correctionReasonSchema = z
+  .string()
+  .trim()
+  .min(1, "A reason is required")
+  .max(500);
+
+export const cancelOrderInputSchema = z.object({
+  reason: correctionReasonSchema,
+});
+
+export type CancelOrderInput = z.infer<
+  typeof cancelOrderInputSchema
+>;
+
+export const voidOrderItemsInputSchema = z.object({
+  orderItemIds: z
+    .array(z.string().uuid())
+    .min(1, "Choose at least one order item")
+    .refine(
+      (orderItemIds) =>
+        new Set(orderItemIds).size === orderItemIds.length,
+      "An order item cannot be selected twice",
+    ),
+  reason: correctionReasonSchema,
+});
+
+export type VoidOrderItemsInput = z.infer<
+  typeof voidOrderItemsInputSchema
+>;
