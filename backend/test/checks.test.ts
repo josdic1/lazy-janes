@@ -229,3 +229,183 @@ describe("POST /api/checks", () => {
     }
   });
 });
+
+describe("POST /api/checks/:checkId/present", () => {
+  it("presents an open check and records the action", async () => {
+    const staffId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+    const checkId = randomUUID();
+
+    try {
+      await pool.query(
+        `
+          INSERT INTO staff (id, display_name)
+          VALUES ($1, 'Present Check Test Server')
+        `,
+        [staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category,
+            price
+          )
+          VALUES ($1, 'Test Coffee', 'Test', 3.00)
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            fulfillment_type,
+            created_by_staff_id
+          )
+          VALUES ($1, 'takeout', $2)
+        `,
+        [orderId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_staff_id,
+            item_name,
+            unit_price
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Test Coffee',
+            3.00
+          )
+        `,
+        [orderItemId, orderId, menuItemId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO checks (
+            id,
+            label,
+            opened_by_staff_id,
+            subtotal_amount,
+            tax_amount,
+            total_amount
+          )
+          VALUES ($1, 'Takeout', $2, 3.00, 0.20, 3.20)
+        `,
+        [checkId, staffId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO check_items (
+            check_id,
+            order_item_id,
+            item_name,
+            allocated_quantity,
+            allocated_amount
+          )
+          VALUES ($1, $2, 'Test Coffee', 1, 3.00)
+        `,
+        [checkId, orderItemId],
+      );
+
+      const response = await request(createApp())
+        .post(`/api/checks/${checkId}/present`)
+        .set("x-staff-id", staffId);
+
+      expect(response.status).toBe(200);
+
+      const check = checkSchema.parse(response.body);
+
+      expect(check.status).toBe("presented");
+      expect(check.presentedAt).not.toBeNull();
+      expect(check.closedAt).toBeNull();
+      expect(check.items).toEqual([
+        expect.objectContaining({
+          orderItemId,
+          itemName: "Test Coffee",
+          allocatedQuantity: 1,
+          allocatedAmount: 3,
+        }),
+      ]);
+
+      const events = await pool.query<{
+        event_type: string;
+        actor_staff_id: string | null;
+      }>(
+        `
+          SELECT event_type, actor_staff_id
+          FROM check_events
+          WHERE check_id = $1
+          ORDER BY occurred_at, id
+        `,
+        [checkId],
+      );
+
+      expect(events.rows).toEqual([
+        {
+          event_type: "presented",
+          actor_staff_id: staffId,
+        },
+      ]);
+
+      const repeated = await request(createApp())
+        .post(`/api/checks/${checkId}/present`)
+        .set("x-staff-id", staffId);
+
+      expect(repeated.status).toBe(409);
+      expect(repeated.body.error).toBe(
+        "Only an open check can be presented",
+      );
+    } finally {
+      await pool.query(
+        "DELETE FROM check_events WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM check_items WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM checks WHERE id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM staff WHERE id = $1",
+        [staffId],
+      );
+    }
+  });
+});

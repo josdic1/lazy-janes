@@ -485,3 +485,320 @@ checksRouter.post("/", async (request, response) => {
     client.release();
   }
 });
+
+const checkIdSchema = z.string().uuid();
+
+checksRouter.post(
+  "/:checkId/present",
+  async (request, response) => {
+    const checkId = checkIdSchema.safeParse(
+      request.params.checkId,
+    );
+
+    if (!checkId.success) {
+      response.status(400).json({
+        error: "Invalid check ID",
+      });
+      return;
+    }
+
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const current = await client.query<{
+        status: Check["status"];
+      }>(
+        `
+          SELECT status
+          FROM checks
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [checkId.data],
+      );
+
+      const currentCheck = current.rows[0];
+
+      if (!currentCheck) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Check not found",
+        });
+        return;
+      }
+
+      if (currentCheck.status !== "open") {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Only an open check can be presented",
+        });
+        return;
+      }
+
+      const updated = await client.query<CheckRow>(
+        `
+          UPDATE checks
+          SET
+            status = 'presented',
+            presented_at = now(),
+            updated_at = now()
+          WHERE id = $1
+          RETURNING
+            id,
+            party_id,
+            label,
+            status,
+            opened_by_staff_id,
+            subtotal_amount,
+            sales_tax_rate,
+            tax_amount,
+            total_amount,
+            presented_at,
+            closed_at,
+            created_at,
+            updated_at
+        `,
+        [checkId.data],
+      );
+
+      const presentedCheck = updated.rows[0];
+
+      if (!presentedCheck) {
+        throw new Error(
+          "Presented check update returned no record",
+        );
+      }
+
+      await client.query(
+        `
+          INSERT INTO check_events (
+            check_id,
+            event_type,
+            actor_kind,
+            actor_staff_id
+          )
+          VALUES ($1, 'presented', 'staff', $2)
+        `,
+        [checkId.data, staffId.data],
+      );
+
+      const items = await client.query<CheckItemRow>(
+        `
+          SELECT
+            id,
+            order_item_id,
+            item_name,
+            allocated_quantity,
+            allocated_amount,
+            created_at
+          FROM check_items
+          WHERE check_id = $1
+          ORDER BY created_at, id
+        `,
+        [checkId.data],
+      );
+
+      await client.query("COMMIT");
+      response.json(
+        toCheck(
+          presentedCheck,
+          items.rows.map(toCheckItem),
+        ),
+      );
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+
+checksRouter.post(
+  "/:checkId/present",
+  async (request, response) => {
+    const checkId = checkIdSchema.safeParse(
+      request.params.checkId,
+    );
+
+    if (!checkId.success) {
+      response.status(400).json({
+        error: "Invalid check ID",
+      });
+      return;
+    }
+
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const current = await client.query<{
+        status: Check["status"];
+      }>(
+        `
+          SELECT status
+          FROM checks
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [checkId.data],
+      );
+
+      const currentCheck = current.rows[0];
+
+      if (!currentCheck) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Check not found",
+        });
+        return;
+      }
+
+      if (currentCheck.status !== "open") {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Only an open check can be presented",
+        });
+        return;
+      }
+
+      const updated = await client.query<CheckRow>(
+        `
+          UPDATE checks
+          SET
+            status = 'presented',
+            presented_at = now(),
+            updated_at = now()
+          WHERE id = $1
+          RETURNING
+            id,
+            party_id,
+            label,
+            status,
+            opened_by_staff_id,
+            subtotal_amount,
+            sales_tax_rate,
+            tax_amount,
+            total_amount,
+            presented_at,
+            closed_at,
+            created_at,
+            updated_at
+        `,
+        [checkId.data],
+      );
+
+      const presentedCheck = updated.rows[0];
+
+      if (!presentedCheck) {
+        throw new Error(
+          "Presented check update returned no record",
+        );
+      }
+
+      await client.query(
+        `
+          INSERT INTO check_events (
+            check_id,
+            event_type,
+            actor_kind,
+            actor_staff_id
+          )
+          VALUES ($1, 'presented', 'staff', $2)
+        `,
+        [checkId.data, staffId.data],
+      );
+
+      const items = await client.query<CheckItemRow>(
+        `
+          SELECT
+            id,
+            order_item_id,
+            item_name,
+            allocated_quantity,
+            allocated_amount,
+            created_at
+          FROM check_items
+          WHERE check_id = $1
+          ORDER BY created_at, id
+        `,
+        [checkId.data],
+      );
+
+      await client.query("COMMIT");
+      response.json(
+        toCheck(
+          presentedCheck,
+          items.rows.map(toCheckItem),
+        ),
+      );
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
