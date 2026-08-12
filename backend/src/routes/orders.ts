@@ -1,6 +1,7 @@
 import {
   createOrderInputSchema,
   fireOrderInputSchema,
+  markKitchenItemsReadyInputSchema,
   type KitchenChit,
   type Order,
   type OrderItem,
@@ -1003,6 +1004,346 @@ ordersRouter.post(
       };
 
       response.status(201).json(chit);
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+ordersRouter.post(
+  "/:orderId/ready",
+  async (request, response) => {
+    const orderId = z
+      .string()
+      .uuid()
+      .safeParse(request.params.orderId);
+
+    const input =
+      markKitchenItemsReadyInputSchema.safeParse(request.body);
+
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!orderId.success) {
+      response.status(400).json({
+        error: "Invalid order ID",
+      });
+      return;
+    }
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid ready action",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const order = await client.query<{
+        cancelled_at: Date | null;
+      }>(
+        `
+          SELECT cancelled_at
+          FROM orders
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [orderId.data],
+      );
+
+      const currentOrder = order.rows[0];
+
+      if (!currentOrder) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Order not found",
+        });
+        return;
+      }
+
+      if (currentOrder.cancelled_at !== null) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "A cancelled order cannot be marked ready",
+        });
+        return;
+      }
+
+      const selectedItems = await client.query<{
+        id: string;
+        status: OrderItem["status"];
+      }>(
+        `
+          SELECT id, status
+          FROM order_items
+          WHERE order_id = $1
+            AND id = ANY($2::uuid[])
+          FOR UPDATE
+        `,
+        [orderId.data, input.data.orderItemIds],
+      );
+
+      if (
+        selectedItems.rowCount !==
+        input.data.orderItemIds.length
+      ) {
+        await client.query("ROLLBACK");
+        response.status(400).json({
+          error:
+            "One or more order items do not belong to this order",
+        });
+        return;
+      }
+
+      if (
+        selectedItems.rows.some(
+          (item) => item.status !== "fired",
+        )
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Only fired items can be marked ready",
+        });
+        return;
+      }
+
+      await client.query(
+        `
+          UPDATE order_items
+          SET
+            status = 'ready',
+            ready_at = now()
+          WHERE order_id = $1
+            AND id = ANY($2::uuid[])
+        `,
+        [orderId.data, input.data.orderItemIds],
+      );
+
+      await client.query(
+        `
+          INSERT INTO order_item_events (
+            order_item_id,
+            event_type,
+            actor_kind,
+            actor_staff_id
+          )
+          SELECT
+            selected.order_item_id,
+            'ready',
+            'staff',
+            $2
+          FROM unnest($1::uuid[])
+            AS selected(order_item_id)
+        `,
+        [input.data.orderItemIds, staffId.data],
+      );
+
+      await client.query("COMMIT");
+      response.status(204).send();
+    } catch (error: unknown) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+ordersRouter.post(
+  "/:orderId/ready",
+  async (request, response) => {
+    const orderId = z
+      .string()
+      .uuid()
+      .safeParse(request.params.orderId);
+
+    const input =
+      markKitchenItemsReadyInputSchema.safeParse(request.body);
+
+    const staffId = staffIdSchema.safeParse(
+      request.header("x-staff-id"),
+    );
+
+    if (!orderId.success) {
+      response.status(400).json({
+        error: "Invalid order ID",
+      });
+      return;
+    }
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid ready action",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    if (!staffId.success) {
+      response.status(401).json({
+        error: "A valid staff identity is required",
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const staff = await client.query<{ id: string }>(
+        `
+          SELECT id
+          FROM staff
+          WHERE id = $1
+            AND is_active = true
+        `,
+        [staffId.data],
+      );
+
+      if (!staff.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(403).json({
+          error: "Active staff member not found",
+        });
+        return;
+      }
+
+      const order = await client.query<{
+        cancelled_at: Date | null;
+      }>(
+        `
+          SELECT cancelled_at
+          FROM orders
+          WHERE id = $1
+          FOR UPDATE
+        `,
+        [orderId.data],
+      );
+
+      const currentOrder = order.rows[0];
+
+      if (!currentOrder) {
+        await client.query("ROLLBACK");
+        response.status(404).json({
+          error: "Order not found",
+        });
+        return;
+      }
+
+      if (currentOrder.cancelled_at !== null) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "A cancelled order cannot be marked ready",
+        });
+        return;
+      }
+
+      const selectedItems = await client.query<{
+        id: string;
+        status: OrderItem["status"];
+      }>(
+        `
+          SELECT id, status
+          FROM order_items
+          WHERE order_id = $1
+            AND id = ANY($2::uuid[])
+          FOR UPDATE
+        `,
+        [orderId.data, input.data.orderItemIds],
+      );
+
+      if (
+        selectedItems.rowCount !==
+        input.data.orderItemIds.length
+      ) {
+        await client.query("ROLLBACK");
+        response.status(400).json({
+          error:
+            "One or more order items do not belong to this order",
+        });
+        return;
+      }
+
+      if (
+        selectedItems.rows.some(
+          (item) => item.status !== "fired",
+        )
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Only fired items can be marked ready",
+        });
+        return;
+      }
+
+      await client.query(
+        `
+          UPDATE order_items
+          SET
+            status = 'ready',
+            ready_at = now()
+          WHERE order_id = $1
+            AND id = ANY($2::uuid[])
+        `,
+        [orderId.data, input.data.orderItemIds],
+      );
+
+      await client.query(
+        `
+          INSERT INTO order_item_events (
+            order_item_id,
+            event_type,
+            actor_kind,
+            actor_staff_id
+          )
+          SELECT
+            selected.order_item_id,
+            'ready',
+            'staff',
+            $2
+          FROM unnest($1::uuid[])
+            AS selected(order_item_id)
+        `,
+        [input.data.orderItemIds, staffId.data],
+      );
+
+      await client.query("COMMIT");
+      response.status(204).send();
     } catch (error: unknown) {
       await client.query("ROLLBACK");
       throw error;
