@@ -3,6 +3,7 @@ import {
   FULFILLMENT_TYPES,
   ORDER_ITEM_STATUSES,
   createOrderInputSchema,
+  fireOrderInputSchema,
   orderSchema,
   fulfillmentTypeSchema,
   orderItemStatusSchema,
@@ -142,5 +143,33 @@ describe("order response", () => {
     };
 
     expect(orderSchema.parse(order)).toEqual(order);
+  });
+});
+
+describe("fire order contract", () => {
+  it("requires unique submitted item IDs", () => {
+    const orderItemId =
+      "629836bb-811f-40dd-b686-61136c981597";
+
+    expect(
+      fireOrderInputSchema.parse({
+        orderItemIds: [orderItemId],
+      }),
+    ).toEqual({
+      orderItemIds: [orderItemId],
+      note: null,
+    });
+
+    expect(
+      fireOrderInputSchema.safeParse({
+        orderItemIds: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      fireOrderInputSchema.safeParse({
+        orderItemIds: [orderItemId, orderItemId],
+      }).success,
+    ).toBe(false);
   });
 });

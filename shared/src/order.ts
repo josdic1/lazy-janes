@@ -166,3 +166,25 @@ export const orderSchema = z.object({
 });
 
 export type Order = z.infer<typeof orderSchema>;
+
+export const fireOrderInputSchema = z.object({
+  orderItemIds: z
+    .array(z.string().uuid())
+    .min(1, "Choose at least one order item")
+    .refine(
+      (orderItemIds) =>
+        new Set(orderItemIds).size === orderItemIds.length,
+      "An order item cannot be fired twice",
+    ),
+  note: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .nullable()
+    .default(null),
+});
+
+export type FireOrderInput = z.infer<
+  typeof fireOrderInputSchema
+>;
