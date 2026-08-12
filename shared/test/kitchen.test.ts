@@ -3,6 +3,7 @@ import {
   KITCHEN_CHIT_PRINT_KINDS,
   kitchenChitPrintKindSchema,
   kitchenChitSchema,
+  markKitchenItemsReadyInputSchema,
 } from "../src/index.js";
 
 describe("kitchen chit contract", () => {
@@ -41,6 +42,33 @@ describe("kitchen chit contract", () => {
       kitchenChitSchema.safeParse({
         ...chit,
         items: [],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("mark kitchen items ready contract", () => {
+  it("requires unique order item IDs", () => {
+    const orderItemId =
+      "bda780db-da46-4167-a129-e647881299f1";
+
+    expect(
+      markKitchenItemsReadyInputSchema.parse({
+        orderItemIds: [orderItemId],
+      }),
+    ).toEqual({
+      orderItemIds: [orderItemId],
+    });
+
+    expect(
+      markKitchenItemsReadyInputSchema.safeParse({
+        orderItemIds: [],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      markKitchenItemsReadyInputSchema.safeParse({
+        orderItemIds: [orderItemId, orderItemId],
       }).success,
     ).toBe(false);
   });

@@ -37,3 +37,18 @@ export const kitchenChitSchema = z.object({
 export type KitchenChit = z.infer<
   typeof kitchenChitSchema
 >;
+
+export const markKitchenItemsReadyInputSchema = z.object({
+  orderItemIds: z
+    .array(z.string().uuid())
+    .min(1, "Choose at least one order item")
+    .refine(
+      (orderItemIds) =>
+        new Set(orderItemIds).size === orderItemIds.length,
+      "An order item cannot be selected twice",
+    ),
+});
+
+export type MarkKitchenItemsReadyInput = z.infer<
+  typeof markKitchenItemsReadyInputSchema
+>;
