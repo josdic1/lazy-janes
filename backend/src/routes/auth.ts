@@ -4,7 +4,11 @@ import {
   type UserIdentity,
   type UserLoginOption,
 } from "@lazy-janes/shared";
-import { Router } from "express";
+import {
+  Router,
+  type Request,
+  type Response,
+} from "express";
 import {
   createSessionToken,
   hashSessionToken,
@@ -32,9 +36,7 @@ type LoginUserRow = {
 };
 
 function setSessionCookie(
-  response: Parameters<typeof authRouter.post>[1] extends never
-    ? never
-    : import("express").Response,
+  response: Response,
   token: string,
 ) {
   response.cookie(SESSION_COOKIE_NAME, token, {
@@ -44,6 +46,39 @@ function setSessionCookie(
     path: "/",
     maxAge: SESSION_LIFETIME_MS,
   });
+}
+
+
+function clearSessionCookie(response: Response) {
+  response.clearCookie(SESSION_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "strict",
+    secure: environment.NODE_ENV === "production",
+    path: "/",
+  });
+}
+
+function readSessionToken(
+  request: Request,
+): string | null {
+  const cookieHeader = request.headers.cookie;
+
+  if (!cookieHeader) {
+    return null;
+  }
+
+  const prefix = `${SESSION_COOKIE_NAME}=`;
+
+  for (const part of cookieHeader.split(";")) {
+    const cookie = part.trim();
+
+    if (cookie.startsWith(prefix)) {
+      const token = cookie.slice(prefix.length);
+      return token || null;
+    }
+  }
+
+  return null;
 }
 
 authRouter.get("/setup", async (_request, response) => {
@@ -421,3 +456,143 @@ authRouter.post("/login", async (request, response) => {
     client.release();
   }
 });
+
+
+authRouter.get("/me", async (request, response) => {
+  const token = readSessionToken(request);
+
+  if (!token) {
+    response.status(401).json({
+      error: "Authentication required",
+    });
+    return;
+  }
+
+  const tokenHash = hashSessionToken(token);
+
+  const result = await pool.query<{
+    session_id: string;
+    user_id: string;
+    display_name: string;
+    roles: string[];
+  }>(
+    `
+      SELECT
+        s.id AS session_id,
+        u.id AS user_id,
+        u.display_name,
+        COALESCE(
+          array_agg(
+            ur.role_code
+            ORDER BY ur.role_code
+          ) FILTER (
+            WHERE ur.role_code IS NOT NULL
+          ),
+          ARRAY[]::text[]
+        ) AS roles
+      FROM user_sessions s
+      JOIN users u
+        ON u.id = s.user_id
+      LEFT JOIN user_roles ur
+        ON ur.user_id = u.id
+      WHERE s.token_hash = $1
+        AND s.revoked_at IS NULL
+        AND s.expires_at > now()
+        AND u.is_active = true
+      GROUP BY
+        s.id,
+        u.id,
+        u.display_name
+    `,
+    [tokenHash],
+  );
+
+  const authenticated = result.rows[0];
+
+  if (!authenticated) {
+    clearSessionCookie(response);
+
+    response.status(401).json({
+      error: "Authentication required",
+    });
+    return;
+  }
+
+  await pool.query(
+    `
+      UPDATE user_sessions
+      SET last_seen_at = now()
+      WHERE id = $1
+    `,
+    [authenticated.session_id],
+  );
+
+  const identity: UserIdentity = {
+    id: authenticated.user_id,
+    displayName: authenticated.display_name,
+    roles: authenticated.roles,
+  };
+
+  response.json(identity);
+});
+
+authRouter.post(
+  "/logout",
+  async (request, response) => {
+    const token = readSessionToken(request);
+
+    if (!token) {
+      clearSessionCookie(response);
+      response.status(204).end();
+      return;
+    }
+
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const sessionResult = await client.query<{
+        id: string;
+        user_id: string;
+      }>(
+        `
+          UPDATE user_sessions
+          SET revoked_at = now()
+          WHERE token_hash = $1
+            AND revoked_at IS NULL
+          RETURNING
+            id,
+            user_id
+        `,
+        [hashSessionToken(token)],
+      );
+
+      const session = sessionResult.rows[0];
+
+      if (session) {
+        await client.query(
+          `
+            INSERT INTO user_auth_events (
+              user_id,
+              session_id,
+              event_type
+            )
+            VALUES ($1, $2, 'logout')
+          `,
+          [session.user_id, session.id],
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    clearSessionCookie(response);
+    response.status(204).end();
+  },
+);
