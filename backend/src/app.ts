@@ -4,6 +4,7 @@ import { menuRouter } from "./routes/menu.js";
 import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
 import { paymentsRouter } from "./routes/payments.js";
+import { registerRouter } from "./routes/register.js";
 
 export function createApp() {
   const app = express();
@@ -23,6 +24,7 @@ export function createApp() {
   app.use("/api/orders", ordersRouter);
   app.use("/api/parties", partiesRouter);
   app.use("/api/payments", paymentsRouter);
+  app.use("/api/register", registerRouter);
 
   return app;
 }
