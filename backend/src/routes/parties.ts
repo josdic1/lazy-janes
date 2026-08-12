@@ -316,7 +316,9 @@ partiesRouter.post(
             arrived_at,
             status_changed_at,
             completed_at,
-            cancelled_at
+            cancelled_at,
+            cancelled_by_staff_id,
+            cancellation_reason
         `,
         [partyId.data],
       );

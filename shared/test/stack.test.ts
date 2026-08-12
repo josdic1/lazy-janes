@@ -47,7 +47,7 @@ describe("Stack read contract", () => {
           ],
           events: [
             {
-              id: 1,
+              id: "1",
               eventType: "arrived" as const,
               actorStaffId:
                 "52779ea7-bfc8-4180-9606-07c68b7c7455",

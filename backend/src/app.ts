@@ -5,6 +5,7 @@ import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { registerRouter } from "./routes/register.js";
+import { stackRouter } from "./routes/stack.js";
 
 export function createApp() {
   const app = express();
@@ -25,6 +26,7 @@ export function createApp() {
   app.use("/api/parties", partiesRouter);
   app.use("/api/payments", paymentsRouter);
   app.use("/api/register", registerRouter);
+  app.use("/api/stack", stackRouter);
 
   return app;
 }
