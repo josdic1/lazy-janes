@@ -56,3 +56,33 @@ export const createCheckInputSchema = z
 export type CreateCheckInput = z.infer<
   typeof createCheckInputSchema
 >;
+
+export const checkItemSchema = z.object({
+  id: z.string().uuid(),
+  orderItemId: z.string().uuid(),
+  itemName: z.string(),
+  allocatedQuantity: z.number().positive(),
+  allocatedAmount: z.number().nonnegative(),
+  createdAt: z.string().datetime(),
+});
+
+export type CheckItem = z.infer<typeof checkItemSchema>;
+
+export const checkSchema = z.object({
+  id: z.string().uuid(),
+  partyId: z.string().uuid().nullable(),
+  label: z.string(),
+  status: checkStatusSchema,
+  openedByStaffId: z.string().uuid(),
+  subtotalAmount: z.number().nonnegative(),
+  salesTaxRate: z.number().min(0).max(1),
+  taxAmount: z.number().nonnegative(),
+  totalAmount: z.number().nonnegative(),
+  presentedAt: z.string().datetime().nullable(),
+  closedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  items: z.array(checkItemSchema),
+});
+
+export type Check = z.infer<typeof checkSchema>;

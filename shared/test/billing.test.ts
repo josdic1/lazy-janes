@@ -3,6 +3,7 @@ import {
   CHECK_STATUSES,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
+  checkSchema,
   checkStatusSchema,
   createCheckInputSchema,
   paymentMethodSchema,
@@ -18,7 +19,9 @@ describe("billing contract", () => {
 
   it("derives paid and records reopen as an action", () => {
     expect(checkStatusSchema.safeParse("paid").success).toBe(false);
-    expect(checkStatusSchema.safeParse("reopened").success).toBe(false);
+    expect(
+      checkStatusSchema.safeParse("reopened").success,
+    ).toBe(false);
   });
 
   it("accepts every payment status", () => {
@@ -28,7 +31,9 @@ describe("billing contract", () => {
   });
 
   it("keeps refunds separate from payment status", () => {
-    expect(paymentStatusSchema.safeParse("refunded").success).toBe(false);
+    expect(
+      paymentStatusSchema.safeParse("refunded").success,
+    ).toBe(false);
   });
 
   it("accepts cash and card payments", () => {
@@ -94,5 +99,39 @@ describe("create check contract", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("check response contract", () => {
+  it("preserves money, tax rate, and allocated items", () => {
+    const check = {
+      id: "b5e6b80d-bdf6-4c50-86ba-a763b49c665e",
+      partyId: "7370e33a-a4c8-4183-8f49-984a59aa09c2",
+      label: "Seats 1 and 2",
+      status: "open" as const,
+      openedByStaffId:
+        "1994b589-470a-4d15-930f-cd59bc149c15",
+      subtotalAmount: 16.95,
+      salesTaxRate: 0.06625,
+      taxAmount: 1.12,
+      totalAmount: 18.07,
+      presentedAt: null,
+      closedAt: null,
+      createdAt: "2026-08-12T15:00:00.000Z",
+      updatedAt: "2026-08-12T15:00:00.000Z",
+      items: [
+        {
+          id: "a8403b15-a551-4633-afd6-401f9751ed78",
+          orderItemId:
+            "59cef250-353c-451f-bbba-dba6ff724225",
+          itemName: "Drunken Chicken",
+          allocatedQuantity: 1,
+          allocatedAmount: 16.95,
+          createdAt: "2026-08-12T15:00:00.000Z",
+        },
+      ],
+    };
+
+    expect(checkSchema.parse(check)).toEqual(check);
   });
 });
