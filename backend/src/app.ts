@@ -6,6 +6,7 @@ import { ordersRouter } from "./routes/orders.js";
 import { partiesRouter } from "./routes/parties.js";
 import { paymentsRouter } from "./routes/payments.js";
 import { registerRouter } from "./routes/register.js";
+import { usersRouter } from "./routes/users.js";
 import { stackRouter } from "./routes/stack.js";
 
 export function createApp() {
@@ -28,6 +29,7 @@ export function createApp() {
   app.use("/api/parties", partiesRouter);
   app.use("/api/payments", paymentsRouter);
   app.use("/api/register", registerRouter);
+  app.use("/api/users", usersRouter);
   app.use("/api/stack", stackRouter);
 
   return app;

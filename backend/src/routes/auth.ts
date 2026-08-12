@@ -4,25 +4,24 @@ import {
   type UserIdentity,
   type UserLoginOption,
 } from "@lazy-janes/shared";
-import {
-  Router,
-  type Request,
-  type Response,
-} from "express";
+import { Router } from "express";
 import {
   createSessionToken,
   hashSessionToken,
   hashUserPin,
   verifyUserPin,
 } from "../auth/security.js";
+import {
+  clearSessionCookie,
+  readSessionToken,
+  resolveAuthenticatedSession,
+  setSessionCookie,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
-import { environment } from "../env.js";
 
 export const authRouter = Router();
 
 
-const SESSION_COOKIE_NAME = "lazy_janes_session";
-const SESSION_LIFETIME_MS = 12 * 60 * 60 * 1000;
 const MAX_FAILED_PIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 5;
 
@@ -35,51 +34,9 @@ type LoginUserRow = {
   locked_until: Date | null;
 };
 
-function setSessionCookie(
-  response: Response,
-  token: string,
-) {
-  response.cookie(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: environment.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_LIFETIME_MS,
-  });
-}
 
 
-function clearSessionCookie(response: Response) {
-  response.clearCookie(SESSION_COOKIE_NAME, {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: environment.NODE_ENV === "production",
-    path: "/",
-  });
-}
 
-function readSessionToken(
-  request: Request,
-): string | null {
-  const cookieHeader = request.headers.cookie;
-
-  if (!cookieHeader) {
-    return null;
-  }
-
-  const prefix = `${SESSION_COOKIE_NAME}=`;
-
-  for (const part of cookieHeader.split(";")) {
-    const cookie = part.trim();
-
-    if (cookie.startsWith(prefix)) {
-      const token = cookie.slice(prefix.length);
-      return token || null;
-    }
-  }
-
-  return null;
-}
 
 authRouter.get("/setup", async (_request, response) => {
   const result = await pool.query<{ requires_setup: boolean }>(`
@@ -459,57 +416,10 @@ authRouter.post("/login", async (request, response) => {
 
 
 authRouter.get("/me", async (request, response) => {
-  const token = readSessionToken(request);
+  const session =
+    await resolveAuthenticatedSession(request);
 
-  if (!token) {
-    response.status(401).json({
-      error: "Authentication required",
-    });
-    return;
-  }
-
-  const tokenHash = hashSessionToken(token);
-
-  const result = await pool.query<{
-    session_id: string;
-    user_id: string;
-    display_name: string;
-    roles: string[];
-  }>(
-    `
-      SELECT
-        s.id AS session_id,
-        u.id AS user_id,
-        u.display_name,
-        COALESCE(
-          array_agg(
-            ur.role_code
-            ORDER BY ur.role_code
-          ) FILTER (
-            WHERE ur.role_code IS NOT NULL
-          ),
-          ARRAY[]::text[]
-        ) AS roles
-      FROM user_sessions s
-      JOIN users u
-        ON u.id = s.user_id
-      LEFT JOIN user_roles ur
-        ON ur.user_id = u.id
-      WHERE s.token_hash = $1
-        AND s.revoked_at IS NULL
-        AND s.expires_at > now()
-        AND u.is_active = true
-      GROUP BY
-        s.id,
-        u.id,
-        u.display_name
-    `,
-    [tokenHash],
-  );
-
-  const authenticated = result.rows[0];
-
-  if (!authenticated) {
+  if (!session) {
     clearSessionCookie(response);
 
     response.status(401).json({
@@ -518,22 +428,7 @@ authRouter.get("/me", async (request, response) => {
     return;
   }
 
-  await pool.query(
-    `
-      UPDATE user_sessions
-      SET last_seen_at = now()
-      WHERE id = $1
-    `,
-    [authenticated.session_id],
-  );
-
-  const identity: UserIdentity = {
-    id: authenticated.user_id,
-    displayName: authenticated.display_name,
-    roles: authenticated.roles,
-  };
-
-  response.json(identity);
+  response.json(session.user);
 });
 
 authRouter.post(
