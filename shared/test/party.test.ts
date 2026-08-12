@@ -4,6 +4,7 @@ import {
   createPartyInputSchema,
   partySchema,
   partyStatusSchema,
+  seatPartyInputSchema,
 } from "../src/index.js";
 
 describe("party contract", () => {
@@ -46,5 +47,27 @@ describe("party contract", () => {
     };
 
     expect(partySchema.parse(party)).toEqual(party);
+  });
+
+  it("requires at least one unique table", () => {
+    const tableId =
+      "546f466b-d05c-43c2-9dc8-b50967572269";
+
+    expect(
+      seatPartyInputSchema.parse({ tableIds: [tableId] }),
+    ).toEqual({
+      tableIds: [tableId],
+    });
+
+    expect(
+      seatPartyInputSchema.safeParse({ tableIds: [] })
+        .success,
+    ).toBe(false);
+
+    expect(
+      seatPartyInputSchema.safeParse({
+        tableIds: [tableId, tableId],
+      }).success,
+    ).toBe(false);
   });
 });

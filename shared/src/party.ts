@@ -20,6 +20,21 @@ export type CreatePartyInput = z.infer<
   typeof createPartyInputSchema
 >;
 
+export const seatPartyInputSchema = z.object({
+  tableIds: z
+    .array(z.string().uuid())
+    .min(1, "Choose at least one table")
+    .refine(
+      (tableIds) =>
+        new Set(tableIds).size === tableIds.length,
+      "A table cannot be assigned twice",
+    ),
+});
+
+export type SeatPartyInput = z.infer<
+  typeof seatPartyInputSchema
+>;
+
 export const partySchema = z.object({
   id: z.string().uuid(),
   guestCount: z.number().int().positive(),
