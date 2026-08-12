@@ -6,6 +6,7 @@ import {
   checkSchema,
   checkStatusSchema,
   createCheckInputSchema,
+  takePaymentInputSchema,
   paymentMethodSchema,
   paymentStatusSchema,
 } from "../src/index.js";
@@ -133,5 +134,107 @@ describe("check response contract", () => {
     };
 
     expect(checkSchema.parse(check)).toEqual(check);
+  });
+});
+
+describe("take payment contract", () => {
+  const checkId =
+    "b5e6b80d-bdf6-4c50-86ba-a763b49c665e";
+
+  it("accepts cash and derives the default tip", () => {
+    expect(
+      takePaymentInputSchema.parse({
+        method: "cash",
+        allocations: [
+          {
+            checkId,
+            allocatedAmount: 18.07,
+          },
+        ],
+        cashReceivedAmount: 20,
+      }),
+    ).toEqual({
+      method: "cash",
+      allocations: [
+        {
+          checkId,
+          allocatedAmount: 18.07,
+        },
+      ],
+      tipAmount: 0,
+      cashReceivedAmount: 20,
+    });
+  });
+
+  it("rejects insufficient cash", () => {
+    expect(
+      takePaymentInputSchema.safeParse({
+        method: "cash",
+        allocations: [
+          {
+            checkId,
+            allocatedAmount: 18.07,
+          },
+        ],
+        tipAmount: 2,
+        cashReceivedAmount: 20,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires a card processor reference", () => {
+    expect(
+      takePaymentInputSchema.safeParse({
+        method: "card",
+        allocations: [
+          {
+            checkId,
+            allocatedAmount: 18.07,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      takePaymentInputSchema.parse({
+        method: "card",
+        allocations: [
+          {
+            checkId,
+            allocatedAmount: 18.07,
+          },
+        ],
+        processorReference: "terminal-transaction-123",
+      }),
+    ).toEqual({
+      method: "card",
+      allocations: [
+        {
+          checkId,
+          allocatedAmount: 18.07,
+        },
+      ],
+      tipAmount: 0,
+      processorReference: "terminal-transaction-123",
+    });
+  });
+
+  it("rejects duplicate check allocations", () => {
+    expect(
+      takePaymentInputSchema.safeParse({
+        method: "cash",
+        allocations: [
+          {
+            checkId,
+            allocatedAmount: 10,
+          },
+          {
+            checkId,
+            allocatedAmount: 8.07,
+          },
+        ],
+        cashReceivedAmount: 20,
+      }).success,
+    ).toBe(false);
   });
 });

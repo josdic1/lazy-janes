@@ -86,3 +86,72 @@ export const checkSchema = z.object({
 });
 
 export type Check = z.infer<typeof checkSchema>;
+
+export const paymentAllocationInputSchema = z.object({
+  checkId: z.string().uuid(),
+  allocatedAmount: z
+    .number()
+    .positive()
+    .multipleOf(0.01),
+});
+
+const paymentAllocationsSchema = z
+  .array(paymentAllocationInputSchema)
+  .min(1, "Choose at least one check")
+  .refine(
+    (allocations) =>
+      new Set(
+        allocations.map((allocation) => allocation.checkId),
+      ).size === allocations.length,
+    "A check cannot appear twice in one payment",
+  );
+
+const tipAmountSchema = z
+  .number()
+  .nonnegative()
+  .multipleOf(0.01)
+  .default(0);
+
+const cashPaymentInputSchema = z
+  .object({
+    method: z.literal("cash"),
+    allocations: paymentAllocationsSchema,
+    tipAmount: tipAmountSchema,
+    cashReceivedAmount: z
+      .number()
+      .positive()
+      .multipleOf(0.01),
+  })
+  .refine(
+    (payment) =>
+      payment.cashReceivedAmount >=
+      payment.allocations.reduce(
+        (total, allocation) =>
+          total + allocation.allocatedAmount,
+        payment.tipAmount,
+      ),
+    {
+      message:
+        "Cash received must cover the payment and tip",
+      path: ["cashReceivedAmount"],
+    },
+  );
+
+const cardPaymentInputSchema = z.object({
+  method: z.literal("card"),
+  allocations: paymentAllocationsSchema,
+  tipAmount: tipAmountSchema,
+  processorReference: z.string().trim().min(1).max(200),
+});
+
+export const takePaymentInputSchema = z.discriminatedUnion(
+  "method",
+  [
+    cashPaymentInputSchema,
+    cardPaymentInputSchema,
+  ],
+);
+
+export type TakePaymentInput = z.infer<
+  typeof takePaymentInputSchema
+>;
