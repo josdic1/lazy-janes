@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { drawerSessionSchema } from "@lazy-janes/shared";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -15,24 +17,21 @@ describe("register API", () => {
     let drawerSessionId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Register Test User')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Register Test Manager",
+          roles: ["manager"],
+        });
 
-      const initiallyClosed = await request(createApp())
-        .get("/api/register/current")
-        .set("x-user-id", userId);
+      const initiallyClosed = await agent
+        .get("/api/register/current");
 
       expect(initiallyClosed.status).toBe(200);
       expect(initiallyClosed.body).toBeNull();
 
-      const opened = await request(createApp())
+      const opened = await agent
         .post("/api/register/open")
-        .set("x-user-id", userId)
         .send({
           openingCashAmount: 150,
         });
@@ -47,9 +46,8 @@ describe("register API", () => {
       expect(openDrawer.openingCashAmount).toBe(150);
       expect(openDrawer.closedAt).toBeNull();
 
-      const duplicate = await request(createApp())
+      const duplicate = await agent
         .post("/api/register/open")
-        .set("x-user-id", userId)
         .send({
           openingCashAmount: 100,
         });
@@ -59,18 +57,16 @@ describe("register API", () => {
         "A drawer is already open",
       );
 
-      const current = await request(createApp())
-        .get("/api/register/current")
-        .set("x-user-id", userId);
+      const current = await agent
+        .get("/api/register/current");
 
       expect(current.status).toBe(200);
       expect(
         drawerSessionSchema.parse(current.body).id,
       ).toBe(drawerSessionId);
 
-      const closed = await request(createApp())
+      const closed = await agent
         .post("/api/register/close")
-        .set("x-user-id", userId)
         .send({
           countedCashAmount: 149.5,
         });
@@ -87,9 +83,8 @@ describe("register API", () => {
       expect(closedDrawer.closedByUserId).toBe(userId);
       expect(closedDrawer.closedAt).not.toBeNull();
 
-      const afterClose = await request(createApp())
-        .get("/api/register/current")
-        .set("x-user-id", userId);
+      const afterClose = await agent
+        .get("/api/register/current");
 
       expect(afterClose.status).toBe(200);
       expect(afterClose.body).toBeNull();
@@ -141,10 +136,7 @@ describe("register API", () => {
         );
       }
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });

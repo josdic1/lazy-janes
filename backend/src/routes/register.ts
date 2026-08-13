@@ -4,7 +4,11 @@ import {
   type DrawerSession,
 } from "@lazy-janes/shared";
 import { Router } from "express";
-import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type DrawerSessionRow = {
@@ -18,8 +22,6 @@ type DrawerSessionRow = {
   variance_amount: string | null;
   closed_at: Date | null;
 };
-
-const userIdSchema = z.string().uuid();
 
 const drawerColumns = `
   id,
@@ -60,19 +62,19 @@ function toDrawerSession(
 
 export const registerRouter = Router();
 
+registerRouter.use(requireAuthenticatedUser);
+
 registerRouter.get(
   "/current",
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const user = await pool.query<{ id: string }>(
       `
@@ -81,7 +83,7 @@ registerRouter.get(
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!user.rows[0]) {
@@ -109,13 +111,15 @@ registerRouter.get(
 
 registerRouter.post(
   "/open",
+  requireAnyRole(
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const input = openDrawerInputSchema.safeParse(
       request.body,
     );
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!input.success) {
       response.status(400).json({
@@ -125,12 +129,6 @@ registerRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const client = await pool.connect();
 
@@ -144,7 +142,7 @@ registerRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -164,7 +162,7 @@ registerRouter.post(
           VALUES ($1, $2)
           RETURNING ${drawerColumns}
         `,
-        [userId.data, input.data.openingCashAmount],
+        [userId, input.data.openingCashAmount],
       );
 
       const drawer = inserted.rows[0];
@@ -189,7 +187,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.openingCashAmount,
-          userId.data,
+          userId,
         ],
       );
 
@@ -217,7 +215,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.openingCashAmount,
-          userId.data,
+          userId,
           cashCountId,
         ],
       );
@@ -250,13 +248,15 @@ registerRouter.post(
 
 registerRouter.post(
   "/close",
+  requireAnyRole(
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const input = closeDrawerInputSchema.safeParse(
       request.body,
     );
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!input.success) {
       response.status(400).json({
@@ -266,12 +266,6 @@ registerRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const client = await pool.connect();
 
@@ -285,7 +279,7 @@ registerRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -380,7 +374,7 @@ registerRouter.post(
         [
           drawer.id,
           input.data.countedCashAmount,
-          userId.data,
+          userId,
         ],
       );
 
@@ -406,7 +400,7 @@ registerRouter.post(
         `,
         [
           drawer.id,
-          userId.data,
+          userId,
           expectedCashAmount,
           input.data.countedCashAmount,
           varianceAmount,
@@ -438,7 +432,7 @@ registerRouter.post(
           drawer.id,
           input.data.countedCashAmount,
           cashCountId,
-          userId.data,
+          userId,
         ],
       );
 
