@@ -2,8 +2,79 @@ import { randomUUID } from "node:crypto";
 import { partySchema } from "@lazy-janes/shared";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
+import { hashUserPin } from "../src/auth/security.js";
 import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+
+const TEST_PIN = "4826";
+
+async function createAuthenticatedHost(
+  userId: string,
+  displayName: string,
+) {
+  await pool.query(
+    `
+      INSERT INTO users (
+        id,
+        display_name
+      )
+      VALUES ($1, $2)
+    `,
+    [userId, displayName],
+  );
+
+  await pool.query(
+    `
+      INSERT INTO user_roles (
+        user_id,
+        role_code
+      )
+      VALUES ($1, 'host')
+    `,
+    [userId],
+  );
+
+  await pool.query(
+    `
+      INSERT INTO user_credentials (
+        user_id,
+        pin_hash
+      )
+      VALUES ($1, $2)
+    `,
+    [userId, await hashUserPin(TEST_PIN)],
+  );
+
+  const agent = request.agent(createApp());
+
+  const login = await agent
+    .post("/api/auth/login")
+    .send({
+      userId,
+      pin: TEST_PIN,
+    });
+
+  expect(login.status).toBe(200);
+
+  return agent;
+}
+
+async function deleteAuthenticatedUser(
+  userId: string,
+) {
+  await pool.query(
+    `
+      DELETE FROM user_auth_events
+      WHERE user_id = $1
+    `,
+    [userId],
+  );
+
+  await pool.query(
+    "DELETE FROM users WHERE id = $1",
+    [userId],
+  );
+}
 
 afterAll(async () => {
   await pool.end();
@@ -15,18 +86,14 @@ describe("POST /api/parties", () => {
     let partyId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Party API Test Host')
-        `,
-        [userId],
+      const agent = await createAuthenticatedHost(
+        userId,
+        "Party API Test Host",
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post("/api/parties")
-        .set("x-user-id", userId)
-        .send({ guestCount: 7 });
+                .send({ guestCount: 7 });
 
       expect(response.status).toBe(201);
 
@@ -68,10 +135,7 @@ describe("POST /api/parties", () => {
         );
       }
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedUser(userId);
     }
   });
 });
@@ -85,12 +149,9 @@ describe("POST /api/parties/:partyId/seat", () => {
     const secondPartyId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Seating Test Host')
-        `,
-        [userId],
+      const agent = await createAuthenticatedHost(
+        userId,
+        "Seating Test Host",
       );
 
       await pool.query(
@@ -129,15 +190,13 @@ describe("POST /api/parties/:partyId/seat", () => {
         [firstPartyId, secondPartyId, userId],
       );
 
-      const firstResponse = await request(createApp())
+      const firstResponse = await agent
         .post(`/api/parties/${firstPartyId}/seat`)
-        .set("x-user-id", userId)
-        .send({ tableIds: [tableId] });
+                .send({ tableIds: [tableId] });
 
-      const secondResponse = await request(createApp())
+      const secondResponse = await agent
         .post(`/api/parties/${secondPartyId}/seat`)
-        .set("x-user-id", userId)
-        .send({ tableIds: [tableId] });
+                .send({ tableIds: [tableId] });
 
       expect(firstResponse.status).toBe(200);
       expect(firstResponse.body.status).toBe("seated");
@@ -209,10 +268,7 @@ describe("POST /api/parties/:partyId/seat", () => {
         [sectionId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedUser(userId);
     }
   });
 });
@@ -228,12 +284,9 @@ describe("POST /api/parties/:partyId/cancel", () => {
     const orderId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Party Cancellation Test Host')
-        `,
-        [userId],
+      const agent = await createAuthenticatedHost(
+        userId,
+        "Party Cancellation Test Host",
       );
 
       await pool.query(
@@ -307,10 +360,9 @@ describe("POST /api/parties/:partyId/cancel", () => {
         [orderId, partyId, userId],
       );
 
-      const blocked = await request(createApp())
+      const blocked = await agent
         .post(`/api/parties/${partyId}/cancel`)
-        .set("x-user-id", userId)
-        .send({
+                .send({
           reason: "Party left",
         });
 
@@ -324,10 +376,9 @@ describe("POST /api/parties/:partyId/cancel", () => {
         [orderId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post(`/api/parties/${partyId}/cancel`)
-        .set("x-user-id", userId)
-        .send({
+                .send({
           reason: "Party left before ordering",
         });
 
@@ -417,10 +468,7 @@ describe("POST /api/parties/:partyId/cancel", () => {
         [sectionId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedUser(userId);
     }
   });
 });

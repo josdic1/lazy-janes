@@ -7,6 +7,11 @@ import {
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type PartyRow = {
@@ -21,8 +26,6 @@ type PartyRow = {
   cancelled_by_user_id: string | null;
   cancellation_reason: string | null;
 };
-
-const userIdSchema = z.string().uuid();
 
 const partySelect = `
   SELECT
@@ -56,6 +59,17 @@ function toParty(row: PartyRow): Party {
 
 export const partiesRouter = Router();
 
+partiesRouter.use(requireAuthenticatedUser);
+partiesRouter.use(
+  requireAnyRole(
+    "host",
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
+);
+
 partiesRouter.get("/", async (_request, response) => {
   const result = await pool.query<PartyRow>(`
     ${partySelect}
@@ -76,16 +90,8 @@ partiesRouter.post("/", async (request, response) => {
     return;
   }
 
-  const userId = userIdSchema.safeParse(
-    request.header("x-user-id"),
-  );
+  const userId = getAuthenticatedUser(request).id;
 
-  if (!userId.success) {
-    response.status(401).json({
-      error: "A valid user identity is required",
-    });
-    return;
-  }
 
   const client = await pool.connect();
 
@@ -99,7 +105,7 @@ partiesRouter.post("/", async (request, response) => {
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!userResult.rows[0]) {
@@ -130,7 +136,7 @@ partiesRouter.post("/", async (request, response) => {
           cancelled_by_user_id,
           cancellation_reason
       `,
-      [input.data.guestCount, userId.data],
+      [input.data.guestCount, userId],
     );
 
     const party = partyResult.rows[0];
@@ -148,7 +154,7 @@ partiesRouter.post("/", async (request, response) => {
         )
         VALUES ($1, 'arrived', $2)
       `,
-      [party.id, userId.data],
+      [party.id, userId],
     );
 
     await client.query("COMMIT");
@@ -171,9 +177,7 @@ partiesRouter.post(
 
     const input = seatPartyInputSchema.safeParse(request.body);
 
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!partyId.success) {
       response.status(400).json({
@@ -190,12 +194,6 @@ partiesRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const client = await pool.connect();
 
@@ -211,7 +209,7 @@ partiesRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!userResult.rows[0]) {
@@ -280,7 +278,7 @@ partiesRouter.post(
           VALUES ($1, $2)
           RETURNING id
         `,
-        [partyId.data, userId.data],
+        [partyId.data, userId],
       );
 
       const seatingId = seating.rows[0]?.id;
@@ -338,7 +336,7 @@ partiesRouter.post(
           )
           VALUES ($1, 'seated', $2)
         `,
-        [party.id, userId.data],
+        [party.id, userId],
       );
 
       await client.query("COMMIT");
@@ -375,9 +373,7 @@ partiesRouter.post(
     const input = cancelPartyInputSchema.safeParse(
       request.body,
     );
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!partyId.success) {
       response.status(400).json({
@@ -394,12 +390,6 @@ partiesRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const client = await pool.connect();
 
@@ -413,7 +403,7 @@ partiesRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -526,7 +516,7 @@ partiesRouter.post(
             cancelled_by_user_id,
             cancellation_reason
         `,
-        [partyId.data, userId.data, input.data.reason],
+        [partyId.data, userId, input.data.reason],
       );
 
       const cancelledParty = updated.rows[0];
@@ -547,7 +537,7 @@ partiesRouter.post(
           )
           VALUES ($1, 'cancelled', $2, $3)
         `,
-        [partyId.data, userId.data, input.data.reason],
+        [partyId.data, userId, input.data.reason],
       );
 
       await client.query("COMMIT");
