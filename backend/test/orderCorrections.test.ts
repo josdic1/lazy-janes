@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -24,13 +26,12 @@ describe("order correction APIs", () => {
     const retainedItemId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Order Correction Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Order Correction Test Lead Server",
+          roles: ["lead_server"],
+        });
 
       await pool.query(
         `
@@ -115,9 +116,8 @@ describe("order correction APIs", () => {
         ],
       );
 
-      const cancelled = await request(createApp())
+      const cancelled = await agent
         .post(`/api/orders/${cancelledOrderId}/cancel`)
-        .set("x-user-id", userId)
         .send({
           reason: "Customer cancelled takeout",
         });
@@ -174,9 +174,8 @@ describe("order correction APIs", () => {
         },
       ]);
 
-      const voided = await request(createApp())
+      const voided = await agent
         .post(`/api/orders/${correctedOrderId}/void`)
-        .set("x-user-id", userId)
         .send({
           orderItemIds: [voidedItemId],
           reason: "Item entered twice",
@@ -293,10 +292,7 @@ describe("order correction APIs", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });

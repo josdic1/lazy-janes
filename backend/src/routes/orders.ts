@@ -13,6 +13,11 @@ import {
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type MenuRow = {
@@ -64,8 +69,6 @@ type ModifierRow = {
   modifier_name: string;
   price_adjustment: string;
 };
-
-const userIdSchema = z.string().uuid();
 
 function toModifier(row: ModifierRow): OrderItemModifier {
   return {
@@ -121,7 +124,17 @@ function toOrder(row: OrderRow, items: OrderItem[]): Order {
 
 export const ordersRouter = Router();
 
-ordersRouter.post("/", async (request, response) => {
+ordersRouter.use(requireAuthenticatedUser);
+
+ordersRouter.post(
+  "/",
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
+  async (request, response) => {
   const input = createOrderInputSchema.safeParse(request.body);
 
   if (!input.success) {
@@ -132,16 +145,7 @@ ordersRouter.post("/", async (request, response) => {
     return;
   }
 
-  const userId = userIdSchema.safeParse(
-    request.header("x-user-id"),
-  );
-
-  if (!userId.success) {
-    response.status(401).json({
-      error: "A valid user identity is required",
-    });
-    return;
-  }
+  const userId = getAuthenticatedUser(request).id;
 
   const client = await pool.connect();
 
@@ -155,7 +159,7 @@ ordersRouter.post("/", async (request, response) => {
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!user.rows[0]) {
@@ -308,7 +312,7 @@ ordersRouter.post("/", async (request, response) => {
       [
         input.data.partyId,
         input.data.fulfillmentType,
-        userId.data,
+        userId,
         input.data.customerName,
         input.data.customerPhone,
         input.data.requestedFor,
@@ -332,7 +336,7 @@ ordersRouter.post("/", async (request, response) => {
         )
         VALUES ($1, 'submitted', 'user', $2)
       `,
-      [orderRow.id, userId.data],
+      [orderRow.id, userId],
     );
 
     const orderItems: OrderItem[] = [];
@@ -377,7 +381,7 @@ ordersRouter.post("/", async (request, response) => {
         [
           orderRow.id,
           menuItem.id,
-          userId.data,
+          userId,
           requestedItem.seatNumber,
           menuItem.name,
           menuItem.price,
@@ -402,7 +406,7 @@ ordersRouter.post("/", async (request, response) => {
           )
           VALUES ($1, 'submitted', 'user', $2)
         `,
-        [itemRow.id, userId.data],
+        [itemRow.id, userId],
       );
 
       const modifiers: OrderItemModifier[] = [];
@@ -477,7 +481,7 @@ ordersRouter.post("/", async (request, response) => {
           )
           VALUES ($1, 'service_started', $2)
         `,
-        [input.data.partyId, userId.data],
+        [input.data.partyId, userId],
       );
     }
 
@@ -496,6 +500,12 @@ ordersRouter.post("/", async (request, response) => {
 
 ordersRouter.post(
   "/:orderId/fire",
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const orderId = z
       .string()
@@ -504,9 +514,7 @@ ordersRouter.post(
 
     const input = fireOrderInputSchema.safeParse(request.body);
 
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!orderId.success) {
       response.status(400).json({
@@ -523,13 +531,6 @@ ordersRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
-
     const client = await pool.connect();
 
     try {
@@ -542,7 +543,7 @@ ordersRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -650,7 +651,7 @@ ordersRouter.post(
             printed_at,
             cancelled_at
         `,
-        [orderId.data, userId.data, input.data.note],
+        [orderId.data, userId, input.data.note],
       );
 
       const chitRow = chitResult.rows[0];
@@ -710,7 +711,7 @@ ordersRouter.post(
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, userId.data],
+        [input.data.orderItemIds, userId],
       );
 
       await client.query(
@@ -722,7 +723,7 @@ ordersRouter.post(
           )
           VALUES ($1, 'printed', $2)
         `,
-        [chitRow.id, userId.data],
+        [chitRow.id, userId],
       );
 
       await client.query("COMMIT");
@@ -757,6 +758,12 @@ ordersRouter.post(
 
 ordersRouter.post(
   "/:orderId/ready",
+  requireAnyRole(
+    "chef",
+    "head_chef",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const orderId = z
       .string()
@@ -766,9 +773,7 @@ ordersRouter.post(
     const input =
       markKitchenItemsReadyInputSchema.safeParse(request.body);
 
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!orderId.success) {
       response.status(400).json({
@@ -785,13 +790,6 @@ ordersRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
-
     const client = await pool.connect();
 
     try {
@@ -804,7 +802,7 @@ ordersRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -911,7 +909,7 @@ ordersRouter.post(
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, userId.data],
+        [input.data.orderItemIds, userId],
       );
 
       await client.query("COMMIT");
@@ -927,6 +925,12 @@ ordersRouter.post(
 
 ordersRouter.post(
   "/:orderId/deliver",
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const orderId = z
       .string()
@@ -936,9 +940,7 @@ ordersRouter.post(
     const input =
       deliverOrderItemsInputSchema.safeParse(request.body);
 
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!orderId.success) {
       response.status(400).json({
@@ -955,13 +957,6 @@ ordersRouter.post(
       return;
     }
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
-
     const client = await pool.connect();
 
     try {
@@ -974,7 +969,7 @@ ordersRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -1081,7 +1076,7 @@ ordersRouter.post(
           FROM unnest($1::uuid[])
             AS selected(order_item_id)
         `,
-        [input.data.orderItemIds, userId.data],
+        [input.data.orderItemIds, userId],
       );
 
       await client.query("COMMIT");
@@ -1097,6 +1092,11 @@ ordersRouter.post(
 
 ordersRouter.post(
   "/:orderId/cancel",
+  requireAnyRole(
+    "lead_server",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const orderId = z
       .string()
@@ -1105,9 +1105,7 @@ ordersRouter.post(
     const input = cancelOrderInputSchema.safeParse(
       request.body,
     );
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!orderId.success) {
       response.status(400).json({ error: "Invalid order ID" });
@@ -1118,13 +1116,6 @@ ordersRouter.post(
       response.status(400).json({
         error: "Invalid cancellation",
         issues: input.error.issues,
-      });
-      return;
-    }
-
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
       });
       return;
     }
@@ -1141,7 +1132,7 @@ ordersRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -1213,7 +1204,7 @@ ordersRouter.post(
             AND status <> 'voided'
           RETURNING id
         `,
-        [orderId.data, userId.data, input.data.reason],
+        [orderId.data, userId, input.data.reason],
       );
 
       if (voidedItems.rows.length > 0) {
@@ -1235,7 +1226,7 @@ ordersRouter.post(
           `,
           [
             voidedItems.rows.map((item) => item.id),
-            userId.data,
+            userId,
             input.data.reason,
           ],
         );
@@ -1250,7 +1241,7 @@ ordersRouter.post(
             cancellation_reason = $3
           WHERE id = $1
         `,
-        [orderId.data, userId.data, input.data.reason],
+        [orderId.data, userId, input.data.reason],
       );
 
       await client.query(
@@ -1264,7 +1255,7 @@ ordersRouter.post(
           )
           VALUES ($1, 'cancelled', 'user', $2, $3)
         `,
-        [orderId.data, userId.data, input.data.reason],
+        [orderId.data, userId, input.data.reason],
       );
 
       await client.query("COMMIT");
@@ -1280,6 +1271,11 @@ ordersRouter.post(
 
 ordersRouter.post(
   "/:orderId/void",
+  requireAnyRole(
+    "lead_server",
+    "manager",
+    "admin",
+  ),
   async (request, response) => {
     const orderId = z
       .string()
@@ -1288,9 +1284,7 @@ ordersRouter.post(
     const input = voidOrderItemsInputSchema.safeParse(
       request.body,
     );
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
     if (!orderId.success) {
       response.status(400).json({ error: "Invalid order ID" });
@@ -1301,13 +1295,6 @@ ordersRouter.post(
       response.status(400).json({
         error: "Invalid item void",
         issues: input.error.issues,
-      });
-      return;
-    }
-
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
       });
       return;
     }
@@ -1324,7 +1311,7 @@ ordersRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -1429,7 +1416,7 @@ ordersRouter.post(
         `,
         [
           input.data.orderItemIds,
-          userId.data,
+          userId,
           input.data.reason,
         ],
       );
@@ -1452,7 +1439,7 @@ ordersRouter.post(
         `,
         [
           input.data.orderItemIds,
-          userId.data,
+          userId,
           input.data.reason,
         ],
       );

@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { orderSchema } from "@lazy-janes/shared";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -18,13 +20,12 @@ describe("POST /api/orders", () => {
     let orderId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Order Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Order Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -74,9 +75,8 @@ describe("POST /api/orders", () => {
         [modifierId, menuItemId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post("/api/orders")
-        .set("x-user-id", userId)
         .send({
           partyId,
           fulfillmentType: "dine_in",
@@ -197,10 +197,7 @@ describe("POST /api/orders", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
@@ -213,13 +210,12 @@ describe("POST /api/orders/:orderId/fire", () => {
     const orderItemId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Kitchen Fire Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Kitchen Fire Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -268,9 +264,8 @@ describe("POST /api/orders/:orderId/fire", () => {
         [orderItemId, orderId, menuItemId, userId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post(`/api/orders/${orderId}/fire`)
-        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
           note: "Rush",
@@ -377,10 +372,7 @@ describe("POST /api/orders/:orderId/fire", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
@@ -393,13 +385,12 @@ describe("POST /api/orders/:orderId/ready", () => {
     const orderItemId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Kitchen Ready Test Chef')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Kitchen Ready Test Chef",
+          roles: ["chef"],
+        });
 
       await pool.query(
         `
@@ -452,9 +443,8 @@ describe("POST /api/orders/:orderId/ready", () => {
         [orderItemId, orderId, menuItemId, userId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post(`/api/orders/${orderId}/ready`)
-        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
         });
@@ -517,10 +507,7 @@ describe("POST /api/orders/:orderId/ready", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
@@ -533,13 +520,12 @@ describe("POST /api/orders/:orderId/deliver", () => {
     const orderItemId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Delivery Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Delivery Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -594,9 +580,8 @@ describe("POST /api/orders/:orderId/deliver", () => {
         [orderItemId, orderId, menuItemId, userId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post(`/api/orders/${orderId}/deliver`)
-        .set("x-user-id", userId)
         .send({
           orderItemIds: [orderItemId],
         });
@@ -657,10 +642,7 @@ describe("POST /api/orders/:orderId/deliver", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
