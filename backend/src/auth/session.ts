@@ -164,6 +164,54 @@ export async function requireAuthenticatedUser(
   next();
 }
 
+export function getAuthenticatedUser(
+  request: Request,
+): UserIdentity {
+  const session = (
+    request as AuthenticatedRequest
+  ).authenticatedSession;
+
+  if (!session) {
+    throw new Error(
+      "Authenticated session missing after authentication middleware.",
+    );
+  }
+
+  return session.user;
+}
+
+export function requireAnyRole(
+  ...roles: UserRoleCode[]
+) {
+  return (
+    request: AuthenticatedRequest,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    const session = request.authenticatedSession;
+
+    if (!session) {
+      response.status(401).json({
+        error: "Authentication required",
+      });
+      return;
+    }
+
+    if (
+      !roles.some((role) =>
+        session.user.roles.includes(role),
+      )
+    ) {
+      response.status(403).json({
+        error: "Permission denied",
+      });
+      return;
+    }
+
+    next();
+  };
+}
+
 export function requireRole(
   role: UserRoleCode,
 ) {

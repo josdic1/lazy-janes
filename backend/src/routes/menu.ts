@@ -8,6 +8,10 @@ import type {
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import { z } from "zod";
+import {
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type MenuItemRow = {
@@ -65,6 +69,8 @@ function toMenuItem(row: MenuItemRow): MenuItem {
 }
 
 export const menuRouter = Router();
+
+menuRouter.use(requireAuthenticatedUser);
 
 menuRouter.get("/", async (_request, response) => {
   const result = await pool.query<MenuItemRow>(`
@@ -132,7 +138,10 @@ menuRouter.get("/:itemId", async (request, response) => {
   response.json(toMenuItem(item));
 });
 
-menuRouter.post("/", async (request, response) => {
+menuRouter.post(
+  "/",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
   const parsed = createMenuItemInputSchema.safeParse(request.body);
 
   if (!parsed.success) {
@@ -227,7 +236,10 @@ menuRouter.post("/", async (request, response) => {
   response.status(201).json(toMenuItem(created));
 });
 
-menuRouter.patch("/:itemId", async (request, response) => {
+menuRouter.patch(
+  "/:itemId",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
   const itemId = menuItemIdSchema.safeParse(request.params.itemId);
 
   if (!itemId.success) {
@@ -413,7 +425,10 @@ menuRouter.patch("/:itemId", async (request, response) => {
   response.json(toMenuItem(updated));
 });
 
-menuRouter.delete("/:itemId", async (request, response) => {
+menuRouter.delete(
+  "/:itemId",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
   const itemId = menuItemIdSchema.safeParse(request.params.itemId);
 
   if (!itemId.success) {

@@ -764,6 +764,11 @@ tbody tr.is-muted:hover {
 }
 
 .drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 90;
+
   width: min(620px, 100%);
   height: 100%;
   overflow-y: auto;
