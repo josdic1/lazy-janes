@@ -5,6 +5,11 @@ import {
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type CheckRow = {
@@ -52,8 +57,6 @@ type ModifierTotalRow = {
   modifier_total: string;
 };
 
-const userIdSchema = z.string().uuid();
-
 function toCheckItem(row: CheckItemRow): CheckItem {
   return {
     id: row.id,
@@ -89,6 +92,16 @@ function toCheck(
 
 export const checksRouter = Router();
 
+checksRouter.use(requireAuthenticatedUser);
+checksRouter.use(
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
+);
+
 checksRouter.post("/", async (request, response) => {
   const input = createCheckInputSchema.safeParse(request.body);
 
@@ -100,16 +113,8 @@ checksRouter.post("/", async (request, response) => {
     return;
   }
 
-  const userId = userIdSchema.safeParse(
-    request.header("x-user-id"),
-  );
+  const userId = getAuthenticatedUser(request).id;
 
-  if (!userId.success) {
-    response.status(401).json({
-      error: "A valid user identity is required",
-    });
-    return;
-  }
 
   const client = await pool.connect();
 
@@ -123,7 +128,7 @@ checksRouter.post("/", async (request, response) => {
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!user.rows[0]) {
@@ -395,7 +400,7 @@ checksRouter.post("/", async (request, response) => {
       [
         input.data.partyId,
         input.data.label,
-        userId.data,
+        userId,
         subtotalAmount,
         salesTaxRate,
         taxAmount,
@@ -471,7 +476,7 @@ checksRouter.post("/", async (request, response) => {
           )
         )
       `,
-      [check.id, userId.data, createdItems.length],
+      [check.id, userId, createdItems.length],
     );
 
     await client.query("COMMIT");
@@ -502,16 +507,8 @@ checksRouter.post(
       return;
     }
 
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
+    const userId = getAuthenticatedUser(request).id;
 
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
 
     const client = await pool.connect();
 
@@ -525,7 +522,7 @@ checksRouter.post(
           WHERE id = $1
             AND is_active = true
         `,
-        [userId.data],
+        [userId],
       );
 
       if (!user.rows[0]) {
@@ -610,165 +607,7 @@ checksRouter.post(
           )
           VALUES ($1, 'presented', 'user', $2)
         `,
-        [checkId.data, userId.data],
-      );
-
-      const items = await client.query<CheckItemRow>(
-        `
-          SELECT
-            id,
-            order_item_id,
-            item_name,
-            allocated_quantity,
-            allocated_amount,
-            created_at
-          FROM check_items
-          WHERE check_id = $1
-          ORDER BY created_at, id
-        `,
-        [checkId.data],
-      );
-
-      await client.query("COMMIT");
-      response.json(
-        toCheck(
-          presentedCheck,
-          items.rows.map(toCheckItem),
-        ),
-      );
-    } catch (error: unknown) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  },
-);
-
-
-checksRouter.post(
-  "/:checkId/present",
-  async (request, response) => {
-    const checkId = checkIdSchema.safeParse(
-      request.params.checkId,
-    );
-
-    if (!checkId.success) {
-      response.status(400).json({
-        error: "Invalid check ID",
-      });
-      return;
-    }
-
-    const userId = userIdSchema.safeParse(
-      request.header("x-user-id"),
-    );
-
-    if (!userId.success) {
-      response.status(401).json({
-        error: "A valid user identity is required",
-      });
-      return;
-    }
-
-    const client = await pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      const user = await client.query<{ id: string }>(
-        `
-          SELECT id
-          FROM users
-          WHERE id = $1
-            AND is_active = true
-        `,
-        [userId.data],
-      );
-
-      if (!user.rows[0]) {
-        await client.query("ROLLBACK");
-        response.status(403).json({
-          error: "Active user not found",
-        });
-        return;
-      }
-
-      const current = await client.query<{
-        status: Check["status"];
-      }>(
-        `
-          SELECT status
-          FROM checks
-          WHERE id = $1
-          FOR UPDATE
-        `,
-        [checkId.data],
-      );
-
-      const currentCheck = current.rows[0];
-
-      if (!currentCheck) {
-        await client.query("ROLLBACK");
-        response.status(404).json({
-          error: "Check not found",
-        });
-        return;
-      }
-
-      if (currentCheck.status !== "open") {
-        await client.query("ROLLBACK");
-        response.status(409).json({
-          error: "Only an open check can be presented",
-        });
-        return;
-      }
-
-      const updated = await client.query<CheckRow>(
-        `
-          UPDATE checks
-          SET
-            status = 'presented',
-            presented_at = now(),
-            updated_at = now()
-          WHERE id = $1
-          RETURNING
-            id,
-            party_id,
-            label,
-            status,
-            opened_by_user_id,
-            subtotal_amount,
-            sales_tax_rate,
-            tax_amount,
-            total_amount,
-            presented_at,
-            closed_at,
-            created_at,
-            updated_at
-        `,
-        [checkId.data],
-      );
-
-      const presentedCheck = updated.rows[0];
-
-      if (!presentedCheck) {
-        throw new Error(
-          "Presented check update returned no record",
-        );
-      }
-
-      await client.query(
-        `
-          INSERT INTO check_events (
-            check_id,
-            event_type,
-            actor_kind,
-            actor_user_id
-          )
-          VALUES ($1, 'presented', 'user', $2)
-        `,
-        [checkId.data, userId.data],
+        [checkId.data, userId],
       );
 
       const items = await client.query<CheckItemRow>(

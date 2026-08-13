@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { checkSchema } from "@lazy-janes/shared";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -19,13 +21,12 @@ describe("POST /api/checks", () => {
     let checkId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Check Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Check Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -111,9 +112,8 @@ describe("POST /api/checks", () => {
         [orderItemId, modifierMenuItemId],
       );
 
-      const created = await request(createApp())
+      const created = await agent
         .post("/api/checks")
-        .set("x-user-id", userId)
         .send({
           label: "First half",
           items: [
@@ -159,9 +159,8 @@ describe("POST /api/checks", () => {
         events.rows.map((event) => event.event_type),
       ).toEqual(["created"]);
 
-      const overAllocated = await request(createApp())
+      const overAllocated = await agent
         .post("/api/checks")
-        .set("x-user-id", userId)
         .send({
           label: "Too much",
           items: [
@@ -222,10 +221,7 @@ describe("POST /api/checks", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
@@ -239,13 +235,12 @@ describe("POST /api/checks/:checkId/present", () => {
     const checkId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Present Check Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Present Check Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -323,9 +318,8 @@ describe("POST /api/checks/:checkId/present", () => {
         [checkId, orderItemId],
       );
 
-      const response = await request(createApp())
-        .post(`/api/checks/${checkId}/present`)
-        .set("x-user-id", userId);
+      const response = await agent
+        .post(`/api/checks/${checkId}/present`);
 
       expect(response.status).toBe(200);
 
@@ -363,9 +357,8 @@ describe("POST /api/checks/:checkId/present", () => {
         },
       ]);
 
-      const repeated = await request(createApp())
-        .post(`/api/checks/${checkId}/present`)
-        .set("x-user-id", userId);
+      const repeated = await agent
+        .post(`/api/checks/${checkId}/present`);
 
       expect(repeated.status).toBe(409);
       expect(repeated.body.error).toBe(
@@ -402,10 +395,7 @@ describe("POST /api/checks/:checkId/present", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
