@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { paymentSchema } from "@lazy-janes/shared";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -17,13 +19,12 @@ describe("POST /api/payments", () => {
     let paymentId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Cash Payment Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Cash Payment Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -63,9 +64,8 @@ describe("POST /api/payments", () => {
         [checkId, userId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post("/api/payments")
-        .set("x-user-id", userId)
         .send({
           method: "cash",
           allocations: [
@@ -184,10 +184,7 @@ describe("POST /api/payments", () => {
         [drawerSessionId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 
@@ -199,13 +196,12 @@ describe("POST /api/payments", () => {
     let paymentId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Card Payment Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Card Payment Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -245,9 +241,8 @@ describe("POST /api/payments", () => {
         processorReference,
       };
 
-      const response = await request(createApp())
+      const response = await agent
         .post("/api/payments")
-        .set("x-user-id", userId)
         .send(body);
 
       expect(response.status).toBe(201);
@@ -270,9 +265,8 @@ describe("POST /api/payments", () => {
 
       expect(check.rows[0]?.status).toBe("presented");
 
-      const repeated = await request(createApp())
+      const repeated = await agent
         .post("/api/payments")
-        .set("x-user-id", userId)
         .send(body);
 
       expect(repeated.status).toBe(409);
@@ -310,10 +304,7 @@ describe("POST /api/payments", () => {
         [checkId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
@@ -333,13 +324,12 @@ describe("automatic party completion", () => {
     let paymentId: string | undefined;
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Completion Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Completion Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -495,9 +485,8 @@ describe("automatic party completion", () => {
         [checkId, orderItemId],
       );
 
-      const response = await request(createApp())
+      const response = await agent
         .post("/api/payments")
-        .set("x-user-id", userId)
         .send({
           method: "card",
           allocations: [
@@ -645,10 +634,7 @@ describe("automatic party completion", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });

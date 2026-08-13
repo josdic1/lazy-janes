@@ -5,7 +5,11 @@ import {
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import type { PoolClient } from "pg";
-import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAnyRole,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type PaymentRow = {
@@ -43,8 +47,6 @@ type ExistingPaymentRow = {
   check_id: string;
   paid_amount: string;
 };
-
-const userIdSchema = z.string().uuid();
 
 function toAllocation(
   row: PaymentAllocationRow,
@@ -93,6 +95,16 @@ function toCents(amount: number | string): number {
 
 export const paymentsRouter = Router();
 
+paymentsRouter.use(requireAuthenticatedUser);
+paymentsRouter.use(
+  requireAnyRole(
+    "server",
+    "lead_server",
+    "manager",
+    "admin",
+  ),
+);
+
 paymentsRouter.post("/", async (request, response) => {
   const input = takePaymentInputSchema.safeParse(request.body);
 
@@ -104,16 +116,8 @@ paymentsRouter.post("/", async (request, response) => {
     return;
   }
 
-  const userId = userIdSchema.safeParse(
-    request.header("x-user-id"),
-  );
+  const userId = getAuthenticatedUser(request).id;
 
-  if (!userId.success) {
-    response.status(401).json({
-      error: "A valid user identity is required",
-    });
-    return;
-  }
 
   const client = await pool.connect();
 
@@ -127,7 +131,7 @@ paymentsRouter.post("/", async (request, response) => {
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!user.rows[0]) {
@@ -316,7 +320,7 @@ paymentsRouter.post("/", async (request, response) => {
           input.data.method,
           paymentAmountCents / 100,
           tipAmountCents / 100,
-          userId.data,
+          userId,
           processorReference,
           cashReceivedCents === null
             ? null
@@ -385,7 +389,7 @@ paymentsRouter.post("/", async (request, response) => {
           ($1, 'created', 'user', $2),
           ($1, 'succeeded', 'user', $2)
       `,
-      [payment.id, userId.data],
+      [payment.id, userId],
     );
 
     if (drawerSessionId !== null) {
@@ -410,7 +414,7 @@ paymentsRouter.post("/", async (request, response) => {
           drawerSessionId,
           (paymentAmountCents + tipAmountCents) / 100,
           payment.id,
-          userId.data,
+          userId,
         ],
       );
     }
