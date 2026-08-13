@@ -8,7 +8,10 @@ import {
   type StackTable,
 } from "@lazy-janes/shared";
 import { Router } from "express";
-import { z } from "zod";
+import {
+  getAuthenticatedUser,
+  requireAuthenticatedUser,
+} from "../auth/session.js";
 import { pool } from "../db/pool.js";
 
 type PartyRow = {
@@ -60,8 +63,6 @@ type EventRow = {
   occurred_at: Date;
 };
 
-const userIdSchema = z.string().uuid();
-
 function addToGroup<T>(
   groups: Map<string, T[]>,
   key: string,
@@ -78,17 +79,10 @@ function money(amount: number): number {
 
 export const stackRouter = Router();
 
-stackRouter.get("/", async (request, response) => {
-  const userId = userIdSchema.safeParse(
-    request.header("x-user-id"),
-  );
+stackRouter.use(requireAuthenticatedUser);
 
-  if (!userId.success) {
-    response.status(401).json({
-      error: "A valid user identity is required",
-    });
-    return;
-  }
+stackRouter.get("/", async (request, response) => {
+  const userId = getAuthenticatedUser(request).id;
 
   const client = await pool.connect();
 
@@ -104,7 +98,7 @@ stackRouter.get("/", async (request, response) => {
         WHERE id = $1
           AND is_active = true
       `,
-      [userId.data],
+      [userId],
     );
 
     if (!user.rows[0]) {

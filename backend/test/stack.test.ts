@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { stackSnapshotSchema } from "@lazy-janes/shared";
-import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
+import {
+  createAuthenticatedTestUser,
+  deleteAuthenticatedTestUser,
+} from "./helpers/auth.js";
 
 afterAll(async () => {
   await pool.end();
@@ -25,13 +27,12 @@ describe("GET /api/stack", () => {
     const paymentId = randomUUID();
 
     try {
-      await pool.query(
-        `
-          INSERT INTO users (id, display_name)
-          VALUES ($1, 'Stack Test Server')
-        `,
-        [userId],
-      );
+      const agent =
+        await createAuthenticatedTestUser({
+          userId,
+          displayName: "Stack Test Server",
+          roles: ["server"],
+        });
 
       await pool.query(
         `
@@ -251,9 +252,8 @@ describe("GET /api/stack", () => {
         [paymentId, checkId],
       );
 
-      const response = await request(createApp())
-        .get("/api/stack")
-        .set("x-user-id", userId);
+      const response = await agent
+        .get("/api/stack");
 
       expect(response.status).toBe(200);
 
@@ -378,10 +378,7 @@ describe("GET /api/stack", () => {
         [menuItemId],
       );
 
-      await pool.query(
-        "DELETE FROM users WHERE id = $1",
-        [userId],
-      );
+      await deleteAuthenticatedTestUser(userId);
     }
   });
 });
