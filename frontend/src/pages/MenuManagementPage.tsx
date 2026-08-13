@@ -58,7 +58,7 @@ function statusLabel(status: MenuItemStatus): string {
 
 function StatusBadge({ status }: { status: MenuItemStatus }) {
   return (
-    <span className={`status-badge status-badge--${status}`}>
+    <span className="status-badge" data-status={status}>
       {statusLabel(status)}
     </span>
   );
@@ -112,7 +112,7 @@ function ItemActions({
       {item.status !== "inactive" && (
         <button
           aria-label={`Deactivate ${item.name}`}
-          className="icon-button icon-button--danger"
+          className="icon-button" data-variant="danger"
           onClick={() => onDeactivate(item)}
           title="Deactivate"
           type="button"
@@ -398,7 +398,7 @@ export function MenuManagementPage() {
         </div>
 
         <button
-          className="button button--primary"
+          className="button" data-variant="primary"
           onClick={openCreate}
           type="button"
         >
@@ -459,7 +459,7 @@ export function MenuManagementPage() {
         </label>
 
         <button
-          className="button button--quiet"
+          className="button" data-variant="quiet"
           onClick={clearFilters}
           type="button"
         >
@@ -808,7 +808,7 @@ export function MenuManagementPage() {
 
               <footer className="drawer-actions">
                 <button
-                  className="button button--primary"
+                  className="button" data-variant="primary"
                   disabled={saving}
                   type="submit"
                 >
@@ -822,7 +822,7 @@ export function MenuManagementPage() {
                 </button>
 
                 <button
-                  className="button button--quiet"
+                  className="button" data-variant="quiet"
                   disabled={saving}
                   onClick={closeDrawer}
                   type="button"

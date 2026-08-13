@@ -4,11 +4,16 @@ import { MenuManagementPage } from "./pages/MenuManagementPage";
 
 export function App() {
   return (
-    <>
-      <header>
-        <NavLink to="/">Lazy Jane’s</NavLink>
+    <div className="app-shell">
+      <header className="app-header">
+        <NavLink className="app-brand" to="/">
+          Lazy Jane’s
+        </NavLink>
 
-        <nav aria-label="Primary navigation">
+        <nav
+          className="app-nav"
+          aria-label="Primary navigation"
+        >
           <NavLink to="/" end>
             Operations
           </NavLink>
@@ -21,8 +26,11 @@ export function App() {
 
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/menu" element={<MenuManagementPage />} />
+        <Route
+          path="/menu"
+          element={<MenuManagementPage />}
+        />
       </Routes>
-    </>
+    </div>
   );
 }
