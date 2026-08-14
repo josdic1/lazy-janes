@@ -52,6 +52,9 @@ async function seedMenu() {
     await client.query(
       "SELECT seed_lazy_janes_service_handling()",
     );
+    await client.query(
+      "SELECT assert_lazy_janes_choice_group_integrity()",
+    );
 
     const result = await client.query<{
       menu_items: string;
