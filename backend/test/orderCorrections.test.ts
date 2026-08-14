@@ -38,10 +38,10 @@ describe("order correction APIs", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Correction Test Item', 'Test', 10)
+          VALUES ($1, 'Correction Test Item', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 10)
         `,
         [menuItemId],
       );

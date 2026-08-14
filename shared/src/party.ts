@@ -50,6 +50,26 @@ export const partySchema = z.object({
 
 export type Party = z.infer<typeof partySchema>;
 
+export const partyListItemSchema = partySchema.extend({
+  tableLabels: z.array(z.string()),
+});
+
+export type PartyListItem = z.infer<
+  typeof partyListItemSchema
+>;
+
+export const diningTableOptionSchema = z.object({
+  id: z.string().uuid(),
+  label: z.string(),
+  capacity: z.number().int().positive(),
+  sectionName: z.string(),
+  occupied: z.boolean(),
+});
+
+export type DiningTableOption = z.infer<
+  typeof diningTableOptionSchema
+>;
+
 export const cancelPartyInputSchema = z.object({
   reason: z
     .string()

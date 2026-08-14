@@ -55,13 +55,16 @@ describe("order contract", () => {
       customerPhone: null,
       deliveryAddress: null,
       requestedFor: null,
-      deliveryAddress: null,
       items: [
         {
           menuItemId,
           quantity: 1,
           seatNumber: null,
           kitchenNote: null,
+          removedIngredientIds: [],
+          extraIngredientIds: [],
+          addedIngredientIds: [],
+          choiceOptionIds: [],
           modifierItemIds: [],
         },
       ],
@@ -97,6 +100,24 @@ describe("order contract", () => {
           {
             menuItemId,
             modifierItemIds: [modifierId, modifierId],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects contradictory changes to one ingredient", () => {
+    const ingredientId =
+      "47f58dcf-d8a4-466a-a534-f62e182e936b";
+
+    expect(
+      createOrderInputSchema.safeParse({
+        fulfillmentType: "takeout",
+        items: [
+          {
+            menuItemId,
+            removedIngredientIds: [ingredientId],
+            extraIngredientIds: [ingredientId],
           },
         ],
       }).success,
@@ -138,6 +159,8 @@ describe("order response", () => {
           voidedAt: null,
           voidedByUserId: null,
           voidReason: null,
+          ingredientChanges: [],
+          choiceSelections: [],
           modifiers: [],
         },
       ],

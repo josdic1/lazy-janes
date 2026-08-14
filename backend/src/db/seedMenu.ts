@@ -38,13 +38,22 @@ async function seedMenu() {
 
     await client.query(sql);
 
+    // The SQL seed creates the temporary legacy choice rows exactly once.
+    // Translate them into the composition model, then retire those rows.
+    await client.query(
+      "SELECT migrate_lazy_janes_legacy_modifiers_to_composition()",
+    );
+    await client.query(
+      "SELECT seed_lazy_janes_menu_composition()",
+    );
+
     const result = await client.query<{
       menu_items: string;
       categories: string;
     }>(`
       SELECT
         count(*) AS menu_items,
-        count(DISTINCT category) AS categories
+        count(DISTINCT category_id) AS categories
       FROM menu_items
     `);
 

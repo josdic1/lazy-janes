@@ -16,7 +16,8 @@ describe("POST /api/orders", () => {
     const userId = randomUUID();
     const partyId = randomUUID();
     const menuItemId = randomUUID();
-    const modifierId = randomUUID();
+    const ingredientId = randomUUID();
+    const ingredientName = `Order Test Cheddar ${ingredientId}`;
     let orderId: string | undefined;
 
     try {
@@ -45,34 +46,38 @@ describe("POST /api/orders", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Test Omelette', 'Test', 12.50)
+          VALUES ($1, 'Test Omelette', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 12.50)
         `,
         [menuItemId],
       );
 
       await pool.query(
         `
-          INSERT INTO menu_items (
+          INSERT INTO ingredients (
             id,
-            parent_item_id,
             name,
-            category,
-            price,
-            is_modifier
+            allergen_flags
           )
-          VALUES (
-            $1,
-            $2,
-            'Add Cheddar',
-            'Test',
-            1.25,
-            true
-          )
+          VALUES ($1, $2, ARRAY['milk']::text[])
         `,
-        [modifierId, menuItemId],
+        [ingredientId, ingredientName],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_ingredients (
+            menu_item_id,
+            ingredient_id,
+            can_remove,
+            can_extra,
+            extra_price
+          )
+          VALUES ($1, $2, true, true, 1.25)
+        `,
+        [menuItemId, ingredientId],
       );
 
       const response = await agent
@@ -86,7 +91,7 @@ describe("POST /api/orders", () => {
               quantity: 1,
               seatNumber: 1,
               kitchenNote: "Well done",
-              modifierItemIds: [modifierId],
+              extraIngredientIds: [ingredientId],
             },
           ],
         });
@@ -101,13 +106,16 @@ describe("POST /api/orders", () => {
       expect(order.items[0]?.itemName).toBe("Test Omelette");
       expect(order.items[0]?.unitPrice).toBe(12.5);
       expect(order.items[0]?.status).toBe("submitted");
-      expect(order.items[0]?.modifiers).toEqual([
+      expect(order.items[0]?.ingredientChanges).toEqual([
         expect.objectContaining({
-          menuItemId: modifierId,
-          modifierName: "Add Cheddar",
+          ingredientId,
+          ingredientName,
+          changeKind: "extra",
           priceAdjustment: 1.25,
+          allergenFlags: ["milk"],
         }),
       ]);
+      expect(order.items[0]?.modifiers).toEqual([]);
 
       const party = await pool.query<{ status: string }>(
         `
@@ -139,7 +147,19 @@ describe("POST /api/orders", () => {
       if (orderId) {
         await pool.query(
           `
-            DELETE FROM order_item_modifiers
+            DELETE FROM order_item_ingredient_changes
+            WHERE order_item_id IN (
+              SELECT id
+              FROM order_items
+              WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+
+        await pool.query(
+          `
+            DELETE FROM order_item_choice_selections
             WHERE order_item_id IN (
               SELECT id
               FROM order_items
@@ -188,8 +208,8 @@ describe("POST /api/orders", () => {
       );
 
       await pool.query(
-        "DELETE FROM menu_items WHERE id = $1",
-        [modifierId],
+        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
+        [menuItemId],
       );
 
       await pool.query(
@@ -197,6 +217,288 @@ describe("POST /api/orders", () => {
         [menuItemId],
       );
 
+      await pool.query(
+        "DELETE FROM ingredients WHERE id = $1",
+        [ingredientId],
+      );
+
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+  it("rejects ADD when the ingredient is already included", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const ingredientId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Included Ingredient Rule Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Included Ingredient Rule Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO ingredients (id, name)
+          VALUES ($1, $2)
+        `,
+        [ingredientId, `Included Ingredient ${ingredientId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_ingredients (
+            menu_item_id,
+            ingredient_id,
+            can_remove,
+            can_extra
+          )
+          VALUES ($1, $2, true, true)
+        `,
+        [menuItemId, ingredientId],
+      );
+
+      const response = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              addedIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toContain("use Extra instead");
+
+      const createdOrders = await pool.query<{ count: string }>(
+        `
+          SELECT count(*) AS count
+          FROM orders
+          WHERE created_by_user_id = $1
+        `,
+        [userId],
+      );
+      expect(Number(createdOrders.rows[0]?.count ?? "0")).toBe(0);
+    } finally {
+      await pool.query(
+        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
+        [menuItemId],
+      );
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
+  it("rejects contradictory REMOVE and EXTRA for one ingredient", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const ingredientId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Contradictory Ingredient Rule Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Contradictory Ingredient Rule Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO ingredients (id, name)
+          VALUES ($1, $2)
+        `,
+        [ingredientId, `Contradictory Ingredient ${ingredientId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_ingredients (
+            menu_item_id,
+            ingredient_id,
+            can_remove,
+            can_extra
+          )
+          VALUES ($1, $2, true, true)
+        `,
+        [menuItemId, ingredientId],
+      );
+
+      const response = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              removedIngredientIds: [ingredientId],
+              extraIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(response.status).toBe(400);
+      expect(
+        response.body.issues.some(
+          (issue: { message?: string }) =>
+            issue.message ===
+            "An ingredient cannot have two contradictory changes",
+        ),
+      ).toBe(true);
+    } finally {
+      await pool.query(
+        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
+        [menuItemId],
+      );
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
+  it("enforces required and maximum choice selections", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const groupId = randomUUID();
+    const firstOptionId = randomUUID();
+    const secondOptionId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Choice Rule Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Choice Rule Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_groups (
+            id,
+            menu_item_id,
+            label,
+            min_selections,
+            max_selections
+          )
+          VALUES ($1, $2, 'Choose protein', 1, 1)
+        `,
+        [groupId, menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_options (
+            id,
+            choice_group_id,
+            label,
+            sort_order
+          )
+          VALUES
+            ($1, $3, 'Chicken', 10),
+            ($2, $3, 'Salmon', 20)
+        `,
+        [firstOptionId, secondOptionId, groupId],
+      );
+
+      const missing = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [{ menuItemId }],
+        });
+
+      expect(missing.status).toBe(409);
+      expect(missing.body.error).toBe(
+        "Choose protein for Choice Rule Item",
+      );
+
+      const tooMany = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              choiceOptionIds: [firstOptionId, secondOptionId],
+            },
+          ],
+        });
+
+      expect(tooMany.status).toBe(409);
+      expect(tooMany.body.error).toBe(
+        "Too many selections in Choose protein for Choice Rule Item",
+      );
+
+      const createdOrders = await pool.query<{ count: string }>(
+        `
+          SELECT count(*) AS count
+          FROM orders
+          WHERE created_by_user_id = $1
+        `,
+        [userId],
+      );
+      expect(Number(createdOrders.rows[0]?.count ?? "0")).toBe(0);
+    } finally {
+      await pool.query(
+        "DELETE FROM menu_choice_groups WHERE id = $1",
+        [groupId],
+      );
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
       await deleteAuthenticatedTestUser(userId);
     }
   });
@@ -222,10 +524,10 @@ describe("POST /api/orders/:orderId/fire", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Fire Test Burger', 'Test', 15.00)
+          VALUES ($1, 'Fire Test Burger', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 15.00)
         `,
         [menuItemId],
       );
@@ -397,10 +699,10 @@ describe("POST /api/orders/:orderId/ready", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Ready Test Burger', 'Test', 15.00)
+          VALUES ($1, 'Ready Test Burger', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 15.00)
         `,
         [menuItemId],
       );
@@ -532,10 +834,10 @@ describe("POST /api/orders/:orderId/deliver", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Delivery Test Burger', 'Test', 15.00)
+          VALUES ($1, 'Delivery Test Burger', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 15.00)
         `,
         [menuItemId],
       );

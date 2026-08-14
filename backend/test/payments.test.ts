@@ -394,10 +394,10 @@ describe("automatic party completion", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Completion Test Meal', 'Test', 10)
+          VALUES ($1, 'Completion Test Meal', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 10)
         `,
         [menuItemId],
       );

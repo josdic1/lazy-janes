@@ -9,6 +9,7 @@ import { useAuth } from "./hooks/useAuth";
 import { AuthPage } from "./pages/AuthPage";
 import { HomePage } from "./pages/HomePage";
 import { MenuManagementPage } from "./pages/MenuManagementPage";
+import { OrderEntryPage } from "./pages/OrderEntryPage";
 import { UsersPage } from "./pages/UsersPage";
 
 export function App() {
@@ -53,6 +54,19 @@ export function App() {
             Operations
           </NavLink>
 
+          <Can
+            roles={[
+              "server",
+              "lead_server",
+              "manager",
+              "admin",
+            ]}
+          >
+            <NavLink to="/orders/new">
+              Order Entry
+            </NavLink>
+          </Can>
+
           <Can roles={["manager", "admin"]}>
             <NavLink to="/menu">
               Menu Management
@@ -86,6 +100,22 @@ export function App() {
         <Route
           path="/"
           element={<HomePage />}
+        />
+
+        <Route
+          path="/orders/new"
+          element={
+            <RequireRoles
+              roles={[
+                "server",
+                "lead_server",
+                "manager",
+                "admin",
+              ]}
+            >
+              <OrderEntryPage />
+            </RequireRoles>
+          }
         />
 
         <Route

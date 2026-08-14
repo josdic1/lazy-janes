@@ -33,10 +33,10 @@ describe("POST /api/checks", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Test Omelette', 'Test', 12.50)
+          VALUES ($1, 'Test Omelette', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 12.50)
         `,
         [menuItemId],
       );
@@ -47,7 +47,7 @@ describe("POST /api/checks", () => {
             id,
             parent_item_id,
             name,
-            category,
+            category_id,
             price,
             is_modifier
           )
@@ -55,7 +55,7 @@ describe("POST /api/checks", () => {
             $1,
             $2,
             'Add Cheddar',
-            'Test',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
             1.25,
             true
           )
@@ -247,10 +247,10 @@ describe("POST /api/checks/:checkId/present", () => {
           INSERT INTO menu_items (
             id,
             name,
-            category,
+            category_id,
             price
           )
-          VALUES ($1, 'Test Coffee', 'Test', 3.00)
+          VALUES ($1, 'Test Coffee', (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1), 3.00)
         `,
         [menuItemId],
       );

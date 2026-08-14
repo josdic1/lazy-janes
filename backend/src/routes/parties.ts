@@ -2,7 +2,9 @@ import {
   cancelPartyInputSchema,
   createPartyInputSchema,
   seatPartyInputSchema,
+  type DiningTableOption,
   type Party,
+  type PartyListItem,
   type PartyStatus,
 } from "@lazy-janes/shared";
 import { Router } from "express";
@@ -25,6 +27,18 @@ type PartyRow = {
   cancelled_at: Date | null;
   cancelled_by_user_id: string | null;
   cancellation_reason: string | null;
+};
+
+type PartyListRow = PartyRow & {
+  table_labels: string[];
+};
+
+type DiningTableOptionRow = {
+  id: string;
+  label: string;
+  capacity: number;
+  section_name: string;
+  occupied: boolean;
 };
 
 const partySelect = `
@@ -57,6 +71,15 @@ function toParty(row: PartyRow): Party {
   };
 }
 
+function toPartyListItem(
+  row: PartyListRow,
+): PartyListItem {
+  return {
+    ...toParty(row),
+    tableLabels: row.table_labels,
+  };
+}
+
 export const partiesRouter = Router();
 
 partiesRouter.use(requireAuthenticatedUser);
@@ -71,12 +94,83 @@ partiesRouter.use(
 );
 
 partiesRouter.get("/", async (_request, response) => {
-  const result = await pool.query<PartyRow>(`
-    ${partySelect}
-    ORDER BY arrived_at DESC, id
+  const result = await pool.query<PartyListRow>(`
+    SELECT
+      parties.id,
+      parties.guest_count,
+      parties.status,
+      parties.created_by_user_id,
+      parties.arrived_at,
+      parties.status_changed_at,
+      parties.completed_at,
+      parties.cancelled_at,
+      parties.cancelled_by_user_id,
+      parties.cancellation_reason,
+      COALESCE(
+        (
+          SELECT array_agg(
+            dining_tables.label
+            ORDER BY dining_tables.label
+          )
+          FROM seatings
+          JOIN seating_tables
+            ON seating_tables.seating_id = seatings.id
+          JOIN dining_tables
+            ON dining_tables.id =
+              seating_tables.dining_table_id
+          WHERE seatings.party_id = parties.id
+            AND seatings.ended_at IS NULL
+            AND seating_tables.released_at IS NULL
+        ),
+        ARRAY[]::text[]
+      ) AS table_labels
+    FROM parties
+    ORDER BY parties.arrived_at DESC, parties.id
   `);
 
-  response.json(result.rows.map(toParty));
+  response.json(result.rows.map(toPartyListItem));
+});
+
+partiesRouter.get("/tables", async (_request, response) => {
+  const result = await pool.query<DiningTableOptionRow>(
+    `
+      SELECT
+        dining_tables.id,
+        dining_tables.label,
+        dining_tables.capacity,
+        sections.name AS section_name,
+        EXISTS (
+          SELECT 1
+          FROM seating_tables
+          JOIN seatings
+            ON seatings.id = seating_tables.seating_id
+          WHERE seating_tables.dining_table_id =
+            dining_tables.id
+            AND seating_tables.released_at IS NULL
+            AND seatings.ended_at IS NULL
+        ) AS occupied
+      FROM dining_tables
+      JOIN sections
+        ON sections.id = dining_tables.section_id
+      WHERE dining_tables.is_active = true
+        AND sections.is_active = true
+      ORDER BY
+        sections.display_order,
+        sections.name,
+        dining_tables.label
+    `,
+  );
+
+  const tables: DiningTableOption[] =
+    result.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      capacity: row.capacity,
+      sectionName: row.section_name,
+      occupied: row.occupied,
+    }));
+
+  response.json(tables);
 });
 
 partiesRouter.post("/", async (request, response) => {

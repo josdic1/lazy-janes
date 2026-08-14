@@ -22,7 +22,7 @@ const environmentSchema = z.object({
     .min(32, "PIN_PEPPER must contain at least 32 characters"),
 });
 
-export const environment = environmentSchema.parse({
+const environment = environmentSchema.parse({
   ...process.env,
   NODE_ENV: nodeEnvironment,
   DATABASE_URL:
@@ -36,3 +36,17 @@ export const environment = environmentSchema.parse({
       ? "lazy-janes-test-only-pin-pepper-00000000"
       : undefined),
 });
+
+if (environment.NODE_ENV === "test") {
+  const databaseName = new URL(
+    environment.DATABASE_URL,
+  ).pathname.replace(/^\//, "");
+
+  if (databaseName === "lazy_janes") {
+    throw new Error(
+      "Refusing to run tests against the lazy_janes development database",
+    );
+  }
+}
+
+export { environment };

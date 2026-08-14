@@ -1,6 +1,12 @@
 import type {
+  CreateIngredientInput,
   CreateMenuItemInput,
+  Ingredient,
+  MenuCustomizationCatalog,
+  MenuGroup,
   MenuItem,
+  ReplaceMenuItemCustomizationInput,
+  UpdateIngredientInput,
   UpdateMenuItemInput,
 } from "@lazy-janes/shared";
 
@@ -19,6 +25,16 @@ async function readError(response: Response): Promise<string> {
   return `Request failed with status ${response.status}`;
 }
 
+export async function getMenuTaxonomy(): Promise<MenuGroup[]> {
+  const response = await fetch("/api/menu/taxonomy");
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<MenuGroup[]>;
+}
+
 export async function getMenuItems(): Promise<MenuItem[]> {
   const response = await fetch("/api/menu");
 
@@ -27,6 +43,79 @@ export async function getMenuItems(): Promise<MenuItem[]> {
   }
 
   return response.json() as Promise<MenuItem[]>;
+}
+
+export async function getMenuCustomizationCatalog():
+  Promise<MenuCustomizationCatalog> {
+  const response = await fetch("/api/menu/customization-catalog");
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<MenuCustomizationCatalog>;
+}
+
+export async function createIngredient(
+  input: CreateIngredientInput,
+): Promise<Ingredient> {
+  const response = await fetch("/api/menu/ingredients", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<Ingredient>;
+}
+
+export async function updateIngredient(
+  ingredientId: string,
+  input: UpdateIngredientInput,
+): Promise<Ingredient> {
+  const response = await fetch(
+    `/api/menu/ingredients/${ingredientId}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<Ingredient>;
+}
+
+export async function replaceMenuItemCustomization(
+  itemId: string,
+  input: ReplaceMenuItemCustomizationInput,
+): Promise<MenuCustomizationCatalog> {
+  const response = await fetch(
+    `/api/menu/${itemId}/customization`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<MenuCustomizationCatalog>;
 }
 
 export async function createMenuItem(

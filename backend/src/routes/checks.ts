@@ -315,14 +315,36 @@ checksRouter.post("/", async (request, response) => {
       await client.query<ModifierTotalRow>(
         `
           SELECT
-            order_item_id,
+            adjustments.order_item_id,
             COALESCE(
-              SUM(price_adjustment),
+              SUM(adjustments.price_adjustment),
               0
             )::text AS modifier_total
-          FROM order_item_modifiers
-          WHERE order_item_id = ANY($1::uuid[])
-          GROUP BY order_item_id
+          FROM (
+            SELECT
+              order_item_id,
+              price_adjustment
+            FROM order_item_modifiers
+            WHERE order_item_id = ANY($1::uuid[])
+
+            UNION ALL
+
+            SELECT
+              order_item_id,
+              price_adjustment
+            FROM order_item_ingredient_changes
+            WHERE order_item_id = ANY($1::uuid[])
+              AND change_kind IN ('extra', 'add')
+
+            UNION ALL
+
+            SELECT
+              order_item_id,
+              price_adjustment
+            FROM order_item_choice_selections
+            WHERE order_item_id = ANY($1::uuid[])
+          ) adjustments
+          GROUP BY adjustments.order_item_id
         `,
         [requestedItemIds],
       );

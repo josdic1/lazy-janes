@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "main": "index.js",
   "scripts": {
-    "test": "vitest run",
+    "test": "env -u DATABASE_URL -u PIN_PEPPER NODE_ENV=test vitest run",
     "dev": "node --env-file=.env --watch --import tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:migrate": "node --env-file=.env --import tsx src/db/migrate.ts",
-    "db:seed:menu": "node --env-file=.env --import tsx src/db/seedMenu.ts"
+    "db:seed:menu": "node --env-file=.env --import tsx src/db/seedMenu.ts",
+    "db:migrate:test": "env -u DATABASE_URL -u PIN_PEPPER NODE_ENV=test node --import tsx src/db/migrate.ts"
   },
   "keywords": [],
   "author": "",
