@@ -249,6 +249,7 @@ export const ingredientSchema = z.object({
   id: idSchema,
   name: nameSchema,
   isActive: z.boolean(),
+  isAddable: z.boolean(),
   defaultAddPrice: priceSchema,
   allergenFlags: allergenFlagsSchema,
   sortOrder: sortOrderSchema,
@@ -257,6 +258,7 @@ export type Ingredient = z.infer<typeof ingredientSchema>;
 
 export const createIngredientInputSchema = z.object({
   name: nameSchema,
+  isAddable: z.boolean().default(false),
   defaultAddPrice: priceSchema.default(0),
   allergenFlags: allergenFlagsSchema.default([]),
   sortOrder: sortOrderSchema.default(0),
@@ -269,6 +271,7 @@ export const updateIngredientInputSchema = z
   .object({
     name: nameSchema.optional(),
     isActive: z.boolean().optional(),
+    isAddable: z.boolean().optional(),
     defaultAddPrice: priceSchema.optional(),
     allergenFlags: allergenFlagsSchema.optional(),
     sortOrder: sortOrderSchema.optional(),

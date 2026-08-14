@@ -311,6 +311,130 @@ describe("POST /api/orders", () => {
     }
   });
 
+  it("requires explicit global ADD configuration and permits intentional no-charge ADD", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const ingredientId = randomUUID();
+    let orderId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Global Add Rule Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Global Add Rule Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO ingredients (
+            id,
+            name,
+            is_addable,
+            default_add_price
+          )
+          VALUES ($1, $2, false, 0)
+        `,
+        [ingredientId, `Global Add Ingredient ${ingredientId}`],
+      );
+
+      const blocked = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              addedIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toBe(
+        "One or more added ingredients are not configured for ADD",
+      );
+
+      await pool.query(
+        `
+          UPDATE ingredients
+          SET is_addable = true,
+              default_add_price = 0
+          WHERE id = $1
+        `,
+        [ingredientId],
+      );
+
+      const allowed = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              addedIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(allowed.status).toBe(201);
+      const order = orderSchema.parse(allowed.body);
+      orderId = order.id;
+      expect(order.items[0]?.ingredientChanges).toEqual([
+        expect.objectContaining({
+          ingredientId,
+          changeKind: "add",
+          priceAdjustment: 0,
+        }),
+      ]);
+    } finally {
+      if (orderId) {
+        await pool.query(
+          `
+            DELETE FROM order_item_ingredient_changes
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query(
+          `
+            DELETE FROM order_item_events
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM order_events WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
+      }
+
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
   it("rejects contradictory REMOVE and EXTRA for one ingredient", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();

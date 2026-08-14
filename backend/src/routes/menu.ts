@@ -63,6 +63,7 @@ type IngredientRow = {
   id: string;
   name: string;
   is_active: boolean;
+  is_addable: boolean;
   default_add_price: string;
   allergen_flags: AllergenFlag[];
   sort_order: number;
@@ -191,6 +192,7 @@ function toIngredient(row: IngredientRow): Ingredient {
     id: row.id,
     name: row.name,
     isActive: row.is_active,
+    isAddable: row.is_addable,
     defaultAddPrice: Number(row.default_add_price),
     allergenFlags: row.allergen_flags,
     sortOrder: row.sort_order,
@@ -264,6 +266,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
           id,
           name,
           is_active,
+          is_addable,
           default_add_price,
           allergen_flags,
           sort_order
@@ -375,6 +378,7 @@ menuRouter.get("/ingredients", async (_request, response) => {
       id,
       name,
       is_active,
+      is_addable,
       default_add_price,
       allergen_flags,
       sort_order
@@ -404,21 +408,24 @@ menuRouter.post(
         `
           INSERT INTO ingredients (
             name,
+            is_addable,
             default_add_price,
             allergen_flags,
             sort_order
           )
-          VALUES ($1, $2, $3, $4)
+          VALUES ($1, $2, $3, $4, $5)
           RETURNING
             id,
             name,
             is_active,
+            is_addable,
             default_add_price,
             allergen_flags,
             sort_order
         `,
         [
           input.data.name,
+          input.data.isAddable,
           input.data.defaultAddPrice,
           input.data.allergenFlags,
           input.data.sortOrder,
@@ -466,6 +473,7 @@ menuRouter.patch(
 
     if (input.data.name !== undefined) assign("name", input.data.name);
     if (input.data.isActive !== undefined) assign("is_active", input.data.isActive);
+    if (input.data.isAddable !== undefined) assign("is_addable", input.data.isAddable);
     if (input.data.defaultAddPrice !== undefined) {
       assign("default_add_price", input.data.defaultAddPrice);
     }
@@ -487,6 +495,7 @@ menuRouter.patch(
           id,
           name,
           is_active,
+          is_addable,
           default_add_price,
           allergen_flags,
           sort_order

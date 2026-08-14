@@ -189,6 +189,7 @@ export function MenuManagementPage() {
   const [librarySearch, setLibrarySearch] = useState("");
   const [selectedIngredientId, setSelectedIngredientId] = useState<string | null>(null);
   const [ingredientName, setIngredientName] = useState("");
+  const [ingredientAddable, setIngredientAddable] = useState(false);
   const [ingredientPrice, setIngredientPrice] = useState(0);
   const [ingredientAllergens, setIngredientAllergens] = useState<AllergenFlag[]>([]);
   const [ingredientSaving, setIngredientSaving] = useState(false);
@@ -419,7 +420,7 @@ export function MenuManagementPage() {
       {
         ingredientId: ingredient.id,
         canRemove: true,
-        canExtra: true,
+        canExtra: false,
         extraPrice: ingredient.defaultAddPrice,
         sortOrder: current.length,
       },
@@ -559,6 +560,7 @@ export function MenuManagementPage() {
   function selectLibraryIngredient(ingredient: Ingredient) {
     setSelectedIngredientId(ingredient.id);
     setIngredientName(ingredient.name);
+    setIngredientAddable(ingredient.isAddable);
     setIngredientPrice(ingredient.defaultAddPrice);
     setIngredientAllergens([...ingredient.allergenFlags]);
     setIngredientError("");
@@ -567,6 +569,7 @@ export function MenuManagementPage() {
   function newLibraryIngredient() {
     setSelectedIngredientId(null);
     setIngredientName("");
+    setIngredientAddable(false);
     setIngredientPrice(0);
     setIngredientAllergens([]);
     setIngredientError("");
@@ -581,12 +584,14 @@ export function MenuManagementPage() {
       if (selectedIngredientId) {
         await updateIngredient(selectedIngredientId, {
           name: ingredientName,
+          isAddable: ingredientAddable,
           defaultAddPrice: ingredientPrice,
           allergenFlags: ingredientAllergens,
         });
       } else {
         await createIngredient({
           name: ingredientName,
+          isAddable: ingredientAddable,
           defaultAddPrice: ingredientPrice,
           allergenFlags: ingredientAllergens,
           sortOrder: catalog.ingredients.length,
@@ -1090,7 +1095,7 @@ export function MenuManagementPage() {
                   {addableRecipeIngredients.map((ingredient) => (
                     <button type="button" key={ingredient.id} onClick={() => addRecipeIngredient(ingredient)}>
                       <span>{ingredient.name}</span>
-                      <small>{ingredient.defaultAddPrice > 0 ? `default add ${money(ingredient.defaultAddPrice)}` : ""}</small>
+                      <small>{ingredient.isAddable ? `ADD ${money(ingredient.defaultAddPrice)}` : "ADD not configured"}</small>
                     </button>
                   ))}
                 </div>
@@ -1214,7 +1219,13 @@ export function MenuManagementPage() {
                         <strong>{ingredient.name}</strong>
                         <small>{ingredient.allergenFlags.join(" · ") || "No declared allergens"}</small>
                       </span>
-                      <span>{ingredient.isActive ? money(ingredient.defaultAddPrice) : "Inactive"}</span>
+                      <span>
+                        {!ingredient.isActive
+                          ? "Inactive"
+                          : ingredient.isAddable
+                            ? `ADD ${money(ingredient.defaultAddPrice)}`
+                            : "Not addable"}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1227,9 +1238,28 @@ export function MenuManagementPage() {
                   <span>Name</span>
                   <input required value={ingredientName} onChange={(event) => setIngredientName(event.target.value)} />
                 </label>
+                <label className="ingredient-addable-toggle">
+                  <span>Global ADD</span>
+                  <span className="ingredient-addable-control">
+                    <input
+                      type="checkbox"
+                      checked={ingredientAddable}
+                      onChange={(event) => setIngredientAddable(event.target.checked)}
+                    />
+                    Available to servers in ADD search
+                  </span>
+                </label>
                 <label>
                   <span>Default ADD price</span>
-                  <input type="number" min="0" step="0.01" value={ingredientPrice} onChange={(event) => setIngredientPrice(Number(event.target.value))} />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={ingredientPrice}
+                    disabled={!ingredientAddable}
+                    onChange={(event) => setIngredientPrice(Number(event.target.value))}
+                  />
+                  <small>{ingredientAddable ? "Use $0.00 only when the add is intentionally free." : "Enable Global ADD first."}</small>
                 </label>
                 <fieldset className="allergen-fieldset">
                   <legend>Allergens</legend>

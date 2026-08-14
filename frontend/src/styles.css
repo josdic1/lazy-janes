@@ -3822,6 +3822,40 @@ body {
   gap: 8px;
 }
 
+
+.ingredient-addable-control {
+  min-height: 40px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  font-family: var(--font-body) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+}
+
+.ingredient-addable-control input {
+  margin: 0;
+}
+
+.ingredient-library-form input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.service-add-empty {
+  margin: 0 8px;
+  padding: 12px;
+  border: 1px dashed var(--line-soft);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
 /* service order composition */
 .service-order-layout {
   min-height: 650px;

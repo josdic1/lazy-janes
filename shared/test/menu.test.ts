@@ -45,12 +45,14 @@ describe("menu contract", () => {
 
   it("keeps intrinsic allergens on ingredients", () => {
     expect(ALLERGEN_FLAGS).toContain("shellfish");
-    expect(
-      createIngredientInputSchema.parse({
-        name: "Shrimp",
-        allergenFlags: ["shellfish"],
-      }).allergenFlags,
-    ).toEqual(["shellfish"]);
+    const shrimp = createIngredientInputSchema.parse({
+      name: "Shrimp",
+      allergenFlags: ["shellfish"],
+    });
+
+    expect(shrimp.allergenFlags).toEqual(["shellfish"]);
+    expect(shrimp.isAddable).toBe(false);
+    expect(shrimp.defaultAddPrice).toBe(0);
   });
 
   it("keeps item-level safety declarations explicit", () => {

@@ -7,7 +7,7 @@ This update replaces legacy per-dish modifier rows for new ordering with explici
 - Menu item = sellable item.
 - Ingredient = reusable service-visible component, defined once.
 - Menu item ingredient = whether an included ingredient can be removed or made extra, plus any extra price.
-- ADD = restaurant-wide active ingredient library, excluding ingredients already included or already selected by a choice.
+- ADD = explicitly approved restaurant-wide ingredients (`is_addable`), excluding ingredients already included or already selected by a choice.
 - Choice group = a real decision such as protein, side, egg style, bread, or size.
 - Kitchen note = optional escape hatch for unusual requests.
 - Order storage records only deviations from the standard item.
@@ -29,6 +29,19 @@ Supported item-level safety declarations:
 - `other`
 
 Migration `018_menu_item_safety_semantics.sql` preserves any old item-level allergen flags as explicit `contains` declarations, then removes the ambiguous `menu_items.allergen_flags` column.
+
+## ADD / EXTRA pricing truth
+
+Migration `019_add_extra_pricing_truth.sql` separates permission from price:
+
+- `ingredients.is_addable` explicitly controls whether an ingredient appears in global ADD search.
+- `default_add_price = 0` is allowed only as an intentional no-charge ADD after `is_addable` is enabled.
+- `menu_item_ingredients.can_extra` explicitly controls EXTRA for a standard component.
+- Existing positive prices are preserved; a known positive ingredient ADD price may fill a zero EXTRA placeholder.
+- Unpriced zero-dollar EXTRA placeholders from the composition seed are disabled rather than silently treated as free.
+- Managers can explicitly enable an EXTRA and set its real item-specific price, including `$0.00` when it is genuinely free.
+
+In Order Entry, selecting an ADD ingredient clears the search text, keeps the selected ingredient checked, restores the available list, and returns keyboard focus to the search field.
 
 ## Enforced ordering rules
 
@@ -56,4 +69,4 @@ npm test --workspace @lazy-janes/shared
 npm test --workspace @lazy-janes/backend
 ```
 
-Do **not** run `db:seed:menu` against an existing Lazy Jane's database that already contains the 427 menu items. Migrations 016–018 migrate and populate the composition data for the existing menu.
+Do **not** run `db:seed:menu` against an existing Lazy Jane's database that already contains the 427 menu items. Migrations 016–019 migrate and populate the composition data for the existing menu.

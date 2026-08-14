@@ -13,7 +13,7 @@ import type {
   Order,
   PartyListItem,
 } from "@lazy-janes/shared";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getMenuCustomizationCatalog,
   getMenuItems,
@@ -157,6 +157,7 @@ export function OrderEntryPage() {
   const [selectedChoiceOptionIds, setSelectedChoiceOptionIds] =
     useState<string[]>([]);
   const [addSearch, setAddSearch] = useState("");
+  const addSearchInputRef = useRef<HTMLInputElement>(null);
   const [kitchenNote, setKitchenNote] = useState("");
 
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -347,40 +348,22 @@ export function OrderEntryPage() {
 
   const addableIngredients = useMemo(() => {
     const query = addSearch.trim().toLowerCase();
-    const selected = customization.ingredients.filter(
-      (ingredient) =>
-        ingredient.isActive &&
-        !includedIngredientIds.has(ingredient.id) &&
-        !choiceIngredientIds.has(ingredient.id) &&
-        addedIngredientIds.includes(ingredient.id),
-    );
 
-    if (query === "") {
-      return selected.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    const matches = customization.ingredients
+    return customization.ingredients
       .filter(
         (ingredient) =>
           ingredient.isActive &&
+          ingredient.isAddable &&
           !includedIngredientIds.has(ingredient.id) &&
           !choiceIngredientIds.has(ingredient.id) &&
-          ingredient.name.toLowerCase().includes(query),
+          (query === "" || ingredient.name.toLowerCase().includes(query)),
       )
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .slice(0, 40);
-
-    const byId = new Map<string, Ingredient>();
-    for (const ingredient of [...selected, ...matches]) {
-      byId.set(ingredient.id, ingredient);
-    }
-
-    return [...byId.values()].sort((a, b) => {
-      const aSelected = addedIngredientIds.includes(a.id);
-      const bSelected = addedIngredientIds.includes(b.id);
-      if (aSelected !== bSelected) return aSelected ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
+      .sort((a, b) => {
+        const aSelected = addedIngredientIds.includes(a.id);
+        const bSelected = addedIngredientIds.includes(b.id);
+        if (aSelected !== bSelected) return aSelected ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
   }, [
     addSearch,
     addedIngredientIds,
@@ -570,11 +553,21 @@ export function OrderEntryPage() {
   }
 
   function toggleAdd(ingredientId: string) {
+    const selecting = !addedIngredientIds.includes(ingredientId);
+
     setAddedIngredientIds((current) =>
       current.includes(ingredientId)
         ? current.filter((id) => id !== ingredientId)
         : [...current, ingredientId],
     );
+
+    if (selecting) {
+      setAddSearch("");
+    }
+
+    requestAnimationFrame(() => {
+      addSearchInputRef.current?.focus();
+    });
   }
 
   function toggleChoice(group: MenuChoiceGroup, optionId: string) {
@@ -1108,7 +1101,7 @@ export function OrderEntryPage() {
                               disabled={!ingredient.canExtra}
                               onClick={() => toggleExtra(ingredient.ingredientId)}
                             >
-                              Extra{ingredient.extraPrice > 0 ? ` +${money(ingredient.extraPrice)}` : ""}
+                              Extra{ingredient.extraPrice > 0 ? ` +${money(ingredient.extraPrice)}` : " · no charge"}
                             </button>
                           </div>
                         </div>
@@ -1170,6 +1163,7 @@ export function OrderEntryPage() {
                 </div>
 
                 <input
+                  ref={addSearchInputRef}
                   className="service-add-search"
                   type="search"
                   placeholder="Add bacon, avocado, cheese…"
@@ -1177,26 +1171,34 @@ export function OrderEntryPage() {
                   onChange={(event) => setAddSearch(event.target.value)}
                 />
 
-                <div className="service-add-grid">
-                  {addableIngredients.map((ingredient) => {
-                    const selected = addedIngredientIds.includes(ingredient.id);
-                    return (
-                      <label data-selected={selected} key={ingredient.id}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleAdd(ingredient.id)}
-                        />
-                        <span>{ingredient.name}</span>
-                        <small>
-                          {ingredient.defaultAddPrice > 0
-                            ? `+${money(ingredient.defaultAddPrice)}`
-                            : ""}
-                        </small>
-                      </label>
-                    );
-                  })}
-                </div>
+                {addableIngredients.length === 0 ? (
+                  <div className="service-add-empty">
+                    {addSearch.trim()
+                      ? "No matching ADD ingredients."
+                      : "No global ADD ingredients are configured yet."}
+                  </div>
+                ) : (
+                  <div className="service-add-grid">
+                    {addableIngredients.map((ingredient) => {
+                      const selected = addedIngredientIds.includes(ingredient.id);
+                      return (
+                        <label data-selected={selected} key={ingredient.id}>
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleAdd(ingredient.id)}
+                          />
+                          <span>{ingredient.name}</span>
+                          <small>
+                            {ingredient.defaultAddPrice > 0
+                              ? `+${money(ingredient.defaultAddPrice)}`
+                              : "NO CHARGE"}
+                          </small>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
 
               <div className="service-customizer-footer">

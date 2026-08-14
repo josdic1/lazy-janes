@@ -340,6 +340,7 @@ ordersRouter.post(
                 ingredient.default_add_price
               FROM ingredients ingredient
               WHERE ingredient.is_active = true
+                AND ingredient.is_addable = true
             `);
 
           const choiceResult =
@@ -403,18 +404,20 @@ ordersRouter.post(
         }
 
         for (const ingredientId of requestedItem.addedIngredientIds) {
+          const includedIngredient = rules.includedById.get(ingredientId);
+          if (includedIngredient) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: `${includedIngredient.ingredient_name} is already in ${menuItem.name}; use Extra instead`,
+            });
+            return;
+          }
+
           const ingredient = rules.addableById.get(ingredientId);
           if (!ingredient || !ingredient.is_active) {
             await client.query("ROLLBACK");
             response.status(409).json({
-              error: "One or more added ingredients are unavailable",
-            });
-            return;
-          }
-          if (rules.includedById.has(ingredientId)) {
-            await client.query("ROLLBACK");
-            response.status(409).json({
-              error: `${ingredient.ingredient_name} is already in ${menuItem.name}; use Extra instead`,
+              error: "One or more added ingredients are not configured for ADD",
             });
             return;
           }
