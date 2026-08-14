@@ -293,6 +293,7 @@ export const menuItemIngredientSchema = z.object({
   ingredientName: nameSchema,
   allergenFlags: allergenFlagsSchema,
   canRemove: z.boolean(),
+  canSide: z.boolean(),
   canExtra: z.boolean(),
   extraPrice: priceSchema,
   extraPriceConfigured: z.boolean(),
@@ -342,6 +343,7 @@ export type MenuCustomizationCatalog = z.infer<
 const itemIngredientInputSchema = z.object({
   ingredientId: idSchema,
   canRemove: z.boolean().default(true),
+  canSide: z.boolean().default(false),
   canExtra: z.boolean().default(true),
   extraPrice: priceSchema.default(0),
   extraPriceConfigured: z.boolean().default(false),

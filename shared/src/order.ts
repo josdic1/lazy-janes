@@ -40,6 +40,9 @@ export const createOrderItemInputSchema = z
     removedIngredientIds: uniqueIds(
       "An ingredient cannot be removed twice",
     ),
+    sideIngredientIds: uniqueIds(
+      "An ingredient cannot be marked on side twice",
+    ),
     extraIngredientIds: uniqueIds(
       "An ingredient cannot be marked extra twice",
     ),
@@ -58,6 +61,7 @@ export const createOrderItemInputSchema = z
     const seen = new Map<string, string>();
     const groups = [
       ["removedIngredientIds", item.removedIngredientIds],
+      ["sideIngredientIds", item.sideIngredientIds],
       ["extraIngredientIds", item.extraIngredientIds],
       ["addedIngredientIds", item.addedIngredientIds],
     ] as const;
@@ -114,6 +118,7 @@ export type CreateOrderInput = z.infer<typeof createOrderInputSchema>;
 
 export const ORDER_ITEM_INGREDIENT_CHANGE_KINDS = [
   "remove",
+  "side",
   "extra",
   "add",
 ] as const;

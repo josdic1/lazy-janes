@@ -412,6 +412,117 @@ describe("POST /api/orders", () => {
     }
   });
 
+  it("records ON SIDE only for side-capable included ingredients", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const ingredientId = randomUUID();
+    let orderId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "On Side Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'On Side Test Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO ingredients (id, name)
+          VALUES ($1, $2)
+        `,
+        [ingredientId, `On Side Dressing ${ingredientId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_ingredients (
+            menu_item_id,
+            ingredient_id,
+            can_remove,
+            can_side,
+            can_extra
+          )
+          VALUES ($1, $2, true, true, true)
+        `,
+        [menuItemId, ingredientId],
+      );
+
+      const response = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              sideIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(response.status).toBe(201);
+      const order = orderSchema.parse(response.body);
+      orderId = order.id;
+      expect(order.items[0]?.ingredientChanges).toEqual([
+        expect.objectContaining({
+          ingredientId,
+          changeKind: "side",
+          priceAdjustment: 0,
+          priceConfigured: true,
+        }),
+      ]);
+    } finally {
+      if (orderId) {
+        await pool.query(
+          `
+            DELETE FROM order_item_ingredient_changes
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query(
+          `
+            DELETE FROM order_item_events
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM order_events WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
+      }
+
+      await pool.query(
+        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
+        [menuItemId],
+      );
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
   it("rejects contradictory REMOVE and EXTRA for one ingredient", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();

@@ -53,6 +53,7 @@ const emptyForm: CreateMenuItemInput = {
 type IngredientLinkDraft = {
   ingredientId: string;
   canRemove: boolean;
+  canSide: boolean;
   canExtra: boolean;
   extraPrice: number;
   extraPriceConfigured: boolean;
@@ -152,6 +153,7 @@ function linkDraft(link: MenuItemIngredient): IngredientLinkDraft {
   return {
     ingredientId: link.ingredientId,
     canRemove: link.canRemove,
+    canSide: link.canSide,
     canExtra: link.canExtra,
     extraPrice: link.extraPrice,
     extraPriceConfigured: link.extraPriceConfigured,
@@ -423,6 +425,7 @@ export function MenuManagementPage() {
       {
         ingredientId: ingredient.id,
         canRemove: true,
+        canSide: false,
         canExtra: true,
         extraPrice: ingredient.defaultAddPrice,
         extraPriceConfigured: ingredient.addPriceConfigured,
@@ -521,6 +524,7 @@ export function MenuManagementPage() {
       ingredients: ingredientLinks.map((link, index) => ({
         ingredientId: link.ingredientId,
         canRemove: link.canRemove,
+        canSide: link.canSide,
         canExtra: link.canExtra,
         extraPrice: link.extraPrice,
         extraPriceConfigured: link.extraPriceConfigured,
@@ -1062,6 +1066,16 @@ export function MenuManagementPage() {
                             }
                           />
                           Remove
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={link.canSide}
+                            onChange={(event) =>
+                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, canSide: event.target.checked } : candidate))
+                            }
+                          />
+                          On side
                         </label>
                         <label>
                           <input

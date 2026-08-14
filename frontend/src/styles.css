@@ -3118,9 +3118,21 @@ body {
 }
 
 .service-cart-controls
-  .service-cart-remove {
+  .service-cart-edit {
   width: auto;
   margin-left: auto;
+  padding: 0 5px;
+
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.service-cart-controls
+  .service-cart-remove {
+  width: auto;
+  margin-left: 2px;
   padding: 0;
 
   border: 0;
@@ -3529,7 +3541,7 @@ body {
   min-height: 52px;
   padding: 7px 10px;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto auto 100px auto auto;
+  grid-template-columns: minmax(150px, 1fr) auto auto auto 100px auto auto;
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid var(--line-soft);
@@ -3969,9 +3981,9 @@ body {
 }
 
 .service-ingredient-columns {
-  min-width: 166px;
+  min-width: 252px;
   display: grid !important;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 5px;
   text-align: center;
 }
@@ -4137,6 +4149,7 @@ body {
   color: var(--danger) !important;
 }
 
+.service-cart-change[data-kind="side"],
 .service-cart-change[data-kind="extra"],
 .service-cart-change[data-kind="add"] {
   color: var(--teal-deep) !important;
@@ -4160,7 +4173,7 @@ body {
   }
 
   .composition-ingredient-row {
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: 1fr auto auto auto;
   }
 
   .composition-price-field,

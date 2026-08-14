@@ -78,6 +78,7 @@ type IngredientRuleRow = {
   allergen_flags: AllergenFlag[];
   is_active: boolean;
   can_remove: boolean;
+  can_side: boolean;
   can_extra: boolean;
   extra_price: string;
   extra_price_configured: boolean;
@@ -320,6 +321,7 @@ ordersRouter.post(
                   ingredient.allergen_flags,
                   ingredient.is_active,
                   link.can_remove,
+                  link.can_side,
                   link.can_extra,
                   link.extra_price,
                   link.extra_price_configured,
@@ -341,6 +343,7 @@ ordersRouter.post(
                 ingredient.allergen_flags,
                 ingredient.is_active,
                 false AS can_remove,
+                false AS can_side,
                 false AS can_extra,
                 0::numeric AS extra_price,
                 false AS extra_price_configured,
@@ -395,6 +398,17 @@ ordersRouter.post(
             await client.query("ROLLBACK");
             response.status(409).json({
               error: `That ingredient cannot be removed from ${menuItem.name}`,
+            });
+            return;
+          }
+        }
+
+        for (const ingredientId of requestedItem.sideIngredientIds) {
+          const rule = rules.includedById.get(ingredientId);
+          if (!rule || !rule.is_active || !rule.can_side) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: `That ingredient cannot be put on the side for ${menuItem.name}`,
             });
             return;
           }
@@ -639,6 +653,7 @@ ordersRouter.post(
         const ingredientChanges: OrderItemIngredientChange[] = [];
         const changeSets = [
           ["remove", requestedItem.removedIngredientIds],
+          ["side", requestedItem.sideIngredientIds],
           ["extra", requestedItem.extraIngredientIds],
           ["add", requestedItem.addedIngredientIds],
         ] as const;
@@ -687,7 +702,7 @@ ordersRouter.post(
                 changeKind,
                 ingredient.ingredient_name,
                 priceAdjustment,
-                changeKind === "remove"
+                changeKind === "remove" || changeKind === "side"
                   ? true
                   : changeKind === "extra"
                     ? ingredient.extra_price_configured

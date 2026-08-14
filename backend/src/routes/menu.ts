@@ -76,6 +76,7 @@ type ItemIngredientRow = {
   ingredient_name: string;
   allergen_flags: AllergenFlag[];
   can_remove: boolean;
+  can_side: boolean;
   can_extra: boolean;
   extra_price: string;
   extra_price_configured: boolean;
@@ -211,6 +212,7 @@ function toItemIngredient(
     ingredientName: row.ingredient_name,
     allergenFlags: row.allergen_flags,
     canRemove: row.can_remove,
+    canSide: row.can_side,
     canExtra: row.can_extra,
     extraPrice: Number(row.extra_price),
     extraPriceConfigured: row.extra_price_configured,
@@ -285,6 +287,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
           ingredient.name AS ingredient_name,
           ingredient.allergen_flags,
           link.can_remove,
+          link.can_side,
           link.can_extra,
           link.extra_price,
           link.extra_price_configured,
@@ -640,17 +643,19 @@ menuRouter.put(
               menu_item_id,
               ingredient_id,
               can_remove,
+              can_side,
               can_extra,
               extra_price,
               extra_price_configured,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
           `,
           [
             item.id,
             ingredient.ingredientId,
             ingredient.canRemove,
+            ingredient.canSide,
             ingredient.canExtra,
             ingredient.extraPrice,
             ingredient.extraPriceConfigured,

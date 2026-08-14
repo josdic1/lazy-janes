@@ -37,6 +37,7 @@ type CartItem = {
   menuItem: MenuItem;
   quantity: number;
   removedIngredients: MenuItemIngredient[];
+  sideIngredients: MenuItemIngredient[];
   extraIngredients: MenuItemIngredient[];
   addedIngredients: Ingredient[];
   choiceSelections: ChoiceSelection[];
@@ -73,6 +74,7 @@ function sortedKey(values: string[]): string {
 function cartKey(
   item: MenuItem,
   removedIds: string[],
+  sideIds: string[],
   extraIds: string[],
   addedIds: string[],
   choiceOptionIds: string[],
@@ -80,6 +82,7 @@ function cartKey(
   return [
     item.id,
     `no=${sortedKey(removedIds)}`,
+    `side=${sortedKey(sideIds)}`,
     `extra=${sortedKey(extraIds)}`,
     `add=${sortedKey(addedIds)}`,
     `choice=${sortedKey(choiceOptionIds)}`,
@@ -165,6 +168,7 @@ export function OrderEntryPage() {
 
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [removedIngredientIds, setRemovedIngredientIds] = useState<string[]>([]);
+  const [sideIngredientIds, setSideIngredientIds] = useState<string[]>([]);
   const [extraIngredientIds, setExtraIngredientIds] = useState<string[]>([]);
   const [addedIngredientIds, setAddedIngredientIds] = useState<string[]>([]);
   const [selectedChoiceOptionIds, setSelectedChoiceOptionIds] =
@@ -172,6 +176,7 @@ export function OrderEntryPage() {
   const [addSearch, setAddSearch] = useState("");
   const addSearchInputRef = useRef<HTMLInputElement>(null);
   const [kitchenNote, setKitchenNote] = useState("");
+  const [editingCartId, setEditingCartId] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -462,11 +467,13 @@ export function OrderEntryPage() {
   function resetCustomizer() {
     setSelectedItem(null);
     setRemovedIngredientIds([]);
+    setSideIngredientIds([]);
     setExtraIngredientIds([]);
     setAddedIngredientIds([]);
     setSelectedChoiceOptionIds([]);
     setAddSearch("");
     setKitchenNote("");
+    setEditingCartId(null);
   }
 
   function chooseGroup(group: MenuGroup) {
@@ -484,7 +491,7 @@ export function OrderEntryPage() {
   }
 
   function addDirect(item: MenuItem) {
-    const key = cartKey(item, [], [], [], []);
+    const key = cartKey(item, [], [], [], [], []);
 
     setCart((current) => {
       const existing = current.find((entry) => entry.id === key);
@@ -504,6 +511,7 @@ export function OrderEntryPage() {
           menuItem: item,
           quantity: 1,
           removedIngredients: [],
+          sideIngredients: [],
           extraIngredients: [],
           addedIngredients: [],
           choiceSelections: [],
@@ -535,7 +543,9 @@ export function OrderEntryPage() {
     }
 
     setSelectedItem(item);
+    setEditingCartId(null);
     setRemovedIngredientIds([]);
+    setSideIngredientIds([]);
     setExtraIngredientIds([]);
     setAddedIngredientIds([]);
     setSelectedChoiceOptionIds(
@@ -554,6 +564,17 @@ export function OrderEntryPage() {
         ? current.filter((id) => id !== ingredientId)
         : [...current, ingredientId],
     );
+    setSideIngredientIds((current) => current.filter((id) => id !== ingredientId));
+    setExtraIngredientIds((current) => current.filter((id) => id !== ingredientId));
+  }
+
+  function toggleSide(ingredientId: string) {
+    setSideIngredientIds((current) =>
+      current.includes(ingredientId)
+        ? current.filter((id) => id !== ingredientId)
+        : [...current, ingredientId],
+    );
+    setRemovedIngredientIds((current) => current.filter((id) => id !== ingredientId));
     setExtraIngredientIds((current) => current.filter((id) => id !== ingredientId));
   }
 
@@ -564,6 +585,7 @@ export function OrderEntryPage() {
         : [...current, ingredientId],
     );
     setRemovedIngredientIds((current) => current.filter((id) => id !== ingredientId));
+    setSideIngredientIds((current) => current.filter((id) => id !== ingredientId));
   }
 
   function toggleAdd(ingredientId: string) {
@@ -647,6 +669,9 @@ export function OrderEntryPage() {
     const removedIngredients = selectedItemIngredients.filter((ingredient) =>
       removedIngredientIds.includes(ingredient.ingredientId),
     );
+    const sideIngredients = selectedItemIngredients.filter((ingredient) =>
+      sideIngredientIds.includes(ingredient.ingredientId),
+    );
     const extraIngredients = selectedItemIngredients.filter((ingredient) =>
       extraIngredientIds.includes(ingredient.ingredientId),
     );
@@ -662,6 +687,7 @@ export function OrderEntryPage() {
     const baseKey = cartKey(
       selectedItem,
       removedIngredientIds,
+      sideIngredientIds,
       extraIngredientIds,
       addedIngredientIds,
       selectedChoiceOptionIds,
@@ -669,6 +695,23 @@ export function OrderEntryPage() {
     const note = kitchenNote.trim();
 
     setCart((current) => {
+      if (editingCartId) {
+        return current.map((entry) =>
+          entry.id === editingCartId
+            ? {
+                ...entry,
+                menuItem: selectedItem,
+                removedIngredients,
+                sideIngredients,
+                extraIngredients,
+                addedIngredients,
+                choiceSelections,
+                kitchenNote: note,
+              }
+            : entry,
+        );
+      }
+
       const existing = note === "" ? current.find((entry) => entry.id === baseKey) : undefined;
 
       if (existing) {
@@ -686,6 +729,7 @@ export function OrderEntryPage() {
           menuItem: selectedItem,
           quantity: 1,
           removedIngredients,
+          sideIngredients,
           extraIngredients,
           addedIngredients,
           choiceSelections,
@@ -697,6 +741,20 @@ export function OrderEntryPage() {
     resetCustomizer();
     setSuccess("");
     setError("");
+  }
+
+  function editCartItem(entry: CartItem) {
+    setSelectedItem(entry.menuItem);
+    setEditingCartId(entry.id);
+    setRemovedIngredientIds(entry.removedIngredients.map((ingredient) => ingredient.ingredientId));
+    setSideIngredientIds(entry.sideIngredients.map((ingredient) => ingredient.ingredientId));
+    setExtraIngredientIds(entry.extraIngredients.map((ingredient) => ingredient.ingredientId));
+    setAddedIngredientIds(entry.addedIngredients.map((ingredient) => ingredient.id));
+    setSelectedChoiceOptionIds(entry.choiceSelections.map((selection) => selection.option.id));
+    setAddSearch("");
+    setKitchenNote(entry.kitchenNote);
+    setError("");
+    setSuccess("");
   }
 
   function updateQuantity(cartId: string, delta: number) {
@@ -766,6 +824,7 @@ export function OrderEntryPage() {
           seatNumber: null,
           kitchenNote: entry.kitchenNote || null,
           removedIngredientIds: entry.removedIngredients.map((ingredient) => ingredient.ingredientId),
+          sideIngredientIds: entry.sideIngredients.map((ingredient) => ingredient.ingredientId),
           extraIngredientIds: entry.extraIngredients.map((ingredient) => ingredient.ingredientId),
           addedIngredientIds: entry.addedIngredients.map((ingredient) => ingredient.id),
           choiceOptionIds: entry.choiceSelections.map((selection) => selection.option.id),
@@ -1040,7 +1099,7 @@ export function OrderEntryPage() {
             <section className="service-customizer service-composition-customizer">
               <header className="service-customizer-header">
                 <div>
-                  <p className="eyebrow">Customize</p>
+                  <p className="eyebrow">{editingCartId ? "Edit item" : "Customize"}</p>
                   <h2>{selectedItem.name}</h2>
                   {selectedItem.description ? <p>{selectedItem.description}</p> : null}
                 </div>
@@ -1090,7 +1149,8 @@ export function OrderEntryPage() {
                       <small>Tap only what changes</small>
                     </div>
                     <div className="service-ingredient-columns" aria-hidden="true">
-                      <span>Remove</span>
+                      <span>No</span>
+                      <span>Side</span>
                       <span>Extra</span>
                     </div>
                   </div>
@@ -1098,6 +1158,7 @@ export function OrderEntryPage() {
                   <div className="service-ingredient-list">
                     {selectedItemIngredients.map((ingredient) => {
                       const removed = removedIngredientIds.includes(ingredient.ingredientId);
+                      const side = sideIngredientIds.includes(ingredient.ingredientId);
                       const extra = extraIngredientIds.includes(ingredient.ingredientId);
 
                       return (
@@ -1117,6 +1178,22 @@ export function OrderEntryPage() {
                             >
                               No
                             </button>
+                            {ingredient.canSide ? (
+                              <button
+                                type="button"
+                                data-selected={side}
+                                onClick={() => toggleSide(ingredient.ingredientId)}
+                              >
+                                Side
+                              </button>
+                            ) : (
+                              <span
+                                className="service-ingredient-unavailable"
+                                aria-label="On side not available"
+                              >
+                                —
+                              </span>
+                            )}
                             {ingredient.canExtra ? (
                               <button
                                 type="button"
@@ -1257,7 +1334,7 @@ export function OrderEntryPage() {
                   data-variant="primary"
                   onClick={addCustomizedItem}
                 >
-                  Add to Order
+                  {editingCartId ? "Save Changes" : "Add to Order"}
                 </button>
               </div>
             </section>
@@ -1340,6 +1417,11 @@ export function OrderEntryPage() {
                         NO {ingredient.ingredientName}
                       </small>
                     ))}
+                    {entry.sideIngredients.map((ingredient) => (
+                      <small className="service-cart-change" data-kind="side" key={`side-${ingredient.ingredientId}`}>
+                        ON SIDE {ingredient.ingredientName}
+                      </small>
+                    ))}
                     {entry.extraIngredients.map((ingredient) => (
                       <small className="service-cart-change" data-kind="extra" key={`extra-${ingredient.ingredientId}`}>
                         EXTRA {ingredient.ingredientName}
@@ -1365,6 +1447,13 @@ export function OrderEntryPage() {
                       <button type="button" onClick={() => updateQuantity(entry.id, -1)}>−</button>
                       <strong>{entry.quantity}</strong>
                       <button type="button" onClick={() => updateQuantity(entry.id, 1)}>+</button>
+                      <button
+                        type="button"
+                        className="service-cart-edit"
+                        onClick={() => editCartItem(entry)}
+                      >
+                        Edit
+                      </button>
                       <button
                         type="button"
                         className="service-cart-remove"

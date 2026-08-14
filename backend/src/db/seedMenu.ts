@@ -49,6 +49,9 @@ async function seedMenu() {
     await client.query(
       "SELECT normalize_lazy_janes_add_extra_pricing()",
     );
+    await client.query(
+      "SELECT seed_lazy_janes_service_handling()",
+    );
 
     const result = await client.query<{
       menu_items: string;

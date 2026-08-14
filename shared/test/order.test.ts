@@ -62,6 +62,7 @@ describe("order contract", () => {
           seatNumber: null,
           kitchenNote: null,
           removedIngredientIds: [],
+          sideIngredientIds: [],
           extraIngredientIds: [],
           addedIngredientIds: [],
           choiceOptionIds: [],
@@ -117,6 +118,19 @@ describe("order contract", () => {
           {
             menuItemId,
             removedIngredientIds: [ingredientId],
+            sideIngredientIds: [ingredientId],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      createOrderInputSchema.safeParse({
+        fulfillmentType: "takeout",
+        items: [
+          {
+            menuItemId,
+            sideIngredientIds: [ingredientId],
             extraIngredientIds: [ingredientId],
           },
         ],
