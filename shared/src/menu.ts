@@ -195,6 +195,8 @@ const menuItemInputObjectSchema = z.object({
   price: priceSchema,
   status: menuItemStatusSchema.default("available"),
   isSpecial: z.boolean().default(false),
+  isKids: z.boolean().default(false),
+  hasKidsVersion: z.boolean().default(false),
   isModifier: z.boolean().default(false),
   dietaryFlags: dietaryFlagsSchema.default([]),
   safetyDeclarations: safetyDeclarationsSchema.default([]),
@@ -222,6 +224,8 @@ export const updateMenuItemInputSchema = z
     price: priceSchema.optional(),
     status: menuItemStatusSchema.optional(),
     isSpecial: z.boolean().optional(),
+    isKids: z.boolean().optional(),
+    hasKidsVersion: z.boolean().optional(),
     isModifier: z.boolean().optional(),
     dietaryFlags: dietaryFlagsSchema.optional(),
     safetyDeclarations: safetyDeclarationsSchema.optional(),
@@ -235,6 +239,9 @@ export type UpdateMenuItemInput = z.infer<typeof updateMenuItemInputSchema>;
 
 export const menuItemSchema = menuItemInputObjectSchema.extend({
   id: idSchema,
+  sourceKey: z.string().trim().min(1).nullable().default(null),
+  sourceReviewNeeded: z.boolean().default(false),
+  sourceReviewNotes: z.string().default(""),
   safetyDeclarations: z.array(menuItemSafetyDeclarationSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

@@ -36,6 +36,11 @@ type MenuItemRow = {
   price: string;
   status: MenuItemStatus;
   is_special: boolean;
+  is_kids: boolean;
+  has_kids_version: boolean;
+  source_key: string | null;
+  source_review_needed: boolean;
+  source_review_notes: string;
   is_modifier: boolean;
   dietary_flags: string[];
   safety_declarations: MenuItemSafetyDeclaration[];
@@ -112,6 +117,11 @@ const menuSelect = `
     menu_items.price,
     menu_items.status,
     menu_items.is_special,
+    menu_items.is_kids,
+    menu_items.has_kids_version,
+    menu_items.source_key,
+    menu_items.source_review_needed,
+    menu_items.source_review_notes,
     menu_items.is_modifier,
     menu_items.dietary_flags,
     COALESCE(
@@ -148,6 +158,11 @@ function toMenuItem(row: MenuItemRow): MenuItem {
     price: Number(row.price),
     status: row.status,
     isSpecial: row.is_special,
+    isKids: row.is_kids,
+    hasKidsVersion: row.has_kids_version,
+    sourceKey: row.source_key,
+    sourceReviewNeeded: row.source_review_needed,
+    sourceReviewNotes: row.source_review_notes,
     isModifier: row.is_modifier,
     dietaryFlags: row.dietary_flags,
     safetyDeclarations: row.safety_declarations,
@@ -807,11 +822,13 @@ menuRouter.post(
             price,
             status,
             is_special,
+            is_kids,
+            has_kids_version,
             is_modifier,
             dietary_flags,
             sort_order
           )
-          VALUES (NULL, $1, $2, $3, $4, $5, $6, false, $7, $8)
+          VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10)
           RETURNING id
         `,
         [
@@ -821,6 +838,8 @@ menuRouter.post(
           item.price,
           item.status,
           item.isSpecial,
+          item.isKids,
+          item.hasKidsVersion,
           item.dietaryFlags,
           item.sortOrder,
         ],
@@ -949,6 +968,12 @@ menuRouter.patch(
       if (changes.status !== undefined) assign("status", changes.status);
       if (changes.isSpecial !== undefined) {
         assign("is_special", changes.isSpecial);
+      }
+      if (changes.isKids !== undefined) {
+        assign("is_kids", changes.isKids);
+      }
+      if (changes.hasKidsVersion !== undefined) {
+        assign("has_kids_version", changes.hasKidsVersion);
       }
       if (changes.dietaryFlags !== undefined) {
         assign("dietary_flags", changes.dietaryFlags);

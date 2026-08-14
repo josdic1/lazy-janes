@@ -4242,3 +4242,16 @@ body {
   color: var(--danger);
   font-weight: 700;
 }
+
+
+.service-kids-badge {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.62rem;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  vertical-align: 0.16em;
+}

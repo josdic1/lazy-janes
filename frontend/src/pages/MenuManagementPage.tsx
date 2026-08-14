@@ -44,6 +44,8 @@ const emptyForm: CreateMenuItemInput = {
   price: 0,
   status: "available",
   isSpecial: false,
+  isKids: false,
+  hasKidsVersion: false,
   isModifier: false,
   dietaryFlags: [],
   safetyDeclarations: [],
@@ -313,6 +315,8 @@ export function MenuManagementPage() {
       price: item.price,
       status: item.status,
       isSpecial: item.isSpecial,
+      isKids: item.isKids,
+      hasKidsVersion: item.hasKidsVersion,
       isModifier: false,
       dietaryFlags: [...item.dietaryFlags],
       safetyDeclarations: item.safetyDeclarations.map((declaration) => ({
@@ -341,6 +345,8 @@ export function MenuManagementPage() {
           price: form.price,
           status: form.status,
           isSpecial: form.isSpecial,
+          isKids: form.isKids,
+          hasKidsVersion: form.hasKidsVersion,
           dietaryFlags: form.dietaryFlags,
           safetyDeclarations: form.safetyDeclarations,
           sortOrder: form.sortOrder,
@@ -1011,6 +1017,11 @@ export function MenuManagementPage() {
               <label className="checkbox-field">
                 <input type="checkbox" checked={form.isSpecial} onChange={(event) => setForm({ ...form, isSpecial: event.target.checked })} />
                 <span>Feature as a special</span>
+              </label>
+
+              <label className="checkbox-field">
+                <input type="checkbox" checked={form.isKids} onChange={(event) => setForm({ ...form, isKids: event.target.checked })} />
+                <span>Kids item</span>
               </label>
 
               {saveError ? <div className="notice notice--error">{saveError}</div> : null}

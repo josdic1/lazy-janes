@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pool } from "./pool.js";
+import { applyNormalizedMenuData } from "./syncMenuData.js";
 
 const seedPath = resolve(
   process.cwd(),
@@ -55,6 +56,7 @@ async function seedMenu() {
     await client.query(
       "SELECT assert_lazy_janes_choice_group_integrity()",
     );
+    await applyNormalizedMenuData(client);
 
     const result = await client.query<{
       menu_items: string;

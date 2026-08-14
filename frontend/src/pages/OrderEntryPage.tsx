@@ -337,11 +337,18 @@ export function OrderEntryPage() {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
   }
 
-  const selectedItemIngredients = selectedItem
-    ? ingredientsForItem(selectedItem.id)
-    : [];
   const selectedChoiceGroups = selectedItem
     ? choiceGroupsForItem(selectedItem.id)
+    : [];
+  const choiceManagedIngredientIds = new Set(
+    selectedChoiceGroups.flatMap((group) =>
+      group.options.flatMap((option) => option.ingredientId ? [option.ingredientId] : []),
+    ),
+  );
+  const selectedItemIngredients = selectedItem
+    ? ingredientsForItem(selectedItem.id).filter(
+        (ingredient) => !choiceManagedIngredientIds.has(ingredient.ingredientId),
+      )
     : [];
 
   const includedIngredientIds = useMemo(
@@ -1100,7 +1107,7 @@ export function OrderEntryPage() {
               <header className="service-customizer-header">
                 <div>
                   <p className="eyebrow">{editingCartId ? "Edit item" : "Customize"}</p>
-                  <h2>{selectedItem.name}</h2>
+                  <h2>{selectedItem.isKids ? <span className="service-kids-badge">KIDS</span> : null}{selectedItem.name}</h2>
                   {selectedItem.description ? <p>{selectedItem.description}</p> : null}
                 </div>
                 <button type="button" className="button" data-variant="quiet" onClick={resetCustomizer}>
@@ -1360,7 +1367,7 @@ export function OrderEntryPage() {
                   onClick={() => chooseItem(item)}
                 >
                   {quantity > 0 ? <span className="service-item-qty">{quantity}</span> : null}
-                  <strong>{item.name}</strong>
+                  <strong>{item.isKids ? <span className="service-kids-badge">KIDS</span> : null}{item.name}</strong>
                   {item.description ? <p>{item.description}</p> : null}
                   <footer>
                     <span>{money(item.price)}</span>
@@ -1406,7 +1413,7 @@ export function OrderEntryPage() {
                 return (
                   <article className="service-cart-line" key={entry.id}>
                     <div className="service-cart-line-top">
-                      <strong>{entry.menuItem.name}</strong>
+                      <strong>{entry.menuItem.isKids ? <span className="service-kids-badge">KIDS</span> : null}{entry.menuItem.name}</strong>
                       <span>
                         {money(lineTotal)}{hasPendingPrice(entry) ? " + TBD" : ""}
                       </span>
