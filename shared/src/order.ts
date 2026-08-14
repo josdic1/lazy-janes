@@ -130,6 +130,7 @@ export const orderItemIngredientChangeSchema = z.object({
   ingredientName: z.string(),
   changeKind: orderItemIngredientChangeKindSchema,
   priceAdjustment: z.number().finite(),
+  priceConfigured: z.boolean(),
   allergenFlags: z.array(allergenFlagSchema),
 });
 export type OrderItemIngredientChange = z.infer<

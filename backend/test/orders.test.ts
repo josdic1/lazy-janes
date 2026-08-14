@@ -73,9 +73,10 @@ describe("POST /api/orders", () => {
             ingredient_id,
             can_remove,
             can_extra,
-            extra_price
+            extra_price,
+            extra_price_configured
           )
-          VALUES ($1, $2, true, true, 1.25)
+          VALUES ($1, $2, true, true, 1.25, true)
         `,
         [menuItemId, ingredientId],
       );
@@ -112,6 +113,7 @@ describe("POST /api/orders", () => {
           ingredientName,
           changeKind: "extra",
           priceAdjustment: 1.25,
+          priceConfigured: true,
           allergenFlags: ["milk"],
         }),
       ]);
@@ -311,7 +313,7 @@ describe("POST /api/orders", () => {
     }
   });
 
-  it("requires explicit global ADD configuration and permits intentional no-charge ADD", async () => {
+  it("allows ADD before price is known and records pricing truth explicitly", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();
     const ingredientId = randomUUID();
@@ -320,7 +322,7 @@ describe("POST /api/orders", () => {
     try {
       const agent = await createAuthenticatedTestUser({
         userId,
-        displayName: "Global Add Rule Test Server",
+        displayName: "Global Add Pricing Test Server",
         roles: ["server"],
       });
 
@@ -334,7 +336,7 @@ describe("POST /api/orders", () => {
           )
           VALUES (
             $1,
-            'Global Add Rule Item',
+            'Global Add Pricing Item',
             (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
             10
           )
@@ -348,14 +350,15 @@ describe("POST /api/orders", () => {
             id,
             name,
             is_addable,
-            default_add_price
+            default_add_price,
+            add_price_configured
           )
-          VALUES ($1, $2, false, 0)
+          VALUES ($1, $2, true, 0, false)
         `,
         [ingredientId, `Global Add Ingredient ${ingredientId}`],
       );
 
-      const blocked = await agent
+      const response = await agent
         .post("/api/orders")
         .send({
           fulfillmentType: "takeout",
@@ -367,41 +370,15 @@ describe("POST /api/orders", () => {
           ],
         });
 
-      expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toBe(
-        "One or more added ingredients are not configured for ADD",
-      );
-
-      await pool.query(
-        `
-          UPDATE ingredients
-          SET is_addable = true,
-              default_add_price = 0
-          WHERE id = $1
-        `,
-        [ingredientId],
-      );
-
-      const allowed = await agent
-        .post("/api/orders")
-        .send({
-          fulfillmentType: "takeout",
-          items: [
-            {
-              menuItemId,
-              addedIngredientIds: [ingredientId],
-            },
-          ],
-        });
-
-      expect(allowed.status).toBe(201);
-      const order = orderSchema.parse(allowed.body);
+      expect(response.status).toBe(201);
+      const order = orderSchema.parse(response.body);
       orderId = order.id;
       expect(order.items[0]?.ingredientChanges).toEqual([
         expect.objectContaining({
           ingredientId,
           changeKind: "add",
           priceAdjustment: 0,
+          priceConfigured: false,
         }),
       ]);
     } finally {
@@ -524,6 +501,8 @@ describe("POST /api/orders", () => {
     const groupId = randomUUID();
     const firstOptionId = randomUUID();
     const secondOptionId = randomUUID();
+    const noProteinOptionId = randomUUID();
+    let orderId: string | undefined;
 
     try {
       const agent = await createAuthenticatedTestUser({
@@ -573,10 +552,11 @@ describe("POST /api/orders", () => {
             sort_order
           )
           VALUES
-            ($1, $3, 'Chicken', 10),
-            ($2, $3, 'Salmon', 20)
+            ($1, $4, 'Chicken', 10),
+            ($2, $4, 'Salmon', 20),
+            ($3, $4, 'No Protein', 999)
         `,
-        [firstOptionId, secondOptionId, groupId],
+        [firstOptionId, secondOptionId, noProteinOptionId, groupId],
       );
 
       const missing = await agent
@@ -608,6 +588,32 @@ describe("POST /api/orders", () => {
         "Too many selections in Choose protein for Choice Rule Item",
       );
 
+      const declined = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              choiceOptionIds: [noProteinOptionId],
+            },
+          ],
+        });
+
+      expect(declined.status).toBe(201);
+      const declinedOrder = orderSchema.parse(declined.body);
+      orderId = declinedOrder.id;
+      expect(declinedOrder.items[0]?.choiceSelections).toEqual([
+        expect.objectContaining({
+          choiceGroupId: groupId,
+          choiceOptionId: noProteinOptionId,
+          groupLabel: "Choose protein",
+          optionLabel: "No Protein",
+          ingredientId: null,
+          priceAdjustment: 0,
+        }),
+      ]);
+
       const createdOrders = await pool.query<{ count: string }>(
         `
           SELECT count(*) AS count
@@ -616,8 +622,32 @@ describe("POST /api/orders", () => {
         `,
         [userId],
       );
-      expect(Number(createdOrders.rows[0]?.count ?? "0")).toBe(0);
+      expect(Number(createdOrders.rows[0]?.count ?? "0")).toBe(1);
     } finally {
+      if (orderId) {
+        await pool.query(
+          `
+            DELETE FROM order_item_choice_selections
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query(
+          `
+            DELETE FROM order_item_events
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM order_events WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
+      }
+
       await pool.query(
         "DELETE FROM menu_choice_groups WHERE id = $1",
         [groupId],

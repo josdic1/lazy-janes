@@ -53,6 +53,7 @@ describe("menu contract", () => {
     expect(shrimp.allergenFlags).toEqual(["shellfish"]);
     expect(shrimp.isAddable).toBe(false);
     expect(shrimp.defaultAddPrice).toBe(0);
+    expect(shrimp.addPriceConfigured).toBe(false);
   });
 
   it("keeps item-level safety declarations explicit", () => {

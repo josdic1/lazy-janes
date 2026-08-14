@@ -224,6 +224,177 @@ describe("POST /api/checks", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+  it("blocks unknown ADD/EXTRA pricing and resolves it from current menu truth", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const ingredientId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+    let checkId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Pending Price Check Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Pending Price Burger',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO ingredients (id, name)
+          VALUES ($1, $2)
+        `,
+        [ingredientId, `Pending Price Bacon ${ingredientId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_ingredients (
+            menu_item_id,
+            ingredient_id,
+            can_remove,
+            can_extra,
+            extra_price,
+            extra_price_configured
+          )
+          VALUES ($1, $2, true, true, 0, false)
+        `,
+        [menuItemId, ingredientId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            fulfillment_type,
+            created_by_user_id
+          )
+          VALUES ($1, 'takeout', $2)
+        `,
+        [orderId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_user_id,
+            item_name,
+            unit_price
+          )
+          VALUES ($1, $2, $3, $4, 'Pending Price Burger', 10)
+        `,
+        [orderItemId, orderId, menuItemId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_item_ingredient_changes (
+            order_item_id,
+            ingredient_id,
+            change_kind,
+            ingredient_name,
+            price_adjustment,
+            price_configured
+          )
+          VALUES ($1, $2, 'extra', 'Pending Price Bacon', 0, false)
+        `,
+        [orderItemId, ingredientId],
+      );
+
+      const blocked = await agent
+        .post("/api/checks")
+        .send({
+          label: "Pending price",
+          items: [{ orderItemId, allocatedQuantity: 1 }],
+        });
+
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toBe(
+        "Price required before check: EXTRA Pending Price Bacon",
+      );
+
+      await pool.query(
+        `
+          UPDATE menu_item_ingredients
+          SET extra_price = 1.5,
+              extra_price_configured = true
+          WHERE menu_item_id = $1
+            AND ingredient_id = $2
+        `,
+        [menuItemId, ingredientId],
+      );
+
+      const created = await agent
+        .post("/api/checks")
+        .send({
+          label: "Priced",
+          items: [{ orderItemId, allocatedQuantity: 1 }],
+        });
+
+      expect(created.status).toBe(201);
+      const check = checkSchema.parse(created.body);
+      checkId = check.id;
+      expect(check.subtotalAmount).toBe(11.5);
+
+      const change = await pool.query<{
+        price_adjustment: string;
+        price_configured: boolean;
+      }>(
+        `
+          SELECT price_adjustment, price_configured
+          FROM order_item_ingredient_changes
+          WHERE order_item_id = $1
+            AND ingredient_id = $2
+        `,
+        [orderItemId, ingredientId],
+      );
+
+      expect(change.rows[0]).toEqual({
+        price_adjustment: "1.50",
+        price_configured: true,
+      });
+    } finally {
+      if (checkId) {
+        await pool.query("DELETE FROM check_events WHERE check_id = $1", [checkId]);
+        await pool.query("DELETE FROM check_items WHERE check_id = $1", [checkId]);
+        await pool.query("DELETE FROM checks WHERE id = $1", [checkId]);
+      }
+      await pool.query(
+        "DELETE FROM order_item_ingredient_changes WHERE order_item_id = $1",
+        [orderItemId],
+      );
+      await pool.query("DELETE FROM order_items WHERE id = $1", [orderItemId]);
+      await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
+      await pool.query(
+        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
+        [menuItemId],
+      );
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
 });
 
 describe("POST /api/checks/:checkId/present", () => {

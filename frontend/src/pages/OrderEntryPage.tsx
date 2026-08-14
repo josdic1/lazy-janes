@@ -88,11 +88,13 @@ function cartKey(
 
 function lineAdjustment(entry: CartItem): number {
   const extras = entry.extraIngredients.reduce(
-    (sum, ingredient) => sum + ingredient.extraPrice,
+    (sum, ingredient) =>
+      sum + (ingredient.extraPriceConfigured ? ingredient.extraPrice : 0),
     0,
   );
   const additions = entry.addedIngredients.reduce(
-    (sum, ingredient) => sum + ingredient.defaultAddPrice,
+    (sum, ingredient) =>
+      sum + (ingredient.addPriceConfigured ? ingredient.defaultAddPrice : 0),
     0,
   );
   const choices = entry.choiceSelections.reduce(
@@ -101,6 +103,17 @@ function lineAdjustment(entry: CartItem): number {
   );
 
   return extras + additions + choices;
+}
+
+function hasPendingPrice(entry: CartItem): boolean {
+  return (
+    entry.extraIngredients.some(
+      (ingredient) => !ingredient.extraPriceConfigured,
+    ) ||
+    entry.addedIngredients.some(
+      (ingredient) => !ingredient.addPriceConfigured,
+    )
+  );
 }
 
 function allergenLabel(flag: string): string {
@@ -346,14 +359,13 @@ export function OrderEntryPage() {
     return ids;
   }, [selectedChoiceGroups, selectedChoiceOptionIds]);
 
-  const addableIngredients = useMemo(() => {
+  const searchableAddIngredients = useMemo(() => {
     const query = addSearch.trim().toLowerCase();
 
     return customization.ingredients
       .filter(
         (ingredient) =>
           ingredient.isActive &&
-          ingredient.isAddable &&
           !includedIngredientIds.has(ingredient.id) &&
           !choiceIngredientIds.has(ingredient.id) &&
           (query === "" || ingredient.name.toLowerCase().includes(query)),
@@ -362,6 +374,7 @@ export function OrderEntryPage() {
         const aSelected = addedIngredientIds.includes(a.id);
         const bSelected = addedIngredientIds.includes(b.id);
         if (aSelected !== bSelected) return aSelected ? -1 : 1;
+        if (a.isAddable !== b.isAddable) return a.isAddable ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
   }, [
@@ -438,6 +451,7 @@ export function OrderEntryPage() {
       sum + (item.menuItem.price + lineAdjustment(item)) * item.quantity,
     0,
   );
+  const cartHasPendingPrice = cart.some(hasPendingPrice);
 
   function quantityForItem(itemId: string): number {
     return cart
@@ -553,6 +567,11 @@ export function OrderEntryPage() {
   }
 
   function toggleAdd(ingredientId: string) {
+    const ingredient = customization.ingredients.find(
+      (candidate) => candidate.id === ingredientId,
+    );
+    if (!ingredient?.isAddable) return;
+
     const selecting = !addedIngredientIds.includes(ingredientId);
 
     setAddedIngredientIds((current) =>
@@ -612,7 +631,10 @@ export function OrderEntryPage() {
       const selectedCount = selectedChoiceOptionIds.filter((id) => optionIds.has(id)).length;
 
       if (selectedCount < group.minSelections) {
-        setError(`Choose ${group.label} for ${selectedItem.name}.`);
+        const prompt = /^choose\b/i.test(group.label)
+          ? group.label
+          : `Choose ${group.label}`;
+        setError(`${prompt} for ${selectedItem.name}.`);
         return;
       }
 
@@ -1095,14 +1117,28 @@ export function OrderEntryPage() {
                             >
                               No
                             </button>
-                            <button
-                              type="button"
-                              data-selected={extra}
-                              disabled={!ingredient.canExtra}
-                              onClick={() => toggleExtra(ingredient.ingredientId)}
-                            >
-                              Extra{ingredient.extraPrice > 0 ? ` +${money(ingredient.extraPrice)}` : " · no charge"}
-                            </button>
+                            {ingredient.canExtra ? (
+                              <button
+                                type="button"
+                                data-selected={extra}
+                                onClick={() => toggleExtra(ingredient.ingredientId)}
+                              >
+                                Extra{
+                                  ingredient.extraPriceConfigured
+                                    ? ingredient.extraPrice > 0
+                                      ? ` +${money(ingredient.extraPrice)}`
+                                      : " · no charge"
+                                    : " · price TBD"
+                                }
+                              </button>
+                            ) : (
+                              <span
+                                className="service-ingredient-unavailable"
+                                aria-label="Extra not configured"
+                              >
+                                —
+                              </span>
+                            )}
                           </div>
                         </div>
                       );
@@ -1171,28 +1207,34 @@ export function OrderEntryPage() {
                   onChange={(event) => setAddSearch(event.target.value)}
                 />
 
-                {addableIngredients.length === 0 ? (
-                  <div className="service-add-empty">
-                    {addSearch.trim()
-                      ? "No matching ADD ingredients."
-                      : "No global ADD ingredients are configured yet."}
-                  </div>
+                {searchableAddIngredients.length === 0 ? (
+                  <div className="service-add-empty">No matching ingredients.</div>
                 ) : (
                   <div className="service-add-grid">
-                    {addableIngredients.map((ingredient) => {
+                    {searchableAddIngredients.map((ingredient) => {
                       const selected = addedIngredientIds.includes(ingredient.id);
+                      const available = ingredient.isAddable;
                       return (
-                        <label data-selected={selected} key={ingredient.id}>
+                        <label
+                          data-selected={selected}
+                          data-configured={ingredient.addPriceConfigured}
+                          key={ingredient.id}
+                        >
                           <input
                             type="checkbox"
                             checked={selected}
+                            disabled={!available}
                             onChange={() => toggleAdd(ingredient.id)}
                           />
                           <span>{ingredient.name}</span>
                           <small>
-                            {ingredient.defaultAddPrice > 0
-                              ? `+${money(ingredient.defaultAddPrice)}`
-                              : "NO CHARGE"}
+                            {!available
+                              ? "NOT AVAILABLE"
+                              : ingredient.addPriceConfigured
+                                ? ingredient.defaultAddPrice > 0
+                                  ? `+${money(ingredient.defaultAddPrice)}`
+                                  : "NO CHARGE"
+                                : "PRICE TBD"}
                           </small>
                         </label>
                       );
@@ -1288,7 +1330,9 @@ export function OrderEntryPage() {
                   <article className="service-cart-line" key={entry.id}>
                     <div className="service-cart-line-top">
                       <strong>{entry.menuItem.name}</strong>
-                      <span>{money(lineTotal)}</span>
+                      <span>
+                        {money(lineTotal)}{hasPendingPrice(entry) ? " + TBD" : ""}
+                      </span>
                     </div>
 
                     {entry.removedIngredients.map((ingredient) => (
@@ -1299,11 +1343,13 @@ export function OrderEntryPage() {
                     {entry.extraIngredients.map((ingredient) => (
                       <small className="service-cart-change" data-kind="extra" key={`extra-${ingredient.ingredientId}`}>
                         EXTRA {ingredient.ingredientName}
+                        {!ingredient.extraPriceConfigured ? " · PRICE TBD" : ""}
                       </small>
                     ))}
                     {entry.addedIngredients.map((ingredient) => (
                       <small className="service-cart-change" data-kind="add" key={`add-${ingredient.id}`}>
                         ADD {ingredient.name}
+                        {!ingredient.addPriceConfigured ? " · PRICE TBD" : ""}
                       </small>
                     ))}
                     {entry.choiceSelections.map((selection) => (
@@ -1335,8 +1381,10 @@ export function OrderEntryPage() {
 
           <footer className="service-cart-footer">
             <div className="service-cart-total">
-              <span>Total</span>
-              <strong>{money(total)}</strong>
+              <span>{cartHasPendingPrice ? "Known total" : "Total"}</span>
+              <strong>
+                {money(total)}{cartHasPendingPrice ? " + TBD" : ""}
+              </strong>
             </div>
             <button
               type="button"

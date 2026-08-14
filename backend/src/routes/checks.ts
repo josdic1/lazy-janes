@@ -311,6 +311,77 @@ checksRouter.post("/", async (request, response) => {
       }
     }
 
+    // Resolve any ADD / EXTRA prices that were unknown when the order was
+    // entered. Availability and price certainty are intentionally separate:
+    // the kitchen can receive the order immediately, but billing must never
+    // silently treat an unknown charge as free.
+    await client.query(
+      `
+        UPDATE order_item_ingredient_changes change_record
+        SET
+          price_adjustment = link.extra_price,
+          price_configured = true
+        FROM order_items order_item,
+             menu_item_ingredients link
+        WHERE change_record.order_item_id = order_item.id
+          AND link.menu_item_id = order_item.menu_item_id
+          AND link.ingredient_id = change_record.ingredient_id
+          AND change_record.order_item_id = ANY($1::uuid[])
+          AND change_record.change_kind = 'extra'
+          AND change_record.price_configured = false
+          AND link.extra_price_configured = true
+      `,
+      [requestedItemIds],
+    );
+
+    await client.query(
+      `
+        UPDATE order_item_ingredient_changes change_record
+        SET
+          price_adjustment = ingredient.default_add_price,
+          price_configured = true
+        FROM ingredients ingredient
+        WHERE ingredient.id = change_record.ingredient_id
+          AND change_record.order_item_id = ANY($1::uuid[])
+          AND change_record.change_kind = 'add'
+          AND change_record.price_configured = false
+          AND ingredient.is_active = true
+          AND ingredient.is_addable = true
+          AND ingredient.add_price_configured = true
+      `,
+      [requestedItemIds],
+    );
+
+    const unresolvedPrices = await client.query<{
+      change_kind: "extra" | "add";
+      ingredient_name: string;
+    }>(
+      `
+        SELECT DISTINCT
+          change_kind,
+          ingredient_name
+        FROM order_item_ingredient_changes
+        WHERE order_item_id = ANY($1::uuid[])
+          AND change_kind IN ('extra', 'add')
+          AND price_configured = false
+        ORDER BY change_kind, ingredient_name
+      `,
+      [requestedItemIds],
+    );
+
+    if (unresolvedPrices.rows.length > 0) {
+      await client.query("ROLLBACK");
+      response.status(409).json({
+        error: `Price required before check: ${unresolvedPrices.rows
+          .map(
+            (change) =>
+              `${change.change_kind.toUpperCase()} ${change.ingredient_name}`,
+          )
+          .join(", ")}`,
+      });
+      return;
+    }
+
     const modifierTotals =
       await client.query<ModifierTotalRow>(
         `

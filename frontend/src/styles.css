@@ -3529,7 +3529,7 @@ body {
   min-height: 52px;
   padding: 7px 10px;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) auto auto 100px auto;
+  grid-template-columns: minmax(150px, 1fr) auto auto 100px auto auto;
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid var(--line-soft);
@@ -4208,4 +4208,24 @@ body {
 .service-allergen-strip[data-kind="dietary"] span {
   border-color: var(--teal-deep);
   color: var(--teal-deep);
+}
+
+.service-ingredient-unavailable {
+  min-width: 58px;
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.service-add-grid label[data-configured="false"] {
+  cursor: pointer;
+}
+
+.service-add-grid label[data-configured="false"] small {
+  color: var(--danger);
+  font-weight: 700;
 }

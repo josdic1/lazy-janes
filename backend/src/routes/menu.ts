@@ -65,6 +65,7 @@ type IngredientRow = {
   is_active: boolean;
   is_addable: boolean;
   default_add_price: string;
+  add_price_configured: boolean;
   allergen_flags: AllergenFlag[];
   sort_order: number;
 };
@@ -77,6 +78,7 @@ type ItemIngredientRow = {
   can_remove: boolean;
   can_extra: boolean;
   extra_price: string;
+  extra_price_configured: boolean;
   sort_order: number;
 };
 
@@ -194,6 +196,7 @@ function toIngredient(row: IngredientRow): Ingredient {
     isActive: row.is_active,
     isAddable: row.is_addable,
     defaultAddPrice: Number(row.default_add_price),
+    addPriceConfigured: row.add_price_configured,
     allergenFlags: row.allergen_flags,
     sortOrder: row.sort_order,
   };
@@ -210,6 +213,7 @@ function toItemIngredient(
     canRemove: row.can_remove,
     canExtra: row.can_extra,
     extraPrice: Number(row.extra_price),
+    extraPriceConfigured: row.extra_price_configured,
     sortOrder: row.sort_order,
   };
 }
@@ -268,6 +272,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
           is_active,
           is_addable,
           default_add_price,
+          add_price_configured,
           allergen_flags,
           sort_order
         FROM ingredients
@@ -282,6 +287,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
           link.can_remove,
           link.can_extra,
           link.extra_price,
+          link.extra_price_configured,
           link.sort_order
         FROM menu_item_ingredients link
         JOIN ingredients ingredient
@@ -380,6 +386,7 @@ menuRouter.get("/ingredients", async (_request, response) => {
       is_active,
       is_addable,
       default_add_price,
+      add_price_configured,
       allergen_flags,
       sort_order
     FROM ingredients
@@ -410,16 +417,18 @@ menuRouter.post(
             name,
             is_addable,
             default_add_price,
+            add_price_configured,
             allergen_flags,
             sort_order
           )
-          VALUES ($1, $2, $3, $4, $5)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING
             id,
             name,
             is_active,
             is_addable,
             default_add_price,
+            add_price_configured,
             allergen_flags,
             sort_order
         `,
@@ -427,6 +436,7 @@ menuRouter.post(
           input.data.name,
           input.data.isAddable,
           input.data.defaultAddPrice,
+          input.data.addPriceConfigured,
           input.data.allergenFlags,
           input.data.sortOrder,
         ],
@@ -477,6 +487,9 @@ menuRouter.patch(
     if (input.data.defaultAddPrice !== undefined) {
       assign("default_add_price", input.data.defaultAddPrice);
     }
+    if (input.data.addPriceConfigured !== undefined) {
+      assign("add_price_configured", input.data.addPriceConfigured);
+    }
     if (input.data.allergenFlags !== undefined) {
       assign("allergen_flags", input.data.allergenFlags);
     }
@@ -497,6 +510,7 @@ menuRouter.patch(
           is_active,
           is_addable,
           default_add_price,
+          add_price_configured,
           allergen_flags,
           sort_order
       `,
@@ -628,9 +642,10 @@ menuRouter.put(
               can_remove,
               can_extra,
               extra_price,
+              extra_price_configured,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
           `,
           [
             item.id,
@@ -638,6 +653,7 @@ menuRouter.put(
             ingredient.canRemove,
             ingredient.canExtra,
             ingredient.extraPrice,
+            ingredient.extraPriceConfigured,
             ingredient.sortOrder,
           ],
         );

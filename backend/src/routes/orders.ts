@@ -80,7 +80,9 @@ type IngredientRuleRow = {
   can_remove: boolean;
   can_extra: boolean;
   extra_price: string;
+  extra_price_configured: boolean;
   default_add_price: string;
+  add_price_configured: boolean;
 };
 
 type ChoiceRuleRow = {
@@ -100,6 +102,7 @@ type IngredientChangeRow = {
   ingredient_name: string;
   change_kind: OrderItemIngredientChange["changeKind"];
   price_adjustment: string;
+  price_configured: boolean;
   allergen_flags: AllergenFlag[];
 };
 
@@ -137,6 +140,7 @@ function toIngredientChange(
     ingredientName: row.ingredient_name,
     changeKind: row.change_kind,
     priceAdjustment: Number(row.price_adjustment),
+    priceConfigured: row.price_configured,
     allergenFlags: row.allergen_flags,
   };
 }
@@ -318,7 +322,9 @@ ordersRouter.post(
                   link.can_remove,
                   link.can_extra,
                   link.extra_price,
-                  ingredient.default_add_price
+                  link.extra_price_configured,
+                  ingredient.default_add_price,
+                  ingredient.add_price_configured
                 FROM menu_item_ingredients link
                 JOIN ingredients ingredient
                   ON ingredient.id = link.ingredient_id
@@ -337,7 +343,9 @@ ordersRouter.post(
                 false AS can_remove,
                 false AS can_extra,
                 0::numeric AS extra_price,
-                ingredient.default_add_price
+                false AS extra_price_configured,
+                ingredient.default_add_price,
+                ingredient.add_price_configured
               FROM ingredients ingredient
               WHERE ingredient.is_active = true
                 AND ingredient.is_addable = true
@@ -660,15 +668,17 @@ ordersRouter.post(
                   change_kind,
                   ingredient_name,
                   price_adjustment,
+                  price_configured,
                   allergen_flags
                 )
-                VALUES ($1, $2, $3, $4, $5, $6)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING
                   id,
                   ingredient_id,
                   ingredient_name,
                   change_kind,
                   price_adjustment,
+                  price_configured,
                   allergen_flags
               `,
               [
@@ -677,6 +687,11 @@ ordersRouter.post(
                 changeKind,
                 ingredient.ingredient_name,
                 priceAdjustment,
+                changeKind === "remove"
+                  ? true
+                  : changeKind === "extra"
+                    ? ingredient.extra_price_configured
+                    : ingredient.add_price_configured,
                 ingredient.allergen_flags,
               ],
             );

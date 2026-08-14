@@ -55,6 +55,7 @@ type IngredientLinkDraft = {
   canRemove: boolean;
   canExtra: boolean;
   extraPrice: number;
+  extraPriceConfigured: boolean;
   sortOrder: number;
 };
 
@@ -153,6 +154,7 @@ function linkDraft(link: MenuItemIngredient): IngredientLinkDraft {
     canRemove: link.canRemove,
     canExtra: link.canExtra,
     extraPrice: link.extraPrice,
+    extraPriceConfigured: link.extraPriceConfigured,
     sortOrder: link.sortOrder,
   };
 }
@@ -191,6 +193,7 @@ export function MenuManagementPage() {
   const [ingredientName, setIngredientName] = useState("");
   const [ingredientAddable, setIngredientAddable] = useState(false);
   const [ingredientPrice, setIngredientPrice] = useState(0);
+  const [ingredientPriceConfigured, setIngredientPriceConfigured] = useState(false);
   const [ingredientAllergens, setIngredientAllergens] = useState<AllergenFlag[]>([]);
   const [ingredientSaving, setIngredientSaving] = useState(false);
   const [ingredientError, setIngredientError] = useState("");
@@ -420,8 +423,9 @@ export function MenuManagementPage() {
       {
         ingredientId: ingredient.id,
         canRemove: true,
-        canExtra: false,
+        canExtra: true,
         extraPrice: ingredient.defaultAddPrice,
+        extraPriceConfigured: ingredient.addPriceConfigured,
         sortOrder: current.length,
       },
     ]);
@@ -519,6 +523,7 @@ export function MenuManagementPage() {
         canRemove: link.canRemove,
         canExtra: link.canExtra,
         extraPrice: link.extraPrice,
+        extraPriceConfigured: link.extraPriceConfigured,
         sortOrder: index,
       })),
       choiceGroups: choiceGroups.map((group, groupIndex) => ({
@@ -562,6 +567,7 @@ export function MenuManagementPage() {
     setIngredientName(ingredient.name);
     setIngredientAddable(ingredient.isAddable);
     setIngredientPrice(ingredient.defaultAddPrice);
+    setIngredientPriceConfigured(ingredient.addPriceConfigured);
     setIngredientAllergens([...ingredient.allergenFlags]);
     setIngredientError("");
   }
@@ -571,6 +577,7 @@ export function MenuManagementPage() {
     setIngredientName("");
     setIngredientAddable(false);
     setIngredientPrice(0);
+    setIngredientPriceConfigured(false);
     setIngredientAllergens([]);
     setIngredientError("");
   }
@@ -586,6 +593,7 @@ export function MenuManagementPage() {
           name: ingredientName,
           isAddable: ingredientAddable,
           defaultAddPrice: ingredientPrice,
+          addPriceConfigured: ingredientPriceConfigured,
           allergenFlags: ingredientAllergens,
         });
       } else {
@@ -593,6 +601,7 @@ export function MenuManagementPage() {
           name: ingredientName,
           isAddable: ingredientAddable,
           defaultAddPrice: ingredientPrice,
+          addPriceConfigured: ingredientPriceConfigured,
           allergenFlags: ingredientAllergens,
           sortOrder: catalog.ingredients.length,
         });
@@ -1071,10 +1080,22 @@ export function MenuManagementPage() {
                             min="0"
                             step="0.01"
                             value={link.extraPrice}
+                            disabled={!link.canExtra}
                             onChange={(event) =>
                               setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, extraPrice: Number(event.target.value) } : candidate))
                             }
                           />
+                        </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={link.extraPriceConfigured}
+                            disabled={!link.canExtra}
+                            onChange={(event) =>
+                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, extraPriceConfigured: event.target.checked } : candidate))
+                            }
+                          />
+                          Price confirmed
                         </label>
                         <button type="button" className="composition-remove" onClick={() => setIngredientLinks((current) => current.filter((_, position) => position !== index))}>Remove link</button>
                       </div>
@@ -1095,7 +1116,13 @@ export function MenuManagementPage() {
                   {addableRecipeIngredients.map((ingredient) => (
                     <button type="button" key={ingredient.id} onClick={() => addRecipeIngredient(ingredient)}>
                       <span>{ingredient.name}</span>
-                      <small>{ingredient.isAddable ? `ADD ${money(ingredient.defaultAddPrice)}` : "ADD not configured"}</small>
+                      <small>
+                        {!ingredient.isAddable
+                          ? "ADD not available"
+                          : ingredient.addPriceConfigured
+                            ? `ADD ${money(ingredient.defaultAddPrice)}`
+                            : "ADD · price TBD"}
+                      </small>
                     </button>
                   ))}
                 </div>
@@ -1222,9 +1249,11 @@ export function MenuManagementPage() {
                       <span>
                         {!ingredient.isActive
                           ? "Inactive"
-                          : ingredient.isAddable
-                            ? `ADD ${money(ingredient.defaultAddPrice)}`
-                            : "Not addable"}
+                          : !ingredient.isAddable
+                            ? "Not addable"
+                            : ingredient.addPriceConfigured
+                              ? `ADD ${money(ingredient.defaultAddPrice)}`
+                              : "ADD · price TBD"}
                       </span>
                     </button>
                   ))}
@@ -1259,7 +1288,25 @@ export function MenuManagementPage() {
                     disabled={!ingredientAddable}
                     onChange={(event) => setIngredientPrice(Number(event.target.value))}
                   />
-                  <small>{ingredientAddable ? "Use $0.00 only when the add is intentionally free." : "Enable Global ADD first."}</small>
+                  <small>
+                    {!ingredientAddable
+                      ? "Enable Global ADD first."
+                      : ingredientPriceConfigured
+                        ? "Confirmed price. $0.00 means intentionally free."
+                        : "Price is still unknown; servers can order it, but checkout will require a confirmed price."}
+                  </small>
+                </label>
+                <label className="ingredient-addable-toggle">
+                  <span>ADD pricing</span>
+                  <span className="ingredient-addable-control">
+                    <input
+                      type="checkbox"
+                      checked={ingredientPriceConfigured}
+                      disabled={!ingredientAddable}
+                      onChange={(event) => setIngredientPriceConfigured(event.target.checked)}
+                    />
+                    Price confirmed
+                  </span>
                 </label>
                 <fieldset className="allergen-fieldset">
                   <legend>Allergens</legend>

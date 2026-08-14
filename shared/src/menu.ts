@@ -251,6 +251,7 @@ export const ingredientSchema = z.object({
   isActive: z.boolean(),
   isAddable: z.boolean(),
   defaultAddPrice: priceSchema,
+  addPriceConfigured: z.boolean(),
   allergenFlags: allergenFlagsSchema,
   sortOrder: sortOrderSchema,
 });
@@ -260,6 +261,7 @@ export const createIngredientInputSchema = z.object({
   name: nameSchema,
   isAddable: z.boolean().default(false),
   defaultAddPrice: priceSchema.default(0),
+  addPriceConfigured: z.boolean().default(false),
   allergenFlags: allergenFlagsSchema.default([]),
   sortOrder: sortOrderSchema.default(0),
 });
@@ -273,6 +275,7 @@ export const updateIngredientInputSchema = z
     isActive: z.boolean().optional(),
     isAddable: z.boolean().optional(),
     defaultAddPrice: priceSchema.optional(),
+    addPriceConfigured: z.boolean().optional(),
     allergenFlags: allergenFlagsSchema.optional(),
     sortOrder: sortOrderSchema.optional(),
   })
@@ -292,6 +295,7 @@ export const menuItemIngredientSchema = z.object({
   canRemove: z.boolean(),
   canExtra: z.boolean(),
   extraPrice: priceSchema,
+  extraPriceConfigured: z.boolean(),
   sortOrder: sortOrderSchema,
 });
 export type MenuItemIngredient = z.infer<
@@ -340,6 +344,7 @@ const itemIngredientInputSchema = z.object({
   canRemove: z.boolean().default(true),
   canExtra: z.boolean().default(true),
   extraPrice: priceSchema.default(0),
+  extraPriceConfigured: z.boolean().default(false),
   sortOrder: sortOrderSchema.default(0),
 });
 
