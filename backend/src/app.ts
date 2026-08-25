@@ -1,0 +1,36 @@
+import express from "express";
+import { authRouter } from "./routes/auth.js";
+import { checksRouter } from "./routes/checks.js";
+import { menuRouter } from "./routes/menu.js";
+import { ordersRouter } from "./routes/orders.js";
+import { partiesRouter } from "./routes/parties.js";
+import { paymentsRouter } from "./routes/payments.js";
+import { registerRouter } from "./routes/register.js";
+import { usersRouter } from "./routes/users.js";
+import { stackRouter } from "./routes/stack.js";
+
+export function createApp() {
+  const app = express();
+
+  app.disable("x-powered-by");
+  app.use(express.json());
+
+  app.get("/health", (_request, response) => {
+    response.status(200).json({
+      service: "lazy-janes-backend",
+      status: "ok",
+    });
+  });
+
+  app.use("/api/auth", authRouter);
+  app.use("/api/checks", checksRouter);
+  app.use("/api/menu", menuRouter);
+  app.use("/api/orders", ordersRouter);
+  app.use("/api/parties", partiesRouter);
+  app.use("/api/payments", paymentsRouter);
+  app.use("/api/register", registerRouter);
+  app.use("/api/users", usersRouter);
+  app.use("/api/stack", stackRouter);
+
+  return app;
+}
