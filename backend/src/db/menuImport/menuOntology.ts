@@ -18,6 +18,8 @@ import {
   CARRIER_SOURCE_GROUP_IDS,
   COMPONENT_RELATIONSHIP_OVERRIDES,
   COMPONENT_ROLE_OVERRIDES,
+  HOUSE_CARRIER_SUBSTITUTION_RULES,
+  UNCONFIGURED_REPLACEMENT_SOURCE_GROUP_IDS,
 } from "./menuPolicies.js";
 
 export const COMPONENT_ROLES = [
@@ -56,6 +58,8 @@ export interface SourceComponentRule {
   canRemove: boolean;
   canSide: boolean;
   canExtra: boolean;
+  canReplace: boolean;
+  replacementOptionsConfigured: boolean;
   sortOrder: number;
 }
 
@@ -494,6 +498,8 @@ export function buildMenuOntology(): {
       canRemove: link.canRemove,
       canSide: link.canSide,
       canExtra: link.canExtra,
+      canReplace: false,
+      replacementOptionsConfigured: false,
       sortOrder: link.sortOrder,
     }));
   const componentRuleByKey = new Map(
@@ -514,6 +520,39 @@ export function buildMenuOntology(): {
         CARRIER_SOURCE_GROUP_IDS.has(link.modifierGroupId)
           ? "carrier"
           : TARGET_KIND_BY_GROUP_KIND[group.kind] ?? "other";
+
+      // Some retained groups prove that the existing component could be
+      // replaced without identifying the complete allowed replacement set.
+      // Preserve that capability before filtering unresolved/review options.
+      if (
+        UNCONFIGURED_REPLACEMENT_SOURCE_GROUP_IDS.has(
+          link.modifierGroupId,
+        )
+      ) {
+        const sourceIngredientIds =
+          standardIngredientsByItemRole.get(`${itemId}|${role}`) ?? [];
+
+        if (sourceIngredientIds.length !== 1) {
+          throw new Error(
+            `Unconfigured replacement group ${link.modifierGroupId} on ${itemId} ` +
+            `must resolve to exactly one standard ${role} component`,
+          );
+        }
+
+        const sourceIngredientId = sourceIngredientIds[0]!;
+        const sourceComponent =
+          componentRuleByKey.get(`${itemId}|${sourceIngredientId}`);
+
+        if (!sourceComponent) {
+          throw new Error(
+            `Replacement-capable source component missing for ${itemId}|${sourceIngredientId}`,
+          );
+        }
+
+        sourceComponent.canReplace = true;
+        sourceComponent.replacementOptionsConfigured = false;
+      }
+
       const rawOptions = (optionsByGroup.get(group.id) ?? [])
         .filter((option) => !option.requiresReview)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -594,6 +633,8 @@ export function buildMenuOntology(): {
               canRemove: true,
               canSide,
               canExtra,
+              canReplace: false,
+              replacementOptionsConfigured: false,
               sortOrder: link.sortOrder,
             };
             componentRules.push(rule);
@@ -730,93 +771,87 @@ export function buildMenuOntology(): {
     return !slotIngredientKeys.has(key) || defaultSlotIngredientKeys.has(key);
   });
 
-  // The retained source has one explicit unresolved sandwich question:
+  // Replacement rules must come from explicit restaurant policy or
+  // explicit retained menu truth. Component role alone never grants SUB FOR.
   //
-  //   Choose Bread -> "bread type — VERIFY" / "no bread"
-  //
-  // That group is intentionally different from specific carriers such as
-  // Wrap, Pita, Bun, Hero Roll, etc. Only items using the unresolved generic
-  // bread-type group receive the reusable SUB FOR carrier catalog below.
-  //
-  // This prevents nonsense such as every Wrap automatically substituting to
-  // Garlic Bread while still giving generic sandwich-bread items a practical
-  // set of carriers observed elsewhere in the actual Lazy Jane's menu.
-  const GENERIC_BREAD_GROUP_ID =
-    "MG_BREAD_CHOOSE_BREAD_BREAD_TYPE_VERIFY_NO_BREAD";
-
-  const GENERIC_SANDWICH_CARRIER_NAMES = [
-    "Sandwich Bread",
-    "Bun",
-    "Focaccia Bread",
-    "Garlic Bread",
-    "Hard Roll",
-    "Hero Roll",
-    "Roll",
-    "Sub Roll",
-    "Torpedo Roll",
-    "Pita",
-    "Wrap",
-  ] as const;
-
-  const genericBreadItemIds = new Set(
-    itemModifierGroups
-      .filter((link) => link.modifierGroupId === GENERIC_BREAD_GROUP_ID)
-      .map((link) => link.itemId),
-  );
-
-  const genericCarrierIngredientIds = GENERIC_SANDWICH_CARRIER_NAMES
-    .map((name) => ingredientByName.get(lower(name))?.id ?? null)
-    .filter((ingredientId): ingredientId is string => ingredientId !== null);
-
+  // The old generic-bread implementation lived here and inferred a shared
+  // replacement catalog from one legacy modifier group. It was intentionally
+  // removed.
   const replacementRules: SourceReplacementRule[] = [];
+  const replacementRuleKeys = new Set<string>();
 
-  for (const component of fixedComponentRules) {
-    if (
-      component.role !== "bread" ||
-      !genericBreadItemIds.has(component.itemId)
-    ) {
-      continue;
+  for (const policy of HOUSE_CARRIER_SUBSTITUTION_RULES) {
+    const sourceIngredient = ingredientByName.get(lower(policy.sourceName));
+    const replacementIngredient =
+      ingredientByName.get(lower(policy.replacementName));
+
+    if (!sourceIngredient) {
+      throw new Error(
+        `Carrier substitution source ingredient not found: ${policy.sourceName}`,
+      );
     }
 
-    const sourceScheme = component.preparationSourceKey
-      ? [...preparationSchemesBySignature.values()].find(
-          (scheme) => scheme.sourceKey === component.preparationSourceKey,
-        )
-      : null;
+    if (!replacementIngredient) {
+      throw new Error(
+        `Carrier substitution replacement ingredient not found: ${policy.replacementName}`,
+      );
+    }
 
-    genericCarrierIngredientIds
-      .filter(
-        (replacementIngredientId) =>
-          replacementIngredientId !== component.ingredientId,
-      )
-      .sort((leftId, rightId) => {
-        const left = ingredientById.get(leftId)?.name ?? leftId;
-        const right = ingredientById.get(rightId)?.name ?? rightId;
-        return left.localeCompare(right);
-      })
-      .forEach((replacementIngredientId, index) => {
-        const replacementIngredient =
-          ingredientById.get(replacementIngredientId);
+    if (sourceIngredient.id === replacementIngredient.id) {
+      throw new Error(
+        `Carrier substitution cannot replace ${policy.sourceName} with itself`,
+      );
+    }
 
-        replacementRules.push({
-          itemId: component.itemId,
-          sourceIngredientId: component.ingredientId,
-          replacementIngredientId,
-          preparationSourceKey:
-            component.preparationSourceKey &&
-            sourceScheme &&
-            replacementIngredient &&
-            supportsPreparation(
-              replacementIngredient.name,
-              sourceScheme.kind,
-            )
-              ? component.preparationSourceKey
-              : null,
-          priceAdjustment: 0,
-          priceConfigured: false,
-          sortOrder: (index + 1) * 10,
-        });
+    const specificItemIds =
+      policy.appliesTo === "specific_items"
+        ? new Set(policy.itemIds)
+        : null;
+
+    for (const component of fixedComponentRules) {
+      if (
+        component.role !== "carrier" ||
+        component.ingredientId !== sourceIngredient.id ||
+        (specificItemIds && !specificItemIds.has(component.itemId))
+      ) {
+        continue;
+      }
+
+      const key =
+        `${component.itemId}|${sourceIngredient.id}|${replacementIngredient.id}`;
+
+      if (replacementRuleKeys.has(key)) {
+        throw new Error(`Duplicate carrier substitution policy: ${key}`);
+      }
+
+      replacementRuleKeys.add(key);
+
+      // A concrete explicit policy row proves both permission and a configured
+      // replacement catalog for this source component.
+      component.canReplace = true;
+      component.replacementOptionsConfigured = true;
+
+      const sourceScheme = component.preparationSourceKey
+        ? [...preparationSchemesBySignature.values()].find(
+            (scheme) => scheme.sourceKey === component.preparationSourceKey,
+          )
+        : null;
+
+      replacementRules.push({
+        itemId: component.itemId,
+        sourceIngredientId: sourceIngredient.id,
+        replacementIngredientId: replacementIngredient.id,
+        preparationSourceKey:
+          component.preparationSourceKey &&
+          sourceScheme &&
+          supportsPreparation(replacementIngredient.name, sourceScheme.kind)
+            ? component.preparationSourceKey
+            : null,
+        priceAdjustment: policy.priceAdjustment,
+        priceConfigured: policy.priceConfigured,
+        sortOrder: policy.sortOrder,
       });
+    }
   }
 
   return {

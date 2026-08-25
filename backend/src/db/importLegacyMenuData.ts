@@ -218,11 +218,13 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           can_remove,
           can_side,
           can_extra,
+          can_replace,
+          replacement_options_configured,
           extra_price,
           extra_price_configured,
           sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, false, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11)
         ON CONFLICT (menu_item_id, ingredient_id) DO UPDATE
         SET
           role = EXCLUDED.role,
@@ -231,6 +233,9 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           can_remove = EXCLUDED.can_remove,
           can_side = EXCLUDED.can_side,
           can_extra = EXCLUDED.can_extra,
+          can_replace = EXCLUDED.can_replace,
+          replacement_options_configured =
+            EXCLUDED.replacement_options_configured,
           sort_order = EXCLUDED.sort_order,
           updated_at = now()
       `,
@@ -243,6 +248,8 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
         rule.canRemove,
         rule.canSide,
         rule.canExtra,
+        rule.canReplace,
+        rule.replacementOptionsConfigured,
         rule.sortOrder,
       ],
     );
@@ -267,9 +274,9 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
     );
   }
 
-  // Rebuild explicit PART -> SUB FOR capabilities from canonical ontology.
-  // The source ontology owns the reusable carrier logic; PostgreSQL stores the
-  // expanded per-item allowed replacements used at runtime.
+  // Rebuild explicit PART -> SUB FOR permissions from canonical policy.
+  // Carrier identity alone grants no substitution permission.
+  // Retained choice-group replacements are normalized separately after import.
   for (const itemId of itemUuidBySourceId.values()) {
     await client.query(
       "DELETE FROM menu_item_ingredient_replacements WHERE menu_item_id = $1",

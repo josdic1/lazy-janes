@@ -95,6 +95,8 @@ type ItemIngredientRow = {
   can_remove: boolean;
   can_side: boolean;
   can_extra: boolean;
+  can_replace: boolean;
+  replacement_options_configured: boolean;
   extra_price: string;
   extra_price_configured: boolean;
   sort_order: number;
@@ -293,6 +295,8 @@ function toItemIngredient(
     canRemove: row.can_remove,
     canSide: row.can_side,
     canExtra: row.can_extra,
+    canReplace: row.can_replace,
+    replacementOptionsConfigured: row.replacement_options_configured,
     extraPrice: Number(row.extra_price),
     extraPriceConfigured: row.extra_price_configured,
     sortOrder: row.sort_order,
@@ -400,6 +404,8 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
         link.can_remove,
         link.can_side,
         link.can_extra,
+        link.can_replace,
+        link.replacement_options_configured,
         link.extra_price,
         link.extra_price_configured,
         link.sort_order
@@ -1011,11 +1017,16 @@ menuRouter.put(
               can_remove,
               can_side,
               can_extra,
+              can_replace,
+              replacement_options_configured,
               extra_price,
               extra_price_configured,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES (
+              $1, $2, $3, $4, $5, $6, $7,
+              $8, $9, $10, $11, $12, $13
+            )
           `,
           [
             item.id,
@@ -1026,6 +1037,8 @@ menuRouter.put(
             ingredient.canRemove,
             ingredient.canSide,
             ingredient.canExtra,
+            ingredient.canReplace,
+            ingredient.replacementOptionsConfigured,
             ingredient.extraPrice,
             ingredient.extraPriceConfigured,
             ingredient.sortOrder,

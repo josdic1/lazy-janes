@@ -65,6 +65,8 @@ type IngredientLinkDraft = {
   canRemove: boolean;
   canSide: boolean;
   canExtra: boolean;
+  canReplace: boolean;
+  replacementOptionsConfigured: boolean;
   extraPrice: number;
   extraPriceConfigured: boolean;
   sortOrder: number;
@@ -187,6 +189,8 @@ function linkDraft(link: MenuItemIngredient): IngredientLinkDraft {
     canRemove: link.canRemove,
     canSide: link.canSide,
     canExtra: link.canExtra,
+    canReplace: link.canReplace,
+    replacementOptionsConfigured: link.replacementOptionsConfigured,
     extraPrice: link.extraPrice,
     extraPriceConfigured: link.extraPriceConfigured,
     sortOrder: link.sortOrder,
@@ -488,6 +492,8 @@ export function MenuManagementPage() {
         canRemove: true,
         canSide: false,
         canExtra: true,
+        canReplace: false,
+        replacementOptionsConfigured: false,
         extraPrice: ingredient.defaultAddPrice,
         extraPriceConfigured: ingredient.addPriceConfigured,
         sortOrder: current.length,
@@ -640,6 +646,8 @@ export function MenuManagementPage() {
         canRemove: link.canRemove,
         canSide: link.canSide,
         canExtra: link.canExtra,
+        canReplace: link.canReplace,
+        replacementOptionsConfigured: link.replacementOptionsConfigured,
         extraPrice: link.extraPrice,
         extraPriceConfigured: link.extraPriceConfigured,
         sortOrder: index,

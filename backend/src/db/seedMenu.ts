@@ -62,6 +62,23 @@ async function seedMenu() {
       "SELECT normalize_component_capabilities()",
     );
 
+    // Any concrete replacement row proves that SUB FOR is available and that
+    // its allowed replacement catalog is configured. This includes retained
+    // source truth normalized above, such as Gyro Meat -> Chicken.
+    await client.query(`
+      UPDATE menu_item_ingredients component
+      SET
+        can_replace = true,
+        replacement_options_configured = true,
+        updated_at = now()
+      WHERE EXISTS (
+        SELECT 1
+        FROM menu_item_ingredient_replacements replacement
+        WHERE replacement.menu_item_id = component.menu_item_id
+          AND replacement.source_ingredient_id = component.ingredient_id
+      )
+    `);
+
     const result = await client.query<{
       menu_items: string;
       categories: string;
