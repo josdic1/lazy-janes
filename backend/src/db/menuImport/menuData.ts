@@ -20372,6 +20372,13 @@ export const ingredients: IngredientData[] = [
     "priceConfigured": false
   },
   {
+    "id": "ING_LETTUCE_WRAP",
+    "name": "Lettuce Wrap",
+    "allergenFlags": [],
+    "defaultAddPrice": null,
+    "priceConfigured": false
+  },
+  {
     "id": "ING_CHICKEN_CUTLET",
     "name": "Chicken Cutlet",
     "allergenFlags": [],

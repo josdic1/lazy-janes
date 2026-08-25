@@ -213,6 +213,7 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           menu_item_id,
           ingredient_id,
           role,
+          relationship,
           preparation_scheme_id,
           can_remove,
           can_side,
@@ -221,10 +222,11 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           extra_price_configured,
           sort_order
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 0, false, $8)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, false, $9)
         ON CONFLICT (menu_item_id, ingredient_id) DO UPDATE
         SET
           role = EXCLUDED.role,
+          relationship = EXCLUDED.relationship,
           preparation_scheme_id = EXCLUDED.preparation_scheme_id,
           can_remove = EXCLUDED.can_remove,
           can_side = EXCLUDED.can_side,
@@ -236,6 +238,7 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
         itemId,
         ingredientId,
         rule.role,
+        rule.relationship,
         preparationSchemeId,
         rule.canRemove,
         rule.canSide,
@@ -341,18 +344,20 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           menu_item_id,
           label,
           role,
+          relationship,
           min_selections,
           max_selections,
           sort_order,
           is_active
         )
-        VALUES ($1, $2, $3, $4, $5, $6, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, true)
         RETURNING id
       `,
       [
         itemId,
         slot.label,
         slot.role,
+        slot.relationship,
         slot.minSelections,
         slot.maxSelections,
         slot.sortOrder,

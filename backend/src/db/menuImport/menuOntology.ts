@@ -3,6 +3,8 @@
 // while seeding an empty database. Runtime menu behavior must come from PostgreSQL.
 // Do not use this module to re-synchronize or overwrite manager-edited menu data.
 
+import type { ComponentRelationship, IngredientKind } from "@lazy-janes/shared";
+
 import {
   ingredients,
   itemIngredients,
@@ -12,10 +14,17 @@ import {
   modifiers,
 } from "./menuData.js";
 
+import {
+  CARRIER_SOURCE_GROUP_IDS,
+  COMPONENT_RELATIONSHIP_OVERRIDES,
+  COMPONENT_ROLE_OVERRIDES,
+} from "./menuPolicies.js";
+
 export const COMPONENT_ROLES = [
   "protein",
   "egg",
   "bread",
+  "carrier",
   "cheese",
   "sauce",
   "side",
@@ -42,6 +51,7 @@ export interface SourceComponentRule {
   itemId: string;
   ingredientId: string;
   role: ComponentRole;
+  relationship: ComponentRelationship | null;
   preparationSourceKey: string | null;
   canRemove: boolean;
   canSide: boolean;
@@ -75,6 +85,7 @@ export interface SourceChoiceSlot {
   sourceGroupId: string;
   label: string;
   role: ComponentRole;
+  relationship: ComponentRelationship | null;
   minSelections: number;
   maxSelections: number | null;
   sortOrder: number;
@@ -140,7 +151,7 @@ const VEGGIES = new Set([
   "artichoke hearts", "arugula", "avocado", "bermuda onion", "black beans", "broccoli",
   "brown onion", "brown onions", "cabbage", "carrots", "cherry tomatoes", "chickpeas",
   "cilantro", "corn", "cucumber", "eggplant", "fresh vegetables", "garlic", "green peppers",
-  "iceberg lettuce", "jalapeño peppers", "lettuce", "mesclun", "mixed greens", "mushrooms",
+  "iceberg lettuce", "jalapeño peppers", "lettuce", "lettuce wrap", "mesclun", "mixed greens", "mushrooms",
   "fresh mushrooms", "olives", "onion", "peas", "peppers", "pickles", "portabella mushrooms",
   "potatoes", "red beans", "red onion", "red peppers", "roasted peppers", "romaine lettuce",
   "sauerkraut", "sautéed onions", "scallions", "snow peas", "spinach", "string beans",
@@ -162,7 +173,7 @@ const PREP_KIND_BY_GROUP_KIND: Record<string, PreparationKind | undefined> = {
   bread_prep: "bread_prep",
 };
 
-const ROLE_BY_GROUP_KIND: Record<string, ComponentRole | undefined> = {
+const TARGET_KIND_BY_GROUP_KIND: Record<string, IngredientKind | undefined> = {
   protein: "protein",
   egg: "egg",
   bread: "bread",
@@ -172,7 +183,7 @@ const ROLE_BY_GROUP_KIND: Record<string, ComponentRole | undefined> = {
   side_secondary: "side",
 };
 
-const ROLE_BY_PREP_KIND: Record<PreparationKind, ComponentRole | undefined> = {
+const TARGET_KIND_BY_PREP_KIND: Record<PreparationKind, IngredientKind | undefined> = {
   meat_cook: "protein",
   egg_cook: "egg",
   bread_prep: "bread",
@@ -276,7 +287,7 @@ function alternativeOptionIndexes(
   return result;
 }
 
-export function ingredientKind(name: string): ComponentRole {
+export function ingredientKind(name: string): IngredientKind {
   const value = lower(name);
   if (value === "egg" || value === "eggs" || value === "sliced egg") return "egg";
   if (CHEESES.has(value)) return "cheese";
@@ -323,6 +334,12 @@ export function buildMenuOntology(): {
     current.push(link);
     linksByItem.set(link.itemId, current);
   }
+
+  const carrierItemIds = new Set(
+    itemModifierGroups
+      .filter((link) => CARRIER_SOURCE_GROUP_IDS.has(link.modifierGroupId))
+      .map((link) => link.itemId),
+  );
 
   const standardByItem = new Map<string, Set<string>>();
   for (const link of itemIngredients) {
@@ -375,7 +392,12 @@ export function buildMenuOntology(): {
     const standards = standardByItem.get(itemId) ?? new Set<string>();
     for (const link of links) {
       const group = groupById.get(link.modifierGroupId);
-      const role = group ? ROLE_BY_GROUP_KIND[group.kind] : undefined;
+      const role =
+        CARRIER_SOURCE_GROUP_IDS.has(link.modifierGroupId)
+          ? "carrier"
+          : group
+            ? TARGET_KIND_BY_GROUP_KIND[group.kind]
+            : undefined;
       if (!group || !role) continue;
       for (const option of optionsByGroup.get(group.id) ?? []) {
         const ingredientId = resolveOptionIngredientId(option);
@@ -393,7 +415,12 @@ export function buildMenuOntology(): {
       const group = groupById.get(link.modifierGroupId);
       if (!group) continue;
       const prepKind = PREP_KIND_BY_GROUP_KIND[group.kind];
-      const role = prepKind ? ROLE_BY_PREP_KIND[prepKind] : undefined;
+      const role =
+        prepKind === "bread_prep" && carrierItemIds.has(itemId)
+          ? "carrier"
+          : prepKind
+            ? TARGET_KIND_BY_PREP_KIND[prepKind]
+            : undefined;
       const sourceKey = sourceGroupToPreparationKey.get(group.id);
       if (!role || !sourceKey) continue;
       const current = candidatesByRole.get(role) ?? new Set<string>();
@@ -417,9 +444,14 @@ export function buildMenuOntology(): {
   for (const link of itemIngredients) {
     if (!link.isStandard) continue;
     const ingredient = ingredientById.get(link.ingredientId);
+    const inferredRole = ingredientKind(ingredient?.name ?? "");
+    const componentKey = `${link.itemId}|${link.ingredientId}`;
     const role =
-      explicitRoleByItemIngredient.get(`${link.itemId}|${link.ingredientId}`) ??
-      ingredientKind(ingredient?.name ?? "");
+      COMPONENT_ROLE_OVERRIDES.get(componentKey) ??
+      explicitRoleByItemIngredient.get(componentKey) ??
+      (inferredRole === "bread" && carrierItemIds.has(link.itemId)
+        ? "carrier"
+        : inferredRole);
     roleByItemIngredient.set(`${link.itemId}|${link.ingredientId}`, role);
     const roleKey = `${link.itemId}|${role}`;
     const current = standardIngredientsByItemRole.get(roleKey) ?? [];
@@ -453,6 +485,10 @@ export function buildMenuOntology(): {
       itemId: link.itemId,
       ingredientId: link.ingredientId,
       role: roleByItemIngredient.get(`${link.itemId}|${link.ingredientId}`) ?? "other",
+      relationship:
+        COMPONENT_RELATIONSHIP_OVERRIDES.get(
+          `${link.itemId}|${link.ingredientId}`,
+        ) ?? null,
       preparationSourceKey:
         preparationByItemIngredient.get(`${link.itemId}|${link.ingredientId}`) ?? null,
       canRemove: link.canRemove,
@@ -474,7 +510,10 @@ export function buildMenuOntology(): {
       const group = groupById.get(link.modifierGroupId);
       if (!group || PREP_KIND_BY_GROUP_KIND[group.kind]) continue;
 
-      const role = ROLE_BY_GROUP_KIND[group.kind] ?? "other";
+      const role =
+        CARRIER_SOURCE_GROUP_IDS.has(link.modifierGroupId)
+          ? "carrier"
+          : TARGET_KIND_BY_GROUP_KIND[group.kind] ?? "other";
       const rawOptions = (optionsByGroup.get(group.id) ?? [])
         .filter((option) => !option.requiresReview)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -544,6 +583,10 @@ export function buildMenuOntology(): {
               itemId,
               ingredientId: onlyIngredientId,
               role,
+              relationship:
+                COMPONENT_RELATIONSHIP_OVERRIDES.get(
+                  `${itemId}|${onlyIngredientId}`,
+                ) ?? null,
               preparationSourceKey:
                 applicablePrep && supportsPreparation(ingredient.name, applicablePrep.kind)
                   ? prepSourceKey
@@ -649,6 +692,7 @@ export function buildMenuOntology(): {
         sourceGroupId: group.id,
         label: group.displayName,
         role,
+        relationship: null,
         minSelections: group.minSelections,
         maxSelections:
           group.maxSelections === null

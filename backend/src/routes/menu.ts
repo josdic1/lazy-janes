@@ -7,6 +7,7 @@ import {
 } from "@lazy-janes/shared";
 import type {
   AllergenFlag,
+  ComponentRelationship,
   ComponentRole,
   Ingredient,
   IngredientKind,
@@ -88,6 +89,7 @@ type ItemIngredientRow = {
   ingredient_name: string;
   ingredient_kind: IngredientKind;
   role: ComponentRole;
+  relationship: ComponentRelationship | null;
   preparation_scheme_id: string | null;
   allergen_flags: AllergenFlag[];
   can_remove: boolean;
@@ -115,6 +117,7 @@ type ChoiceRow = {
   menu_item_id: string;
   group_label: string;
   group_role: ComponentRole;
+  group_relationship: ComponentRelationship | null;
   min_selections: number;
   max_selections: number | null;
   group_sort_order: number;
@@ -284,6 +287,7 @@ function toItemIngredient(
     ingredientName: row.ingredient_name,
     ingredientKind: row.ingredient_kind,
     role: row.role,
+    relationship: row.relationship,
     preparationSchemeId: row.preparation_scheme_id,
     allergenFlags: row.allergen_flags,
     canRemove: row.can_remove,
@@ -323,6 +327,7 @@ function toChoiceGroups(rows: ChoiceRow[]): MenuChoiceGroup[] {
         menuItemId: row.menu_item_id,
         label: row.group_label,
         role: row.group_role,
+        relationship: row.group_relationship,
         minSelections: row.min_selections,
         maxSelections: row.max_selections,
         sortOrder: row.group_sort_order,
@@ -389,6 +394,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
         ingredient.name AS ingredient_name,
         ingredient.kind AS ingredient_kind,
         link.role,
+        link.relationship,
         link.preparation_scheme_id,
         ingredient.allergen_flags,
         link.can_remove,
@@ -431,6 +437,7 @@ async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
         group_record.menu_item_id,
         group_record.label AS group_label,
         group_record.role AS group_role,
+        group_record.relationship AS group_relationship,
         group_record.min_selections,
         group_record.max_selections,
         group_record.sort_order AS group_sort_order,
@@ -999,6 +1006,7 @@ menuRouter.put(
               menu_item_id,
               ingredient_id,
               role,
+              relationship,
               preparation_scheme_id,
               can_remove,
               can_side,
@@ -1007,12 +1015,13 @@ menuRouter.put(
               extra_price_configured,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
           `,
           [
             item.id,
             ingredient.ingredientId,
             ingredient.role,
+            ingredient.relationship,
             ingredient.preparationSchemeId,
             ingredient.canRemove,
             ingredient.canSide,
@@ -1057,17 +1066,19 @@ menuRouter.put(
               menu_item_id,
               label,
               role,
+              relationship,
               min_selections,
               max_selections,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
           `,
           [
             item.id,
             group.label,
             group.role,
+            group.relationship,
             group.minSelections,
             group.maxSelections,
             group.sortOrder,

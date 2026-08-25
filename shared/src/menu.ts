@@ -266,9 +266,29 @@ export const INGREDIENT_KINDS = [
 export const ingredientKindSchema = z.enum(INGREDIENT_KINDS);
 export type IngredientKind = z.infer<typeof ingredientKindSchema>;
 
-export const COMPONENT_ROLES = INGREDIENT_KINDS;
-export const componentRoleSchema = ingredientKindSchema;
-export type ComponentRole = IngredientKind;
+export const COMPONENT_ROLES = [
+  "protein",
+  "egg",
+  "bread",
+  "carrier",
+  "cheese",
+  "sauce",
+  "side",
+  "veggie",
+  "fruit",
+  "other",
+] as const;
+export const componentRoleSchema = z.enum(COMPONENT_ROLES);
+export type ComponentRole = z.infer<typeof componentRoleSchema>;
+
+export const COMPONENT_RELATIONSHIPS = [
+  "contains",
+  "comes_with",
+] as const;
+export const componentRelationshipSchema = z.enum(COMPONENT_RELATIONSHIPS);
+export type ComponentRelationship = z.infer<
+  typeof componentRelationshipSchema
+>;
 
 export const PREPARATION_KINDS = [
   "meat_cook",
@@ -351,6 +371,7 @@ export const menuItemIngredientSchema = z.object({
   ingredientName: nameSchema,
   ingredientKind: ingredientKindSchema,
   role: componentRoleSchema,
+  relationship: componentRelationshipSchema.nullable(),
   preparationSchemeId: idSchema.nullable(),
   allergenFlags: allergenFlagsSchema,
   canRemove: z.boolean(),
@@ -401,6 +422,7 @@ export const menuChoiceGroupSchema = z.object({
   menuItemId: idSchema,
   label: nameSchema,
   role: componentRoleSchema,
+  relationship: componentRelationshipSchema.nullable(),
   minSelections: z.number().int().nonnegative(),
   maxSelections: z.number().int().positive().nullable(),
   sortOrder: sortOrderSchema,
@@ -445,6 +467,7 @@ export type MenuCustomizationCatalog = z.infer<
 const itemIngredientInputSchema = z.object({
   ingredientId: idSchema,
   role: componentRoleSchema.default("other"),
+  relationship: componentRelationshipSchema.nullable().default(null),
   preparationSchemeId: idSchema.nullable().default(null),
   canRemove: z.boolean().default(true),
   canSide: z.boolean().default(false),
@@ -478,6 +501,7 @@ const choiceGroupInputSchema = z
   .object({
     label: nameSchema,
     role: componentRoleSchema.default("other"),
+    relationship: componentRelationshipSchema.nullable().default(null),
     minSelections: z.number().int().nonnegative().default(0),
     maxSelections: z.number().int().positive().nullable().default(null),
     sortOrder: sortOrderSchema.default(0),

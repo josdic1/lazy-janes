@@ -12,6 +12,7 @@ import {
   ALLERGEN_FLAGS,
   INGREDIENT_KINDS,
   type AllergenFlag,
+  type ComponentRelationship,
   type ComponentRole,
   type IngredientKind,
   type CreateMenuItemInput,
@@ -59,6 +60,7 @@ const emptyForm: CreateMenuItemInput = {
 type IngredientLinkDraft = {
   ingredientId: string;
   role: ComponentRole;
+  relationship: ComponentRelationship | null;
   preparationSchemeId: string | null;
   canRemove: boolean;
   canSide: boolean;
@@ -93,6 +95,7 @@ type ChoiceGroupDraft = {
   key: string;
   label: string;
   role: ComponentRole;
+  relationship: ComponentRelationship | null;
   minSelections: number;
   maxSelections: number | null;
   sortOrder: number;
@@ -157,6 +160,7 @@ function choiceDraft(group: MenuChoiceGroup): ChoiceGroupDraft {
     key: group.id,
     label: group.label,
     role: group.role,
+    relationship: group.relationship,
     minSelections: group.minSelections,
     maxSelections: group.maxSelections,
     sortOrder: group.sortOrder,
@@ -178,6 +182,7 @@ function linkDraft(link: MenuItemIngredient): IngredientLinkDraft {
   return {
     ingredientId: link.ingredientId,
     role: link.role,
+    relationship: link.relationship,
     preparationSchemeId: link.preparationSchemeId,
     canRemove: link.canRemove,
     canSide: link.canSide,
@@ -478,6 +483,7 @@ export function MenuManagementPage() {
       {
         ingredientId: ingredient.id,
         role: ingredient.kind,
+        relationship: null,
         preparationSchemeId: null,
         canRemove: true,
         canSide: false,
@@ -539,6 +545,7 @@ export function MenuManagementPage() {
         key: crypto.randomUUID(),
         label: "",
         role: "other",
+        relationship: null,
         minSelections: 1,
         maxSelections: 1,
         sortOrder: current.length,
@@ -628,6 +635,7 @@ export function MenuManagementPage() {
       ingredients: ingredientLinks.map((link, index) => ({
         ingredientId: link.ingredientId,
         role: link.role,
+        relationship: link.relationship ?? null,
         preparationSchemeId: link.preparationSchemeId,
         canRemove: link.canRemove,
         canSide: link.canSide,
@@ -647,6 +655,7 @@ export function MenuManagementPage() {
       choiceGroups: choiceGroups.map((group, groupIndex) => ({
         label: group.label.trim(),
         role: group.role,
+        relationship: group.relationship ?? null,
         minSelections: group.minSelections,
         maxSelections: group.maxSelections,
         sortOrder: groupIndex,
