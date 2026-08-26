@@ -1974,14 +1974,15 @@ export function OrderEntryPage() {
                 );
               })}
 
-              <section className="service-customizer-section service-additions">
-                <div className="service-customizer-section-heading">
-                  <div>
-                    <span>Available toppings</span>
-                    <small>Popular first · everything else alphabetical</small>
-                  </div>
-                  {addedIngredientIds.length > 0 ? <strong>{addedIngredientIds.length} selected</strong> : null}
-                </div>
+              <details className="service-customizer-section service-additions">
+                <summary className="service-additions-summary">
+                  <span>
+                    {addedIngredientIds.length > 0
+                      ? `Add toppings · ${addedIngredientIds.length} selected`
+                      : "+ Add topping"}
+                  </span>
+                  <small>Search all available additions</small>
+                </summary>
 
                 <input
                   ref={addSearchInputRef}
@@ -2063,7 +2064,7 @@ export function OrderEntryPage() {
                     ) : null}
                   </>
                 )}
-              </section>
+              </details>
 
 
               <div className="service-customizer-footer">
