@@ -37,6 +37,8 @@ describe("menu contract", () => {
       status: "available",
       isSpecial: false,
       isModifier: false,
+      isKids: false,
+      hasKidsVersion: false,
       dietaryFlags: [],
       safetyDeclarations: [],
       sortOrder: 0,
