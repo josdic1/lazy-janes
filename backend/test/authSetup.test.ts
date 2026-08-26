@@ -16,13 +16,13 @@ import { pool } from "../src/db/pool.js";
 
 beforeEach(async () => {
   await pool.query(`
-    DELETE FROM users
+    TRUNCATE TABLE users CASCADE
   `);
 });
 
 afterAll(async () => {
   await pool.query(`
-    DELETE FROM users
+    TRUNCATE TABLE users CASCADE
   `);
 
   await pool.end();

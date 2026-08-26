@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "main": "index.js",
   "scripts": {
-    "test": "env -u DATABASE_URL -u PIN_PEPPER NODE_ENV=test vitest run",
+    "test": "for f in test/*.test.ts; do env -u DATABASE_URL -u PIN_PEPPER NODE_ENV=test vitest run \"$f\" || exit 1; done",
     "dev": "node --env-file=.env --watch --import tsx src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --env-file-if-exists=.env dist/server.js",

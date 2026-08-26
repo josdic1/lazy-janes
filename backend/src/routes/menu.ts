@@ -209,7 +209,7 @@ const menuSelect = `
   FROM menu_items
 `;
 
-function toMenuItem(row: MenuItemRow): MenuItem {
+export function toMenuItem(row: MenuItemRow): MenuItem {
   return {
     id: row.id,
     parentItemId: row.parent_item_id,
@@ -368,7 +368,17 @@ function toChoiceGroups(rows: ChoiceRow[]): MenuChoiceGroup[] {
   return Array.from(groups.values());
 }
 
-async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
+export async function getAllMenuItems(): Promise<MenuItem[]> {
+  const result = await pool.query<MenuItemRow>(`
+    ${menuSelect}
+    WHERE is_modifier = false
+    ORDER BY sort_order, name
+  `);
+
+  return result.rows.map(toMenuItem);
+}
+
+export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalog> {
   const [
     ingredientResult,
     itemIngredientResult,

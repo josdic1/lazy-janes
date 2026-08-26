@@ -105,6 +105,15 @@ export const componentCapabilitySchema = z.object({
 export type ComponentCapability =
   z.infer<typeof componentCapabilitySchema>;
 
+export const replacementTargetSchema = z.object({
+  componentId: z.string().min(1),
+  label: z.string().min(1).optional(),
+  preparationSchemeId: z.string().min(1).nullable().default(null),
+  evidence: evidenceSchema.optional(),
+}).strict();
+export type ReplacementTarget =
+  z.infer<typeof replacementTargetSchema>;
+
 export const universalComponentSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -115,15 +124,67 @@ export const universalComponentSchema = z.object({
 
   capabilities: z.array(componentCapabilitySchema).default([]),
 
+  replacementTargets: z.array(replacementTargetSchema).default([]),
+
+  // Null means this component has no established preparation scheme.
+  preparationSchemeId: z.string().min(1).nullable().default(null),
+
   evidence: evidenceSchema.optional(),
 }).strict();
 
 export type UniversalComponent =
   z.infer<typeof universalComponentSchema>;
 
+export const universalPreparationOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  evidence: evidenceSchema.optional(),
+}).strict();
+export type UniversalPreparationOption =
+  z.infer<typeof universalPreparationOptionSchema>;
+
+export const universalPreparationSchemeSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+
+  // Null means the source does not establish whether an explicit
+  // preparation selection is required.
+  selectionRequired: z.boolean().nullable(),
+
+  // Null means no default preparation is established.
+  defaultOptionId: z.string().min(1).nullable(),
+
+  options: z.array(universalPreparationOptionSchema).min(1),
+
+  evidence: evidenceSchema.optional(),
+}).strict().superRefine((scheme, ctx) => {
+  if (
+    scheme.defaultOptionId !== null &&
+    !scheme.options.some(
+      (option) => option.id === scheme.defaultOptionId,
+    )
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["defaultOptionId"],
+      message: "defaultOptionId must reference an available preparation option",
+    });
+  }
+});
+
+export type UniversalPreparationScheme =
+  z.infer<typeof universalPreparationSchemeSchema>;
+
 export const choiceOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
+
+  // Null when the choice is not tied to a canonical component.
+  componentId: z.string().min(1).nullable().default(null),
+
+  isNoneOption: z.boolean().default(false),
+  isDefault: z.boolean().default(false),
+
   evidence: evidenceSchema.optional(),
 }).strict();
 export type ChoiceOption = z.infer<typeof choiceOptionSchema>;
@@ -391,17 +452,73 @@ export const sequenceSchema = z.object({
 
 export type Sequence = z.infer<typeof sequenceSchema>;
 
-export const commercialPolicySchema = z.object({
-  id: z.string().min(1),
-  kind: commercialPolicyKindSchema,
+export const commercialPolicyTargetSchema =
+  z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("offering"),
+    }).strict(),
 
-  // Human-readable rule as established by the source.
-  // Structured fields can be added later only when a real operational
-  // requirement proves they are needed.
-  value: z.string().min(1),
+    z.object({
+      kind: z.literal("component_capability"),
+      componentId: z.string().min(1),
+      capability: capabilityKindSchema,
+    }).strict(),
+
+    z.object({
+      kind: z.literal("choice_option"),
+      choiceSlotId: z.string().min(1),
+      optionId: z.string().min(1),
+    }).strict(),
+  ]);
+
+export type CommercialPolicyTarget =
+  z.infer<typeof commercialPolicyTargetSchema>;
+
+export const pricePolicySchema = z.object({
+  id: z.string().min(1),
+  kind: z.literal("price"),
+  appliesTo: commercialPolicyTargetSchema,
+
+  // Null means the source establishes that pricing exists here,
+  // but the amount has not been configured.
+  amount: z.number().nullable(),
+  configured: z.boolean(),
 
   evidence: evidenceSchema.optional(),
+}).strict().superRefine((policy, ctx) => {
+  if (policy.configured && policy.amount === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["amount"],
+      message: "configured price must have an amount",
+    });
+  }
+
+  if (!policy.configured && policy.amount !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["amount"],
+      message: "unconfigured price must not claim a known amount",
+    });
+  }
+});
+
+export const textCommercialPolicySchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum([
+    "availability",
+    "condition",
+    "payment",
+    "notice",
+  ]),
+  value: z.string().min(1),
+  evidence: evidenceSchema.optional(),
 }).strict();
+
+export const commercialPolicySchema = z.union([
+  pricePolicySchema,
+  textCommercialPolicySchema,
+]);
 
 export type CommercialPolicy =
   z.infer<typeof commercialPolicySchema>;
@@ -409,9 +526,13 @@ export type CommercialPolicy =
 export const universalOfferingSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  kind: offeringKindSchema,
+
+  // Null means the source does not establish whether this is a
+  // preset, retail item, or service.
+  kind: offeringKindSchema.nullable(),
 
   components: z.array(universalComponentSchema).default([]),
+  preparations: z.array(universalPreparationSchemeSchema).default([]),
   choices: z.array(choiceSlotSchema).default([]),
   variants: z.array(variantSchema).default([]),
   bundles: z.array(bundleSchema).default([]),

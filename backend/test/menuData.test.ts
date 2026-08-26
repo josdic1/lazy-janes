@@ -30,7 +30,7 @@ describe("legacy menu import snapshot", () => {
 });
 
 describe("legacy import ontology", () => {
-  it("deconstructs Sliced Steak & Eggs into one fixed egg plus typed protein, bread, and side slots", () => {
+  it("keeps Sliced Steak & Eggs defaults as components without duplicate choice slots", () => {
     const ontology = buildMenuOntology();
     const ingredientNames = new Map(
       ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
@@ -46,7 +46,10 @@ describe("legacy import ontology", () => {
         prep: prepKind(component.preparationSourceKey),
       }));
     expect(components).toEqual([
+      { name: "Steak", role: "protein", prep: "meat_cook" },
       { name: "Egg", role: "egg", prep: "egg_cook" },
+      { name: "Home Fries", role: "side", prep: null },
+      { name: "Toast", role: "bread", prep: "bread_prep" },
     ]);
 
     const slots = ontology.choiceSlots
@@ -60,29 +63,7 @@ describe("legacy import ontology", () => {
         })),
       }));
 
-    expect(slots).toEqual([
-      {
-        role: "bread",
-        options: [
-          { name: "Toast", prep: "bread_prep", default: true },
-          { name: "None", prep: null, default: false },
-        ],
-      },
-      {
-        role: "protein",
-        options: [
-          { name: "Steak", prep: "meat_cook", default: true },
-          { name: "None", prep: null, default: false },
-        ],
-      },
-      {
-        role: "side",
-        options: [
-          { name: "Home Fries", prep: null, default: true },
-          { name: "None", prep: null, default: false },
-        ],
-      },
-    ]);
+    expect(slots).toEqual([]);
   });
 
   it("keeps Cobb Salad ingredients as components instead of inventing a protein choice", () => {
@@ -90,9 +71,13 @@ describe("legacy import ontology", () => {
     const ingredientNames = new Map(
       ingredients.map((ingredient) => [ingredient.id, ingredient.name]),
     );
+
     const components = ontology.componentRules
       .filter((component) => component.itemId === "cobb_salad_dinner")
-      .map((component) => [ingredientNames.get(component.ingredientId), component.role]);
+      .map((component) => [
+        ingredientNames.get(component.ingredientId),
+        component.role,
+      ]);
 
     expect(components).toEqual([
       ["Grilled Chicken", "protein"],
@@ -103,6 +88,7 @@ describe("legacy import ontology", () => {
       ["Blue Cheese", "cheese"],
       ["Tortilla Shell", "bread"],
     ]);
+
     expect(
       ontology.choiceSlots.filter((slot) => slot.itemId === "cobb_salad_dinner"),
     ).toEqual([]);

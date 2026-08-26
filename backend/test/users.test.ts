@@ -19,17 +19,7 @@ import { pool } from "../src/db/pool.js";
 
 async function clearUsersTestUsers() {
   await pool.query(`
-    DELETE FROM user_auth_events
-    WHERE user_id IN (
-      SELECT id
-      FROM users
-      WHERE display_name LIKE 'Users Test%'
-    )
-  `);
-
-  await pool.query(`
-    DELETE FROM users
-    WHERE display_name LIKE 'Users Test%'
+    TRUNCATE TABLE users CASCADE
   `);
 }
 
