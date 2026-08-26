@@ -9,6 +9,7 @@ import type {
   ReplaceMenuItemCustomizationInput,
   UpdateIngredientInput,
   UpdateMenuItemInput,
+  UniversalOffering,
 } from "@lazy-janes/shared";
 
 async function readError(response: Response): Promise<string> {
@@ -44,6 +45,16 @@ export async function getMenuItems(): Promise<MenuItem[]> {
   }
 
   return response.json() as Promise<MenuItem[]>;
+}
+
+export async function getNormalizedMenu(): Promise<UniversalOffering[]> {
+  const response = await fetch("/api/menu/normalized");
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<UniversalOffering[]>;
 }
 
 export async function getMenuCustomizationCatalog():

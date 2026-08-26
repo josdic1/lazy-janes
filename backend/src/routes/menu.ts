@@ -33,6 +33,7 @@ import {
   requireAuthenticatedUser,
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
+import { normalizeLazyJanesOffering } from "../menuNormalization/lazyJanesAdapter.js";
 
 type MenuItemRow = {
   id: string;
@@ -569,6 +570,38 @@ menuRouter.get("/taxonomy", async (_request, response) => {
   }));
 
   response.json(taxonomy);
+});
+
+menuRouter.get("/normalized", async (_request, response) => {
+  const [items, catalog] = await Promise.all([
+    getAllMenuItems(),
+    getCustomizationCatalog(),
+  ]);
+
+  response.json(
+    items.map((item) =>
+      normalizeLazyJanesOffering({
+        item,
+        catalog,
+      }),
+    ),
+  );
+});
+
+menuRouter.get("/normalized", async (_request, response) => {
+  const [items, catalog] = await Promise.all([
+    getAllMenuItems(),
+    getCustomizationCatalog(),
+  ]);
+
+  response.json(
+    items.map((item) =>
+      normalizeLazyJanesOffering({
+        item,
+        catalog,
+      }),
+    ),
+  );
 });
 
 menuRouter.get("/customization-catalog", async (_request, response) => {

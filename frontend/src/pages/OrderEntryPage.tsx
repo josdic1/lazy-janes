@@ -16,6 +16,7 @@ import type {
   PreparationScheme,
   Order,
   PartyListItem,
+  UniversalOffering,
 } from "@lazy-janes/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,6 +24,7 @@ import {
   getMenuIngredientPopularity,
   getMenuItems,
   getMenuTaxonomy,
+  getNormalizedMenu,
 } from "../api/menu";
 import { createOrder, fireOrder } from "../api/orders";
 import {
@@ -188,6 +190,8 @@ function safetyWarningLabel(
 export function OrderEntryPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [taxonomy, setTaxonomy] = useState<MenuGroup[]>([]);
+  const [normalizedMenu, setNormalizedMenu] =
+    useState<UniversalOffering[]>([]);
   const [customization, setCustomization] =
     useState<MenuCustomizationCatalog>(EMPTY_CUSTOMIZATION);
   const [parties, setParties] = useState<PartyListItem[]>([]);
@@ -247,14 +251,21 @@ export function OrderEntryPage() {
 
     async function load() {
       try {
-        const [menuItems, groups, catalog, partyList, tableList] =
-          await Promise.all([
-            getMenuItems(),
-            getMenuTaxonomy(),
-            getMenuCustomizationCatalog(),
-            getParties(),
-            getDiningTables(),
-          ]);
+        const [
+          menuItems,
+          groups,
+          normalizedOfferings,
+          catalog,
+          partyList,
+          tableList,
+        ] = await Promise.all([
+          getMenuItems(),
+          getMenuTaxonomy(),
+          getNormalizedMenu(),
+          getMenuCustomizationCatalog(),
+          getParties(),
+          getDiningTables(),
+        ]);
 
         if (cancelled) {
           return;
@@ -262,6 +273,7 @@ export function OrderEntryPage() {
 
         setMenu(menuItems);
         setTaxonomy(groups);
+        setNormalizedMenu(normalizedOfferings);
         setCustomization(catalog);
         setParties(partyList);
         setTables(tableList);
@@ -378,6 +390,87 @@ export function OrderEntryPage() {
     [parties],
   );
 
+  const normalizedMenuById = useMemo(
+    () => new Map(normalizedMenu.map((offering) => [offering.id, offering])),
+    [normalizedMenu],
+  );
+
+  function normalizedComponent(itemId: string, ingredientId: string) {
+    return normalizedMenuById
+      .get(itemId)
+      ?.components.find((component) => component.id === ingredientId) ?? null;
+  }
+
+  function hasNormalizedCapability(
+    itemId: string,
+    ingredientId: string,
+    capability: "remove" | "side" | "extra",
+  ): boolean {
+    return (
+      normalizedComponent(itemId, ingredientId)?.capabilities.some(
+        (entry) =>
+          entry.kind === capability &&
+          entry.configurationState === "configured",
+      ) ?? false
+    );
+  }
+
+  function normalizedReplacementTargets(
+    itemId: string,
+    ingredientId: string,
+  ) {
+    return normalizedComponent(itemId, ingredientId)?.replacementTargets ?? [];
+  }
+
+  function normalizedExtraPrice(
+    itemId: string,
+    ingredientId: string,
+  ): { amount: number | null; configured: boolean } | null {
+    const offering = normalizedMenuById.get(itemId);
+
+    const policy = offering?.commercialPolicies.find(
+      (candidate) =>
+        candidate.kind === "price" &&
+        candidate.appliesTo.kind === "component_capability" &&
+        candidate.appliesTo.componentId === ingredientId &&
+        candidate.appliesTo.capability === "extra",
+    );
+
+    if (!policy || policy.kind !== "price") {
+      return null;
+    }
+
+    return {
+      amount: policy.amount,
+      configured: policy.configured,
+    };
+  }
+
+  function normalizedChoicePrice(
+    itemId: string,
+    choiceSlotId: string,
+    optionId: string,
+  ): { amount: number | null; configured: boolean } | null {
+    const offering = normalizedMenuById.get(itemId);
+
+    const policy = offering?.commercialPolicies.find(
+      (candidate) =>
+        candidate.kind === "price" &&
+        candidate.appliesTo.kind === "choice_option" &&
+        candidate.appliesTo.choiceSlotId === choiceSlotId &&
+        candidate.appliesTo.optionId === optionId,
+    );
+
+    if (!policy || policy.kind !== "price") {
+      return null;
+    }
+
+    return {
+      amount: policy.amount,
+      configured: policy.configured,
+    };
+  }
+
   const availableTables = useMemo(
     () => tables.filter((table) => !table.occupied),
     [tables],
@@ -412,7 +505,37 @@ export function OrderEntryPage() {
   }
 
   function preparationScheme(schemeId: string | null): PreparationScheme | null {
-    return schemeId ? preparationSchemesById.get(schemeId) ?? null : null;
+    if (!schemeId || !selectedItem) {
+      return null;
+    }
+
+    const normalizedScheme = normalizedMenuById
+      .get(selectedItem.id)
+      ?.preparations.find((scheme) => scheme.id === schemeId);
+
+    if (!normalizedScheme) {
+      return null;
+    }
+
+    const sourceScheme = preparationSchemesById.get(schemeId);
+
+    if (!sourceScheme) {
+      return null;
+    }
+
+    const normalizedOptionIds = new Set(
+      normalizedScheme.options.map((option) => option.id),
+    );
+
+    return {
+      ...sourceScheme,
+      options: sourceScheme.options
+        .filter((option) => normalizedOptionIds.has(option.id))
+        .map((option) => ({
+          ...option,
+          isDefault: option.id === normalizedScheme.defaultOptionId,
+        })),
+    };
   }
 
 
@@ -431,16 +554,68 @@ export function OrderEntryPage() {
   }
 
   function choiceGroupsForItem(itemId: string): MenuChoiceGroup[] {
-    return customization.choiceGroups
-      .filter((group) => group.menuItemId === itemId && group.isActive)
-      .map((group) => ({
-        ...group,
-        options: group.options
-          .filter((option) => option.isActive)
-          .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label)),
-      }))
-      .filter((group) => group.options.length > 0)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
+    const offering = normalizedMenuById.get(itemId);
+
+    if (!offering) {
+      return [];
+    }
+
+    const sourceGroups = new Map(
+      customization.choiceGroups
+        .filter((group) => group.menuItemId === itemId)
+        .map((group) => [group.id, group]),
+    );
+
+    return offering.choices.flatMap((choice) => {
+      const sourceGroup = sourceGroups.get(choice.id);
+
+      if (!sourceGroup) {
+        return [];
+      }
+
+      const sourceOptions = new Map(
+        sourceGroup.options.map((option) => [option.id, option]),
+      );
+
+      const options: MenuChoiceOption[] = choice.options.flatMap(
+        (option) => {
+          const sourceOption = sourceOptions.get(option.id);
+
+          if (!sourceOption) {
+            return [];
+          }
+
+          const price = normalizedChoicePrice(
+            itemId,
+            choice.id,
+            option.id,
+          );
+
+          return [{
+            ...sourceOption,
+            label: option.label,
+            ingredientId: option.componentId,
+            isNoneOption: option.isNoneOption,
+            isDefault: option.isDefault,
+            priceAdjustment: price?.amount ?? 0,
+            priceAdjustmentConfigured:
+              price?.configured ?? false,
+          }];
+        },
+      );
+
+      if (options.length === 0) {
+        return [];
+      }
+
+      return [{
+        ...sourceGroup,
+        label: choice.label,
+        minSelections: choice.minSelections,
+        maxSelections: choice.maxSelections,
+        options,
+      }];
+    });
   }
 
   const selectedChoiceGroups = selectedItem
@@ -737,6 +912,13 @@ export function OrderEntryPage() {
   }
 
   function toggleRemove(ingredientId: string) {
+    if (
+      !selectedItem ||
+      !hasNormalizedCapability(selectedItem.id, ingredientId, "remove")
+    ) {
+      return;
+    }
+
     const removing = !removedIngredientIds.includes(ingredientId);
     if (removing) {
       const target = ingredientPreparationTarget(ingredientId);
@@ -789,6 +971,13 @@ export function OrderEntryPage() {
   }
 
   function toggleSide(ingredientId: string) {
+    if (
+      !selectedItem ||
+      !hasNormalizedCapability(selectedItem.id, ingredientId, "side")
+    ) {
+      return;
+    }
+
     const selecting = !sideIngredientIds.includes(ingredientId);
     setSideIngredientIds((current) =>
       current.includes(ingredientId)
@@ -803,6 +992,13 @@ export function OrderEntryPage() {
   }
 
   function toggleExtra(ingredientId: string) {
+    if (
+      !selectedItem ||
+      !hasNormalizedCapability(selectedItem.id, ingredientId, "extra")
+    ) {
+      return;
+    }
+
     const selecting = !extraIngredientIds.includes(ingredientId);
     setExtraIngredientIds((current) =>
       current.includes(ingredientId)
@@ -817,6 +1013,18 @@ export function OrderEntryPage() {
   }
 
   function chooseReplacement(sourceIngredientId: string, replacementIngredientId: string) {
+    if (!selectedItem) {
+      return;
+    }
+
+    if (
+      replacementIngredientId &&
+      !normalizedReplacementTargets(selectedItem.id, sourceIngredientId)
+        .some((target) => target.componentId === replacementIngredientId)
+    ) {
+      return;
+    }
+
     const previousId = replacementIngredientIdBySource[sourceIngredientId];
     setSelectedPreparationOptionByTarget((current) => {
       const next = { ...current };
@@ -898,6 +1106,15 @@ export function OrderEntryPage() {
       let next: string[];
 
       if (!selecting) {
+        const selectedInGroup = current.filter((id) => optionIds.has(id));
+
+        if (
+          group.minSelections > 0 &&
+          selectedInGroup.length <= group.minSelections
+        ) {
+          return current;
+        }
+
         next = current.filter((id) => id !== optionId);
       } else if (group.maxSelections === 1) {
         next = [...current.filter((id) => !optionIds.has(id)), optionId];
@@ -1598,24 +1815,51 @@ export function OrderEntryPage() {
                       const side = sideIngredientIds.includes(ingredient.ingredientId);
                       const extra = extraIngredientIds.includes(ingredient.ingredientId);
 
+                      const canRemove = hasNormalizedCapability(
+                        selectedItem.id,
+                        ingredient.ingredientId,
+                        "remove",
+                      );
+                      const canSide = hasNormalizedCapability(
+                        selectedItem.id,
+                        ingredient.ingredientId,
+                        "side",
+                      );
+                      const canExtra = hasNormalizedCapability(
+                        selectedItem.id,
+                        ingredient.ingredientId,
+                        "extra",
+                      );
+
+                      const extraPricePolicy = normalizedExtraPrice(
+                        selectedItem.id,
+                        ingredient.ingredientId,
+                      );
+
+                      const replacementTargets = normalizedReplacementTargets(
+                        selectedItem.id,
+                        ingredient.ingredientId,
+                      );
+
+                      const replacementTargetIds = new Set(
+                        replacementTargets.map((target) => target.componentId),
+                      );
+
                       return (
                         <div className="service-ingredient-row" key={ingredient.ingredientId}>
                           <div>
                             <strong>{ingredient.ingredientName}</strong>
-                            {ingredient.allergenFlags.length > 0 ? (
-                              <small>{ingredient.allergenFlags.map(allergenLabel).join(" · ")}</small>
-                            ) : null}
                           </div>
                           <div className="service-ingredient-actions">
                             <button
                               type="button"
                               data-selected={removed}
-                              disabled={!ingredient.canRemove}
+                              disabled={!canRemove}
                               onClick={() => toggleRemove(ingredient.ingredientId)}
                             >
                               NO
                             </button>
-                            {ingredient.canSide ? (
+                            {canSide ? (
                               <button
                                 type="button"
                                 data-selected={side}
@@ -1624,23 +1868,23 @@ export function OrderEntryPage() {
                                 SIDE
                               </button>
                             ) : null}
-                            {ingredient.canExtra ? (
+                            {canExtra ? (
                               <button
                                 type="button"
                                 data-selected={extra}
                                 onClick={() => toggleExtra(ingredient.ingredientId)}
                               >
                                 EXTRA{
-                                  ingredient.extraPriceConfigured
-                                    ? ingredient.extraPrice > 0
-                                      ? ` +${money(ingredient.extraPrice)}`
+                                  extraPricePolicy?.configured
+                                    ? (extraPricePolicy.amount ?? 0) > 0
+                                      ? ` +${money(extraPricePolicy.amount ?? 0)}`
                                       : " · no charge"
                                     : " · price TBD"
                                 }
                               </button>
                             ) : null}
                           </div>
-                          {selectedItemReplacements.some((replacement) => replacement.sourceIngredientId === ingredient.ingredientId) ? (
+                          {replacementTargets.length > 0 ? (
                             <div className="service-replacement-control">
                               <span>SUB FOR</span>
                               <select
@@ -1649,7 +1893,11 @@ export function OrderEntryPage() {
                               >
                                 <option value="">Keep {ingredient.ingredientName}</option>
                                 {selectedItemReplacements
-                                  .filter((replacement) => replacement.sourceIngredientId === ingredient.ingredientId)
+                                  .filter(
+                                    (replacement) =>
+                                      replacement.sourceIngredientId === ingredient.ingredientId &&
+                                      replacementTargetIds.has(replacement.replacementIngredientId),
+                                  )
                                   .map((replacement) => (
                                     <option key={replacement.replacementIngredientId} value={replacement.replacementIngredientId}>
                                       {replacement.replacementIngredientName}{replacement.priceAdjustmentConfigured ? replacement.priceAdjustment !== 0 ? ` (${priceDelta(replacement.priceAdjustment)})` : "" : " (PRICE TBD)"}
