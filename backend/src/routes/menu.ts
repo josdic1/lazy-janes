@@ -47,6 +47,7 @@ type MenuItemRow = {
   description: string | null;
   category_id: string;
   price: string;
+  price_configured: boolean;
   status: MenuItemStatus;
   is_special: boolean;
   is_kids: boolean;
@@ -184,6 +185,7 @@ const menuSelect = `
     menu_items.description,
     menu_items.category_id,
     menu_items.price,
+    menu_items.price_configured,
     menu_items.status,
     menu_items.is_special,
     menu_items.is_kids,
@@ -232,6 +234,7 @@ export function toMenuItem(row: MenuItemRow): MenuItem {
     description: row.description,
     categoryId: row.category_id,
     price: Number(row.price),
+    priceConfigured: row.price_configured,
     status: row.status,
     isSpecial: row.is_special,
     isKids: row.is_kids,
@@ -581,8 +584,11 @@ async function getManualItemReadiness(
   client: PoolClient,
   itemId: string,
 ): Promise<ManualItemReadiness> {
-  const itemResult = await client.query<{ source_key: string | null }>(
-    "SELECT source_key FROM menu_items WHERE id = $1",
+  const itemResult = await client.query<{
+    source_key: string | null;
+    price_configured: boolean;
+  }>(
+    "SELECT source_key, price_configured FROM menu_items WHERE id = $1",
     [itemId],
   );
   const item = itemResult.rows[0];
@@ -666,6 +672,10 @@ async function getManualItemReadiness(
   const components = componentResult.rows[0];
   const choices = choiceResult.rows[0];
   const issues: string[] = [];
+
+  if (!item.price_configured) {
+    issues.push("Add a selling price before publishing");
+  }
 
   const componentCount = Number(components?.component_count ?? 0);
   const choiceCount = Number(choices?.choice_count ?? 0);
@@ -1632,6 +1642,7 @@ menuRouter.post(
             description,
             category_id,
             price,
+            price_configured,
             status,
             is_special,
             is_kids,
@@ -1640,7 +1651,7 @@ menuRouter.post(
             dietary_flags,
             sort_order
           )
-          VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, false, $9, $10)
+          VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, false, $10, $11)
           RETURNING id
         `,
         [
@@ -1648,6 +1659,7 @@ menuRouter.post(
           item.description,
           item.categoryId,
           item.price,
+          item.priceConfigured,
           "draft",
           item.isSpecial,
           item.isKids,
@@ -1724,9 +1736,10 @@ menuRouter.patch(
         id: string;
         is_modifier: boolean;
         source_key: string | null;
+        status: MenuItemStatus;
       }>(
         `
-          SELECT id, is_modifier, source_key
+          SELECT id, is_modifier, source_key, status
           FROM menu_items
           WHERE id = $1
           FOR UPDATE
@@ -1738,6 +1751,19 @@ menuRouter.patch(
       if (!existing || existing.is_modifier) {
         await client.query("ROLLBACK");
         response.status(404).json({ error: "Menu item not found" });
+        return;
+      }
+
+      const nextStatus = changes.status ?? existing.status;
+      if (
+        existing.source_key === null &&
+        nextStatus === "available" &&
+        changes.priceConfigured === false
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Add a selling price before publishing this item",
+        });
         return;
       }
 
@@ -1790,6 +1816,9 @@ menuRouter.patch(
         assign("category_id", changes.categoryId);
       }
       if (changes.price !== undefined) assign("price", changes.price);
+      if (changes.priceConfigured !== undefined) {
+        assign("price_configured", changes.priceConfigured);
+      }
       if (changes.status !== undefined) assign("status", changes.status);
       if (changes.isSpecial !== undefined) {
         assign("is_special", changes.isSpecial);

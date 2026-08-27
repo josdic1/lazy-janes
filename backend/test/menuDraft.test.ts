@@ -46,12 +46,14 @@ describe("manual menu item draft publishing", () => {
       const createdResponse = await agent.post("/api/menu").send({
         name: `Draft UMO Item ${randomUUID()}`,
         categoryId,
-        price: 10,
+        price: 0,
+        priceConfigured: false,
         status: "available",
       });
 
       expect(createdResponse.status).toBe(201);
       expect(createdResponse.body.status).toBe("draft");
+      expect(createdResponse.body.priceConfigured).toBe(false);
       menuItemId = createdResponse.body.id as string;
 
       const blockedPublish = await agent
@@ -85,6 +87,22 @@ describe("manual menu item draft publishing", () => {
         });
 
       expect(structureResponse.status).toBe(200);
+
+      const blockedWithoutPrice = await agent
+        .patch(`/api/menu/${menuItemId}`)
+        .send({ status: "available" });
+
+      expect(blockedWithoutPrice.status).toBe(409);
+      expect(blockedWithoutPrice.body.issues).toContain(
+        "Add a selling price before publishing",
+      );
+
+      const pricedResponse = await agent
+        .patch(`/api/menu/${menuItemId}`)
+        .send({ price: 10, priceConfigured: true });
+
+      expect(pricedResponse.status).toBe(200);
+      expect(pricedResponse.body.priceConfigured).toBe(true);
 
       const publishedResponse = await agent
         .patch(`/api/menu/${menuItemId}`)

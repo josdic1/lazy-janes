@@ -52,6 +52,7 @@ const emptyForm: CreateMenuItemInput = {
   description: null,
   categoryId: "",
   price: 0,
+  priceConfigured: false,
   status: "draft",
   isSpecial: false,
   isKids: false,
@@ -98,6 +99,8 @@ type ChoiceOptionDraft = {
   sortOrder: number;
   isDefault: boolean;
 };
+
+type CompositionView = "easy" | "advanced";
 
 type ChoiceGroupDraft = {
   key: string;
@@ -265,6 +268,8 @@ export function MenuManagementPage() {
   const [ingredientSearch, setIngredientSearch] = useState("");
   const [compositionSaving, setCompositionSaving] = useState(false);
   const [compositionError, setCompositionError] = useState("");
+  const [compositionView, setCompositionView] = useState<CompositionView>("easy");
+  const [compositionPrice, setCompositionPrice] = useState("");
 
   const [ingredientLibraryOpen, setIngredientLibraryOpen] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
@@ -347,6 +352,9 @@ export function MenuManagementPage() {
   const compositionReadinessIssues = useMemo(() => {
     const issues: string[] = [];
 
+    if (compositionItem && compositionPrice.trim() === "") {
+      issues.push("Add a selling price");
+    }
     if (ingredientLinks.length + choiceGroups.length === 0) {
       issues.push("Add at least one component or customer choice");
     }
@@ -391,7 +399,7 @@ export function MenuManagementPage() {
     }
 
     return issues;
-  }, [choiceGroups, ingredientLinks, replacements]);
+  }, [choiceGroups, compositionItem, compositionPrice, ingredientLinks, replacements]);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -442,6 +450,7 @@ export function MenuManagementPage() {
       description: item.description,
       categoryId: item.categoryId,
       price: item.price,
+      priceConfigured: item.priceConfigured,
       status: item.status,
       isSpecial: item.isSpecial,
       isKids: item.isKids,
@@ -486,6 +495,7 @@ export function MenuManagementPage() {
           description: form.description,
           categoryId: form.categoryId,
           price: form.price,
+          priceConfigured: form.priceConfigured,
           status: form.status,
           isSpecial: form.isSpecial,
           isKids: form.isKids,
@@ -604,6 +614,8 @@ export function MenuManagementPage() {
     );
     setIngredientSearch("");
     setCompositionError("");
+    setCompositionView("easy");
+    setCompositionPrice(item.priceConfigured ? String(item.price) : "");
   }
 
   const addableRecipeIngredients = useMemo(() => {
@@ -617,14 +629,17 @@ export function MenuManagementPage() {
       .slice(0, query === "" ? 12 : 40);
   }, [catalog.ingredients, ingredientLinks, ingredientSearch]);
 
-  function addRecipeIngredient(ingredient: Ingredient) {
+  function addRecipeIngredient(
+    ingredient: Ingredient,
+    relationship: ComponentRelationship | null = null,
+  ) {
     setIngredientLinks((current) => [
       ...current,
       {
         ingredientId: ingredient.id,
         role: "other",
-        contextualRole: null,
-        relationship: null,
+        contextualRole: relationship === "comes_with" ? "accompaniment" : null,
+        relationship,
         preparationSchemeId: null,
         canRemove: false,
         canSide: false,
@@ -637,6 +652,46 @@ export function MenuManagementPage() {
       },
     ]);
     setIngredientSearch("");
+  }
+
+  function updateIngredientLink(
+    ingredientId: string,
+    changes: Partial<IngredientLinkDraft>,
+  ) {
+    setIngredientLinks((current) => current.map((link) =>
+      link.ingredientId === ingredientId ? { ...link, ...changes } : link,
+    ));
+  }
+
+  function placeIngredient(
+    ingredientId: string,
+    relationship: Exclude<ComponentRelationship, null>,
+  ) {
+    setIngredientLinks((current) =>
+      current.map((link) => {
+        if (link.ingredientId !== ingredientId) return link;
+        return {
+          ...link,
+          relationship,
+          contextualRole:
+            relationship === "comes_with"
+              ? "accompaniment"
+              : link.contextualRole === "accompaniment"
+                ? null
+                : link.contextualRole,
+          ...(relationship === "comes_with" ? { canSide: false } : {}),
+        };
+      }),
+    );
+  }
+
+  function removeRecipeIngredient(ingredientId: string) {
+    setIngredientLinks((current) => current.filter(
+      (link) => link.ingredientId !== ingredientId,
+    ));
+    setReplacements((current) => current.filter(
+      (replacement) => replacement.sourceIngredientId !== ingredientId,
+    ));
   }
 
   function addReplacement(sourceIngredientId: string, replacementIngredientId: string) {
@@ -845,14 +900,15 @@ export function MenuManagementPage() {
       const updated = await replaceMenuItemCustomization(compositionItem.id, input);
       setCatalog(updated);
 
-      if (publish) {
-        const published = await updateMenuItem(compositionItem.id, {
-          status: "available",
-        });
-        setItems((current) => current.map((item) =>
-          item.id === published.id ? published : item,
-        ));
-      }
+      const priceConfigured = compositionPrice.trim() !== "";
+      const savedItem = await updateMenuItem(compositionItem.id, {
+        price: priceConfigured ? Number(compositionPrice) : 0,
+        priceConfigured,
+        ...(publish ? { status: "available" as const } : {}),
+      });
+      setItems((current) => current.map((item) =>
+        item.id === savedItem.id ? savedItem : item,
+      ));
 
       setCompositionItem(null);
     } catch (error: unknown) {
@@ -1061,7 +1117,7 @@ export function MenuManagementPage() {
                         </strong>
                         {item.description ? <small>{item.description}</small> : null}
                       </td>
-                      <td className="price">{money(item.price)}</td>
+                      <td className="price">{item.priceConfigured ? money(item.price) : "—"}</td>
                       <td><StatusBadge status={item.status} /></td>
                       <td>
                         <button
@@ -1125,21 +1181,26 @@ export function MenuManagementPage() {
               </button>
             </header>
 
-            <form className="drawer-form" onSubmit={saveItem}>
-              <label>
-                <span>Name</span>
-                <input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <form className="drawer-form menu-item-basics-form" onSubmit={saveItem}>
+              <div className="menu-item-start-note">
+                <strong>Start a draft</strong>
+                <span>Name it and choose where it belongs. Price and details can be added later.</span>
+              </div>
+              <label className="menu-item-basics-name">
+                <span>Name <small>Required</small></span>
+                <input required placeholder="Turkey Club" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
               </label>
               <label>
-                <span>Description</span>
+                <span>Description <small>Optional</small></span>
                 <textarea
+                  placeholder="Short menu description"
                   value={form.description ?? ""}
                   onChange={(event) => setForm({ ...form, description: event.target.value || null })}
                 />
               </label>
               <div className="form-grid">
                 <label>
-                  <span>Category</span>
+                  <span>Category <small>Required</small></span>
                   <select required value={form.categoryId} onChange={(event) => setForm({ ...form, categoryId: event.target.value })}>
                     <option value="">Choose category</option>
                     {activeTaxonomy.map((group) => (
@@ -1152,8 +1213,26 @@ export function MenuManagementPage() {
                   </select>
                 </label>
                 <label>
-                  <span>Price</span>
-                  <input type="number" min="0" step="0.01" required value={form.price} onChange={(event) => setForm({ ...form, price: Number(event.target.value) })} />
+                  <span>Price <small>Optional for draft</small></span>
+                  <div className="menu-item-price-input">
+                    <span>$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Add later"
+                      value={form.priceConfigured ? form.price : ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setForm({
+                          ...form,
+                          price: value === "" ? 0 : Number(value),
+                          priceConfigured: value !== "",
+                        });
+                      }}
+                    />
+                  </div>
+                  <small className="field-help">A price is only required before you publish.</small>
                 </label>
               </div>
               <div className="form-grid">
@@ -1414,7 +1493,7 @@ export function MenuManagementPage() {
               <footer className="drawer-actions">
                 <button className="button" data-variant="primary" disabled={saving} type="submit">
                   {saving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
-                  {editingItem ? "Save changes" : "Continue"}
+                  {editingItem ? "Save changes" : "Save draft & build food"}
                 </button>
                 <button className="button" data-variant="quiet" disabled={saving} type="button" onClick={() => setDrawerOpen(false)}>Cancel</button>
               </footer>
@@ -1432,19 +1511,294 @@ export function MenuManagementPage() {
                 <h2>{compositionItem.name}</h2>
                 <p>Tell us what comes with this item and what customers can change.</p>
               </div>
-              <button className="icon-button" type="button" onClick={() => setCompositionItem(null)}>
-                <X aria-hidden="true" />
-              </button>
+              <div className="composition-header-actions">
+                <div className="composition-view-switch" aria-label="Item setup view">
+                  <button
+                    type="button"
+                    data-active={compositionView === "easy"}
+                    onClick={() => setCompositionView("easy")}
+                  >
+                    Easy View
+                  </button>
+                  <button
+                    type="button"
+                    data-active={compositionView === "advanced"}
+                    onClick={() => setCompositionView("advanced")}
+                  >
+                    Advanced View
+                  </button>
+                </div>
+                <button className="icon-button" type="button" onClick={() => setCompositionItem(null)}>
+                  <X aria-hidden="true" />
+                </button>
+              </div>
             </header>
 
             <div className="composition-editor composition-editor--guided">
               <div className="composition-progress" aria-label="Item setup progress">
-                <div data-done="true"><CheckCircle aria-hidden="true" /><span><strong>1. Basics</strong><small>Name, category, price</small></span></div>
+                <div data-done="true"><CheckCircle aria-hidden="true" /><span><strong>1. Basics</strong><small>Name, category, details</small></span></div>
                 <div data-current="true"><span className="composition-progress-number">2</span><span><strong>Item setup</strong><small>Ingredients, choices, changes</small></span></div>
                 <div data-done={compositionReadinessIssues.length === 0}><span className="composition-progress-number">3</span><span><strong>Publish</strong><small>{compositionReadinessIssues.length === 0 ? "Ready" : "Finish setup first"}</small></span></div>
               </div>
 
-              <section className="composition-section composition-section--primary">
+              {compositionView === "easy" ? (
+                <div className="easy-composition">
+                  <div className="easy-how-it-works" aria-label="Easy view steps">
+                    <span><b>1</b>Add the food</span>
+                    <span><b>2</b>Put it in the right box</span>
+                    <span><b>3</b>Add customer choices</span>
+                  </div>
+                  <section className="easy-build-section">
+                    <header className="easy-section-heading">
+                      <div>
+                        <p className="composition-step-label">1 · ADD THE FOOD</p>
+                        <h3>Add each thing once. Put it where it is normally served.</h3>
+                      </div>
+                      <span>{ingredientLinks.length} ingredients</span>
+                    </header>
+
+                    <div className="composition-picker easy-ingredient-search">
+                      <MagnifyingGlass aria-hidden="true" />
+                      <input
+                        type="search"
+                        placeholder="Search food — turkey, scallions, fries…"
+                        value={ingredientSearch}
+                        onChange={(event) => setIngredientSearch(event.target.value)}
+                      />
+                    </div>
+
+                    {ingredientSearch.trim() !== "" ? (
+                      <div className="easy-picker-results">
+                        {addableRecipeIngredients.length === 0 ? (
+                          <p className="composition-empty-inline">Not found. Add it to Ingredients first.</p>
+                        ) : addableRecipeIngredients.map((ingredient) => (
+                          <div className="easy-picker-row" key={ingredient.id}>
+                            <span>
+                              <strong>{ingredient.name}</strong>
+                              <small>{ingredient.kind.replace(/_/g, " ")}</small>
+                            </span>
+                            <div>
+                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "contains")}>Add to item</button>
+                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "comes_with")}>Serve with it</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    <div className="easy-food-zones">
+                      {(["contains", "comes_with"] as const).map((relationship) => {
+                        const links = ingredientLinks.filter((link) => link.relationship === relationship);
+                        const isInside = relationship === "contains";
+                        return (
+                          <section
+                            className="easy-food-zone"
+                            data-zone={relationship}
+                            key={relationship}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDrop={(event) => {
+                              event.preventDefault();
+                              const ingredientId = event.dataTransfer.getData("text/plain");
+                              if (ingredientId) placeIngredient(ingredientId, relationship);
+                            }}
+                          >
+                            <header>
+                              <div>
+                                <strong>{isInside ? "IN / ON THE ITEM" : "SERVED WITH IT"}</strong>
+                                <span>{isInside ? "Bread, filling, toppings, sauce" : "Fries, pickle, side salad"}</span>
+                              </div>
+                              <b>{links.length}</b>
+                            </header>
+
+                            <div className="easy-food-zone-list">
+                              {links.length === 0 ? (
+                                <div className="easy-zone-empty">Add ingredients above or drag them here.</div>
+                              ) : links.map((link) => {
+                                const ingredient = ingredientById.get(link.ingredientId);
+                                if (!ingredient) return null;
+                                const hasAdvancedSetup = Boolean(
+                                  link.preparationSchemeId ||
+                                  link.canReplace ||
+                                  replacements.some((replacement) => replacement.sourceIngredientId === link.ingredientId),
+                                );
+                                return (
+                                  <article
+                                    className="easy-food-card"
+                                    draggable
+                                    key={link.ingredientId}
+                                    onDragStart={(event) => event.dataTransfer.setData("text/plain", link.ingredientId)}
+                                  >
+                                    <div className="easy-food-card-main">
+                                      <div>
+                                        <strong>{ingredient.name}</strong>
+                                        <small>{ingredient.kind.replace(/_/g, " ")}</small>
+                                      </div>
+                                      <button type="button" className="composition-remove" onClick={() => removeRecipeIngredient(link.ingredientId)}>Remove</button>
+                                    </div>
+
+                                    <label className="easy-role-field">
+                                      <span>What is it here?</span>
+                                      <select
+                                        value={link.contextualRole ?? ""}
+                                        onChange={(event) => updateIngredientLink(link.ingredientId, {
+                                          contextualRole: (event.target.value || null) as UniversalComponentRole | null,
+                                        })}
+                                      >
+                                        <option value="">Choose…</option>
+                                        {UMO_ROLE_OPTIONS.map((option) => (
+                                          <option key={option.value} value={option.value}>{option.label}</option>
+                                        ))}
+                                      </select>
+                                    </label>
+
+                                    <div className="easy-customer-options">
+                                      <span>Customer may ask for</span>
+                                      <label>
+                                        <input type="checkbox" checked={link.canRemove} onChange={(event) => updateIngredientLink(link.ingredientId, { canRemove: event.target.checked })} />
+                                        Remove
+                                      </label>
+                                      {isInside ? (
+                                        <label title="The item normally includes this here; the customer may ask to receive it separately.">
+                                          <input type="checkbox" checked={link.canSide} onChange={(event) => updateIngredientLink(link.ingredientId, { canSide: event.target.checked })} />
+                                          Move it to the side
+                                        </label>
+                                      ) : (
+                                        <span className="easy-normal-side-note">Already comes separately</span>
+                                      )}
+                                      <label>
+                                        <input type="checkbox" checked={link.canExtra} onChange={(event) => updateIngredientLink(link.ingredientId, { canExtra: event.target.checked })} />
+                                        Extra
+                                      </label>
+                                    </div>
+
+                                    {link.canExtra ? (
+                                      <div className="easy-extra-price">
+                                        <label>
+                                          <span>Extra price</span>
+                                          <input type="number" min="0" step="0.01" value={link.extraPrice} onChange={(event) => updateIngredientLink(link.ingredientId, { extraPrice: Number(event.target.value) })} />
+                                        </label>
+                                        <label>
+                                          <input type="checkbox" checked={link.extraPriceConfigured} onChange={(event) => updateIngredientLink(link.ingredientId, { extraPriceConfigured: event.target.checked })} />
+                                          Price is correct
+                                        </label>
+                                      </div>
+                                    ) : null}
+
+                                    <div className="easy-card-foot">
+                                      <button type="button" onClick={() => placeIngredient(link.ingredientId, isInside ? "comes_with" : "contains")}>
+                                        Move to {isInside ? "Served with it" : "In / on the item"}
+                                      </button>
+                                      {hasAdvancedSetup ? <span>More setup saved in Advanced</span> : null}
+                                    </div>
+                                  </article>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        );
+                      })}
+                    </div>
+
+                    {ingredientLinks.some((link) => link.relationship === null) ? (
+                      <div className="easy-unplaced">
+                        <strong>Needs a place</strong>
+                        {ingredientLinks.filter((link) => link.relationship === null).map((link) => {
+                          const ingredient = ingredientById.get(link.ingredientId);
+                          if (!ingredient) return null;
+                          return (
+                            <div key={link.ingredientId}>
+                              <span>{ingredient.name}</span>
+                              <button type="button" onClick={() => placeIngredient(link.ingredientId, "contains")}>In the item</button>
+                              <button type="button" onClick={() => placeIngredient(link.ingredientId, "comes_with")}>With item</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section className="easy-choice-section">
+                    <header className="easy-section-heading">
+                      <div>
+                        <p className="composition-step-label">2 · CUSTOMER CHOICES</p>
+                        <h3>Does the customer choose anything?</h3>
+                      </div>
+                      <button className="button" data-variant="quiet" type="button" onClick={addChoiceGroup}><Plus aria-hidden="true" /> Add choice</button>
+                    </header>
+
+                    {choiceGroups.length === 0 ? (
+                      <div className="easy-choice-empty">No choices needed? Leave this empty.</div>
+                    ) : (
+                      <div className="easy-choice-list">
+                        {choiceGroups.map((group) => (
+                          <article className="easy-choice-card" key={group.key}>
+                            <div className="easy-choice-top">
+                              <label>
+                                <span>Choice name</span>
+                                <input value={group.label} placeholder="Choose your bread" onChange={(event) => updateChoiceGroup(group.key, { label: event.target.value })} />
+                              </label>
+                              <button type="button" className="composition-remove" onClick={() => setChoiceGroups((current) => current.filter((candidate) => candidate.key !== group.key))}>Delete</button>
+                            </div>
+
+                            <div className="easy-choice-rules">
+                              <button type="button" data-selected={group.minSelections === 1 && group.maxSelections === 1} onClick={() => updateChoiceGroup(group.key, { minSelections: 1, maxSelections: 1 })}>Choose one</button>
+                              <button type="button" data-selected={group.minSelections === 0 && group.maxSelections === 1} onClick={() => updateChoiceGroup(group.key, { minSelections: 0, maxSelections: 1 })}>Optional</button>
+                              <span>Served:</span>
+                              <button type="button" data-selected={group.relationship === "contains"} onClick={() => updateChoiceGroup(group.key, { relationship: "contains" })}>In / on item</button>
+                              <button type="button" data-selected={group.relationship === "comes_with"} onClick={() => updateChoiceGroup(group.key, { relationship: "comes_with" })}>With it</button>
+                            </div>
+
+                            <div className="easy-choice-options">
+                              {group.options.map((option, optionIndex) => (
+                                <div key={option.key}>
+                                  <span>{optionIndex + 1}</span>
+                                  <input value={option.label} placeholder="Option name" onChange={(event) => updateChoiceOption(group.key, option.key, { label: event.target.value })} />
+                                  <select value={option.ingredientId ?? ""} onChange={(event) => updateChoiceOption(group.key, option.key, { ingredientId: event.target.value || null })}>
+                                    <option value="">No ingredient</option>
+                                    {catalog.ingredients.filter((ingredient) => ingredient.isActive).map((ingredient) => (
+                                      <option key={ingredient.id} value={ingredient.id}>{ingredient.name}</option>
+                                    ))}
+                                  </select>
+                                  <label className="easy-choice-price">
+                                    <span>+$</span>
+                                    <input type="number" step="0.01" value={option.priceAdjustment} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustment: Number(event.target.value) })} />
+                                  </label>
+                                  <label className="easy-choice-confirm">
+                                    <input type="checkbox" checked={option.priceAdjustmentConfigured} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustmentConfigured: event.target.checked })} />
+                                    Price set
+                                  </label>
+                                  <label className="easy-choice-default">
+                                    <input type="checkbox" checked={option.isDefault} onChange={(event) => updateChoiceOption(group.key, option.key, { isDefault: event.target.checked })} />
+                                    Default
+                                  </label>
+                                  <button type="button" className="composition-remove" onClick={() => updateChoiceGroup(group.key, { options: group.options.filter((candidate) => candidate.key !== option.key) })}>Remove</button>
+                                </div>
+                              ))}
+                            </div>
+                            <button type="button" className="easy-add-option" onClick={() => addChoiceOption(group.key)}><Plus aria-hidden="true" /> Add option</button>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <div className="easy-section-number">3 · READY CHECK</div>
+                  <section className="easy-review-section" data-ready={compositionReadinessIssues.length === 0}>
+                    <div>
+                      {compositionReadinessIssues.length === 0 ? <CheckCircle aria-hidden="true" /> : <Warning aria-hidden="true" />}
+                      <span>
+                        <strong>{compositionReadinessIssues.length === 0 ? "Ready to publish" : `${compositionReadinessIssues.length} thing${compositionReadinessIssues.length === 1 ? "" : "s"} to finish`}</strong>
+                        <small>{compositionReadinessIssues.length === 0 ? "This item is complete." : "Open Advanced View if you need cooking, replacements, or custom choice rules."}</small>
+                      </span>
+                    </div>
+                    {compositionReadinessIssues.length > 0 ? (
+                      <ul>{compositionReadinessIssues.slice(0, 4).map((issue) => <li key={issue}>{issue}</li>)}</ul>
+                    ) : null}
+                  </section>
+                </div>
+              ) : (
+                <>
+                  <section className="composition-section composition-section--primary">
                 <header className="composition-section-heading">
                   <div>
                     <p className="composition-step-label">A · BUILD THE PLATE</p>
@@ -1840,6 +2194,27 @@ export function MenuManagementPage() {
                   <div className="composition-ready-message"><CheckCircle aria-hidden="true" /><span>Item setup is complete. Publish will make it available in Order Entry.</span></div>
                 )}
               </section>
+
+                </>
+              )}
+
+              <div className="composition-price-strip" data-configured={compositionPrice.trim() !== ""}>
+                <div>
+                  <strong>Selling price</strong>
+                  <small>{compositionPrice.trim() === "" ? "You can save the draft without it." : "Price is set."}</small>
+                </div>
+                <label>
+                  <span>$</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Add before publish"
+                    value={compositionPrice}
+                    onChange={(event) => setCompositionPrice(event.target.value)}
+                  />
+                </label>
+              </div>
 
               {compositionError ? <div className="notice notice--error">{compositionError}</div> : null}
             </div>
