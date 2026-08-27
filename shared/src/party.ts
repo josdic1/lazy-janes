@@ -58,16 +58,74 @@ export type PartyListItem = z.infer<
   typeof partyListItemSchema
 >;
 
+export const diningRoomSectionSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  displayOrder: z.number().int(),
+  isActive: z.boolean(),
+});
+
+export type DiningRoomSection = z.infer<
+  typeof diningRoomSectionSchema
+>;
+
+export const createDiningRoomSectionInputSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+
+export type CreateDiningRoomSectionInput = z.infer<
+  typeof createDiningRoomSectionInputSchema
+>;
+
 export const diningTableOptionSchema = z.object({
   id: z.string().uuid(),
   label: z.string(),
   capacity: z.number().int().positive(),
+  sectionId: z.string().uuid(),
   sectionName: z.string(),
   occupied: z.boolean(),
+  floorX: z.number().int().min(0).max(100),
+  floorY: z.number().int().min(0).max(100),
 });
 
 export type DiningTableOption = z.infer<
   typeof diningTableOptionSchema
+>;
+
+export const diningTableRecordSchema = diningTableOptionSchema.extend({
+  isActive: z.boolean(),
+});
+
+export type DiningTableRecord = z.infer<
+  typeof diningTableRecordSchema
+>;
+
+export const createDiningTableInputSchema = z.object({
+  sectionId: z.string().uuid(),
+  label: z.string().trim().min(1).max(40),
+  capacity: z.number().int().positive().max(30),
+  floorX: z.number().int().min(0).max(100).optional(),
+  floorY: z.number().int().min(0).max(100).optional(),
+});
+
+export type CreateDiningTableInput = z.infer<
+  typeof createDiningTableInputSchema
+>;
+
+export const updateDiningTableInputSchema = z.object({
+  sectionId: z.string().uuid().optional(),
+  label: z.string().trim().min(1).max(40).optional(),
+  capacity: z.number().int().positive().max(30).optional(),
+  isActive: z.boolean().optional(),
+  floorX: z.number().int().min(0).max(100).optional(),
+  floorY: z.number().int().min(0).max(100).optional(),
+}).refine(
+  (value) => Object.keys(value).length > 0,
+  'Provide at least one table change',
+);
+
+export type UpdateDiningTableInput = z.infer<
+  typeof updateDiningTableInputSchema
 >;
 
 export const cancelPartyInputSchema = z.object({

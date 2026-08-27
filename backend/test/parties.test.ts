@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { partySchema } from "@lazy-janes/shared";
+import {
+  diningRoomSectionSchema,
+  diningTableOptionSchema,
+  diningTableRecordSchema,
+  partySchema,
+} from "@lazy-janes/shared";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
 import { hashUserPin } from "../src/auth/security.js";
@@ -8,9 +13,10 @@ import { pool } from "../src/db/pool.js";
 
 const TEST_PIN = "4826";
 
-async function createAuthenticatedHost(
+async function createAuthenticatedUser(
   userId: string,
   displayName: string,
+  roleCode: "host" | "manager",
 ) {
   await pool.query(
     `
@@ -29,9 +35,9 @@ async function createAuthenticatedHost(
         user_id,
         role_code
       )
-      VALUES ($1, 'host')
+      VALUES ($1, $2)
     `,
-    [userId],
+    [userId, roleCode],
   );
 
   await pool.query(
@@ -57,6 +63,20 @@ async function createAuthenticatedHost(
   expect(login.status).toBe(200);
 
   return agent;
+}
+
+async function createAuthenticatedHost(
+  userId: string,
+  displayName: string,
+) {
+  return createAuthenticatedUser(userId, displayName, "host");
+}
+
+async function createAuthenticatedManager(
+  userId: string,
+  displayName: string,
+) {
+  return createAuthenticatedUser(userId, displayName, "manager");
 }
 
 async function deleteAuthenticatedUser(
@@ -140,6 +160,83 @@ describe("POST /api/parties", () => {
   });
 });
 
+describe("dining room management", () => {
+  it("creates each room once and adds tables by room ID", async () => {
+    const userId = randomUUID();
+    let roomId: string | undefined;
+    let tableId: string | undefined;
+    const roomName = `Main Room ${randomUUID()}`;
+
+    try {
+      const agent = await createAuthenticatedManager(
+        userId,
+        "Dining Room Test Manager",
+      );
+
+      const roomResponse = await agent
+        .post("/api/parties/sections/manage")
+        .send({ name: roomName });
+
+      expect(roomResponse.status).toBe(201);
+      const room = diningRoomSectionSchema.parse(roomResponse.body);
+      roomId = room.id;
+      expect(room.name).toBe(roomName);
+
+      const duplicateResponse = await agent
+        .post("/api/parties/sections/manage")
+        .send({ name: roomName.toUpperCase() });
+
+      expect(duplicateResponse.status).toBe(409);
+      expect(duplicateResponse.body.error).toBe(
+        "That room already exists",
+      );
+
+      const roomsResponse = await agent.get(
+        "/api/parties/sections/manage",
+      );
+      expect(roomsResponse.status).toBe(200);
+      const rooms = diningRoomSectionSchema.array().parse(
+        roomsResponse.body,
+      );
+      expect(rooms.some((candidate) => candidate.id === room.id)).toBe(true);
+
+      const tableResponse = await agent
+        .post("/api/parties/tables/manage")
+        .send({
+          sectionId: room.id,
+          label: "1",
+          capacity: 4,
+        });
+
+      expect(tableResponse.status).toBe(201);
+      const table = diningTableRecordSchema.parse(tableResponse.body);
+      tableId = table.id;
+      expect(table).toMatchObject({
+        sectionId: room.id,
+        sectionName: roomName,
+        label: "1",
+        capacity: 4,
+      });
+    } finally {
+      if (tableId) {
+        await pool.query(
+          "DELETE FROM dining_tables WHERE id = $1",
+          [tableId],
+        );
+      }
+
+      if (roomId) {
+        await pool.query(
+          "DELETE FROM sections WHERE id = $1",
+          [roomId],
+        );
+      }
+
+      await deleteAuthenticatedUser(userId);
+    }
+  });
+});
+
 describe("POST /api/parties/:partyId/seat", () => {
   it("seats one party and rejects an occupied table", async () => {
     const userId = randomUUID();
@@ -174,6 +271,19 @@ describe("POST /api/parties/:partyId/seat", () => {
         `,
         [tableId, sectionId],
       );
+
+      const floorResponse = await agent.get("/api/parties/tables");
+      expect(floorResponse.status).toBe(200);
+      const floorTables = diningTableOptionSchema.array().parse(floorResponse.body);
+      const floorTable = floorTables.find((table) => table.id === tableId);
+      expect(floorTable).toMatchObject({
+        id: tableId,
+        label: "T1",
+        capacity: 4,
+        floorX: 8,
+        floorY: 10,
+        occupied: false,
+      });
 
       await pool.query(
         `

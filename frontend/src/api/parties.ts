@@ -1,9 +1,15 @@
 import type {
+  CancelPartyInput,
+  CreateDiningRoomSectionInput,
+  CreateDiningTableInput,
   CreatePartyInput,
+  DiningRoomSection,
   DiningTableOption,
+  DiningTableRecord,
   Party,
   PartyListItem,
   SeatPartyInput,
+  UpdateDiningTableInput,
 } from "@lazy-janes/shared";
 
 async function readError(response: Response): Promise<string> {
@@ -80,4 +86,76 @@ export async function seatParty(
   }
 
   return response.json() as Promise<Party>;
+}
+
+
+export async function cancelParty(
+  partyId: string,
+  input: CancelPartyInput,
+): Promise<Party> {
+  const response = await fetch(
+    `/api/parties/${partyId}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(input),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<Party>;
+}
+
+export async function getManagedDiningRoomSections(): Promise<DiningRoomSection[]> {
+  const response = await fetch("/api/parties/sections/manage");
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<DiningRoomSection[]>;
+}
+
+export async function createDiningRoomSection(
+  input: CreateDiningRoomSectionInput,
+): Promise<DiningRoomSection> {
+  const response = await fetch("/api/parties/sections/manage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<DiningRoomSection>;
+}
+
+export async function getManagedDiningTables(): Promise<DiningTableRecord[]> {
+  const response = await fetch("/api/parties/tables/manage");
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<DiningTableRecord[]>;
+}
+
+export async function createDiningTable(
+  input: CreateDiningTableInput,
+): Promise<DiningTableRecord> {
+  const response = await fetch("/api/parties/tables/manage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<DiningTableRecord>;
+}
+
+export async function updateDiningTable(
+  tableId: string,
+  input: UpdateDiningTableInput,
+): Promise<DiningTableRecord> {
+  const response = await fetch(`/api/parties/tables/manage/${tableId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<DiningTableRecord>;
 }

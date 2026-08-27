@@ -235,7 +235,7 @@ authRouter.post("/login", async (request, response) => {
       await client.query("ROLLBACK");
 
       response.status(401).json({
-        error: "Invalid user or PIN",
+        error: "Invalid user or password",
       });
       return;
     }
@@ -247,7 +247,7 @@ authRouter.post("/login", async (request, response) => {
       await client.query("ROLLBACK");
 
       response.status(423).json({
-        error: "PIN temporarily locked",
+        error: "Password temporarily locked",
       });
       return;
     }
@@ -302,7 +302,7 @@ authRouter.post("/login", async (request, response) => {
         await client.query("COMMIT");
 
         response.status(423).json({
-          error: "PIN temporarily locked",
+          error: "Password temporarily locked",
         });
         return;
       }
@@ -322,7 +322,7 @@ authRouter.post("/login", async (request, response) => {
       await client.query("COMMIT");
 
       response.status(401).json({
-        error: "Invalid user or PIN",
+        error: "Invalid user or password",
       });
       return;
     }

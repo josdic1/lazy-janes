@@ -395,7 +395,7 @@ usersRouter.put(
 
     if (!input.success) {
       response.status(400).json({
-        error: "Invalid PIN",
+        error: "Invalid password",
         issues: input.error.issues,
       });
       return;

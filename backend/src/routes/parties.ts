@@ -1,8 +1,13 @@
 import {
   cancelPartyInputSchema,
+  createDiningRoomSectionInputSchema,
+  createDiningTableInputSchema,
   createPartyInputSchema,
   seatPartyInputSchema,
+  updateDiningTableInputSchema,
+  type DiningRoomSection,
   type DiningTableOption,
+  type DiningTableRecord,
   type Party,
   type PartyListItem,
   type PartyStatus,
@@ -33,12 +38,23 @@ type PartyListRow = PartyRow & {
   table_labels: string[];
 };
 
+type DiningRoomSectionRow = {
+  id: string;
+  name: string;
+  display_order: number;
+  is_active: boolean;
+};
+
 type DiningTableOptionRow = {
   id: string;
   label: string;
   capacity: number;
+  section_id: string;
   section_name: string;
   occupied: boolean;
+  is_active?: boolean;
+  floor_x: number;
+  floor_y: number;
 };
 
 const partySelect = `
@@ -77,6 +93,17 @@ function toPartyListItem(
   return {
     ...toParty(row),
     tableLabels: row.table_labels,
+  };
+}
+
+function toDiningRoomSection(
+  row: DiningRoomSectionRow,
+): DiningRoomSection {
+  return {
+    id: row.id,
+    name: row.name,
+    displayOrder: row.display_order,
+    isActive: row.is_active,
   };
 }
 
@@ -131,6 +158,93 @@ partiesRouter.get("/", async (_request, response) => {
   response.json(result.rows.map(toPartyListItem));
 });
 
+partiesRouter.get(
+  "/sections/manage",
+  requireAnyRole("manager", "admin"),
+  async (_request, response) => {
+    const result = await pool.query<DiningRoomSectionRow>(`
+      SELECT id, name, display_order, is_active
+      FROM sections
+      WHERE is_active = true
+      ORDER BY display_order, name
+    `);
+
+    response.json(result.rows.map(toDiningRoomSection));
+  },
+);
+
+partiesRouter.post(
+  "/sections/manage",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
+    const input = createDiningRoomSectionInputSchema.safeParse(request.body);
+
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid room",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    const name = input.data.name.trim();
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const existing = await client.query<{ id: string }>(`
+        SELECT id
+        FROM sections
+        WHERE lower(btrim(name)) = lower(btrim($1))
+        LIMIT 1
+        FOR UPDATE
+      `, [name]);
+
+      if (existing.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "That room already exists",
+        });
+        return;
+      }
+
+      const displayOrderResult = await client.query<{ next_order: number }>(`
+        SELECT COALESCE(max(display_order), -1) + 1 AS next_order
+        FROM sections
+      `);
+      const displayOrder = displayOrderResult.rows[0]?.next_order ?? 0;
+
+      const result = await client.query<DiningRoomSectionRow>(`
+        INSERT INTO sections (name, display_order)
+        VALUES ($1, $2)
+        RETURNING id, name, display_order, is_active
+      `, [name, displayOrder]);
+      const room = result.rows[0];
+
+      if (!room) {
+        throw new Error("Room insert returned no record");
+      }
+
+      await client.query("COMMIT");
+      response.status(201).json(toDiningRoomSection(room));
+    } catch (error: any) {
+      await client.query("ROLLBACK");
+
+      if (error?.code === "23505") {
+        response.status(409).json({
+          error: "That room already exists",
+        });
+        return;
+      }
+
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
 partiesRouter.get("/tables", async (_request, response) => {
   const result = await pool.query<DiningTableOptionRow>(
     `
@@ -138,7 +252,10 @@ partiesRouter.get("/tables", async (_request, response) => {
         dining_tables.id,
         dining_tables.label,
         dining_tables.capacity,
+        sections.id AS section_id,
         sections.name AS section_name,
+        dining_tables.floor_x,
+        dining_tables.floor_y,
         EXISTS (
           SELECT 1
           FROM seating_tables
@@ -166,12 +283,304 @@ partiesRouter.get("/tables", async (_request, response) => {
       id: row.id,
       label: row.label,
       capacity: row.capacity,
+      sectionId: row.section_id,
       sectionName: row.section_name,
       occupied: row.occupied,
+      floorX: row.floor_x,
+      floorY: row.floor_y,
     }));
 
   response.json(tables);
 });
+
+partiesRouter.get(
+  "/tables/manage",
+  requireAnyRole("manager", "admin"),
+  async (_request, response) => {
+    const result = await pool.query<DiningTableOptionRow>(`
+      SELECT
+        dining_tables.id,
+        dining_tables.label,
+        dining_tables.capacity,
+        sections.id AS section_id,
+        sections.name AS section_name,
+        dining_tables.is_active,
+        dining_tables.floor_x,
+        dining_tables.floor_y,
+        EXISTS (
+          SELECT 1
+          FROM seating_tables
+          JOIN seatings ON seatings.id = seating_tables.seating_id
+          WHERE seating_tables.dining_table_id = dining_tables.id
+            AND seating_tables.released_at IS NULL
+            AND seatings.ended_at IS NULL
+        ) AS occupied
+      FROM dining_tables
+      JOIN sections ON sections.id = dining_tables.section_id
+      ORDER BY sections.display_order, sections.name, dining_tables.label
+    `);
+
+    const tables: DiningTableRecord[] = result.rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      capacity: row.capacity,
+      sectionId: row.section_id,
+      sectionName: row.section_name,
+      occupied: row.occupied,
+      isActive: row.is_active ?? true,
+      floorX: row.floor_x,
+      floorY: row.floor_y,
+    }));
+
+    response.json(tables);
+  },
+);
+
+partiesRouter.post(
+  "/tables/manage",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
+    const input = createDiningTableInputSchema.safeParse(request.body);
+    if (!input.success) {
+      response.status(400).json({
+        error: "Invalid dining table",
+        issues: input.error.issues,
+      });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const sectionResult = await client.query<{
+        id: string;
+        name: string;
+      }>(`
+        SELECT id, name
+        FROM sections
+        WHERE id = $1
+          AND is_active = true
+        FOR UPDATE
+      `, [input.data.sectionId]);
+      const section = sectionResult.rows[0];
+
+      if (!section) {
+        await client.query("ROLLBACK");
+        response.status(400).json({
+          error: "Choose an active room",
+        });
+        return;
+      }
+
+      const tableCount = await client.query<{ count: number }>(`
+        SELECT count(*)::int AS count
+        FROM dining_tables
+        WHERE section_id = $1
+      `, [section.id]);
+      const slot = tableCount.rows[0]?.count ?? 0;
+      const floorX = input.data.floorX ?? 8 + ((slot % 5) * 20);
+      const floorY = input.data.floorY ?? 10 + ((Math.floor(slot / 5) % 4) * 27);
+
+      const result = await client.query<DiningTableOptionRow>(`
+        INSERT INTO dining_tables (
+          section_id,
+          label,
+          capacity,
+          floor_x,
+          floor_y
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING
+          id,
+          label,
+          capacity,
+          section_id,
+          $6::text AS section_name,
+          false AS occupied,
+          is_active,
+          floor_x,
+          floor_y
+      `, [
+        section.id,
+        input.data.label,
+        input.data.capacity,
+        floorX,
+        floorY,
+        section.name,
+      ]);
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error("Dining table insert returned no record");
+      }
+
+      await client.query("COMMIT");
+      response.status(201).json({
+        id: row.id,
+        label: row.label,
+        capacity: row.capacity,
+        sectionId: row.section_id,
+        sectionName: row.section_name,
+        occupied: false,
+        isActive: row.is_active ?? true,
+        floorX: row.floor_x,
+        floorY: row.floor_y,
+      });
+    } catch (error: any) {
+      await client.query("ROLLBACK");
+      if (error?.code === "23505") {
+        response.status(409).json({ error: "That table already exists in this room" });
+        return;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+partiesRouter.patch(
+  "/tables/manage/:tableId",
+  requireAnyRole("manager", "admin"),
+  async (request, response) => {
+    const tableId = z.string().uuid().safeParse(request.params.tableId);
+    const input = updateDiningTableInputSchema.safeParse(request.body);
+    if (!tableId.success || !input.success) {
+      response.status(400).json({ error: "Invalid dining table change" });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await client.query<{
+        section_id: string;
+        section_name: string;
+        label: string;
+        capacity: number;
+        is_active: boolean;
+        floor_x: number;
+        floor_y: number;
+      }>(`
+        SELECT dining_tables.section_id, sections.name AS section_name,
+               dining_tables.label, dining_tables.capacity, dining_tables.is_active,
+               dining_tables.floor_x, dining_tables.floor_y
+        FROM dining_tables
+        JOIN sections ON sections.id = dining_tables.section_id
+        WHERE dining_tables.id = $1
+        FOR UPDATE
+      `, [tableId.data]);
+      const row = current.rows[0];
+      if (!row) {
+        await client.query("ROLLBACK");
+        response.status(404).json({ error: "Dining table not found" });
+        return;
+      }
+
+      if (input.data.isActive === false) {
+        const occupied = await client.query(`
+          SELECT 1
+          FROM seating_tables
+          JOIN seatings ON seatings.id = seating_tables.seating_id
+          WHERE seating_tables.dining_table_id = $1
+            AND seating_tables.released_at IS NULL
+            AND seatings.ended_at IS NULL
+          LIMIT 1
+        `, [tableId.data]);
+        if ((occupied.rowCount ?? 0) > 0) {
+          await client.query("ROLLBACK");
+          response.status(409).json({ error: "An occupied table cannot be deactivated" });
+          return;
+        }
+      }
+
+      let sectionId = row.section_id;
+      let sectionName = row.section_name;
+
+      if (input.data.sectionId && input.data.sectionId !== row.section_id) {
+        const sectionResult = await client.query<{
+          id: string;
+          name: string;
+        }>(`
+          SELECT id, name
+          FROM sections
+          WHERE id = $1
+            AND is_active = true
+          FOR UPDATE
+        `, [input.data.sectionId]);
+        const section = sectionResult.rows[0];
+
+        if (!section) {
+          await client.query("ROLLBACK");
+          response.status(400).json({
+            error: "Choose an active room",
+          });
+          return;
+        }
+
+        sectionId = section.id;
+        sectionName = section.name;
+      }
+
+      const updated = await client.query<DiningTableOptionRow>(`
+        UPDATE dining_tables
+        SET
+          section_id = $2,
+          label = $3,
+          capacity = $4,
+          is_active = $5,
+          floor_x = $6,
+          floor_y = $7
+        WHERE id = $1
+        RETURNING
+          id,
+          label,
+          capacity,
+          section_id,
+          $8::text AS section_name,
+          is_active,
+          false AS occupied,
+          floor_x,
+          floor_y
+      `, [
+        tableId.data,
+        sectionId,
+        input.data.label ?? row.label,
+        input.data.capacity ?? row.capacity,
+        input.data.isActive ?? row.is_active,
+        input.data.floorX ?? row.floor_x,
+        input.data.floorY ?? row.floor_y,
+        sectionName,
+      ]);
+      const next = updated.rows[0];
+      if (!next) {
+        throw new Error("Dining table update returned no record");
+      }
+
+      await client.query("COMMIT");
+      response.json({
+        id: next.id,
+        label: next.label,
+        capacity: next.capacity,
+        sectionId: next.section_id,
+        sectionName: next.section_name,
+        occupied: false,
+        isActive: next.is_active ?? true,
+        floorX: next.floor_x,
+        floorY: next.floor_y,
+      });
+    } catch (error: any) {
+      await client.query("ROLLBACK");
+      if (error?.code === "23505") {
+        response.status(409).json({ error: "That table already exists in this room" });
+        return;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
 
 partiesRouter.post("/", async (request, response) => {
   const input = createPartyInputSchema.safeParse(request.body);

@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const userPinSchema = z
   .string()
-  .regex(/^\d{4}$/, "PIN must contain exactly four digits");
+  .min(1, "Password is required")
+  .max(72, "Password must contain at most 72 characters");
 
 export const userLoginOptionSchema = z.object({
   id: z.string().uuid(),

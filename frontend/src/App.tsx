@@ -1,4 +1,5 @@
 import {
+  Navigate,
   NavLink,
   Route,
   Routes,
@@ -8,6 +9,7 @@ import { RequireRoles } from "./components/shared/RequireRoles";
 import { useAuth } from "./hooks/useAuth";
 import { AuthPage } from "./pages/AuthPage";
 import { HomePage } from "./pages/HomePage";
+import { KitchenBoardPage } from "./pages/KitchenBoardPage";
 import { MenuManagementPage } from "./pages/MenuManagementPage";
 import { OrderEntryPage } from "./pages/OrderEntryPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -67,6 +69,12 @@ export function App() {
             </NavLink>
           </Can>
 
+          <Can roles={["chef", "head_chef", "manager", "admin"]}>
+            <NavLink to="/kitchen">
+              Kitchen
+            </NavLink>
+          </Can>
+
           <Can roles={["manager", "admin"]}>
             <NavLink to="/menu">
               Menu Management
@@ -119,6 +127,17 @@ export function App() {
         />
 
         <Route
+          path="/kitchen"
+          element={
+            <RequireRoles
+              roles={["chef", "head_chef", "manager", "admin"]}
+            >
+              <KitchenBoardPage />
+            </RequireRoles>
+          }
+        />
+
+        <Route
           path="/menu"
           element={
             <RequireRoles
@@ -137,6 +156,8 @@ export function App() {
             </RequireRoles>
           }
         />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );

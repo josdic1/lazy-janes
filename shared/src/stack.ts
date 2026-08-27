@@ -19,6 +19,10 @@ export const stackOrderItemSchema = z.object({
   seatNumber: z.number().int().positive().nullable(),
   quantity: z.number().int().positive(),
   status: orderItemStatusSchema,
+  kitchenNote: z.string().nullable().default(null),
+  kitchenDetails: z.array(z.string()).default([]),
+  allocatedQuantity: z.number().nonnegative().default(0),
+  remainingQuantity: z.number().nonnegative().default(0),
 });
 
 export type StackOrderItem = z.infer<
@@ -28,6 +32,10 @@ export type StackOrderItem = z.infer<
 export const stackOrderSchema = z.object({
   id: z.string().uuid(),
   fulfillmentType: fulfillmentTypeSchema,
+  customerName: z.string().nullable().default(null),
+  customerPhone: z.string().nullable().default(null),
+  deliveryAddress: z.string().nullable().default(null),
+  requestedFor: z.string().datetime().nullable().default(null),
   submittedAt: z.string().datetime(),
   cancelledAt: z.string().datetime().nullable(),
   items: z.array(stackOrderItemSchema),
@@ -42,6 +50,7 @@ export const stackCheckSchema = z.object({
   totalAmount: z.number().nonnegative(),
   paidAmount: z.number().nonnegative(),
   balanceAmount: z.number().nonnegative(),
+  orderIds: z.array(z.string().uuid()).default([]),
 });
 
 export type StackCheck = z.infer<typeof stackCheckSchema>;
@@ -88,6 +97,8 @@ export type StackParty = z.infer<typeof stackPartySchema>;
 export const stackSnapshotSchema = z.object({
   generatedAt: z.string().datetime(),
   parties: z.array(stackPartySchema),
+  standaloneOrders: z.array(stackOrderSchema).default([]),
+  standaloneChecks: z.array(stackCheckSchema).default([]),
 });
 
 export type StackSnapshot = z.infer<

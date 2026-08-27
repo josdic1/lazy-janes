@@ -142,6 +142,7 @@ describe("GET /api/stack", () => {
             seat_number,
             item_name,
             unit_price,
+            kitchen_note,
             status,
             fired_at,
             ready_at
@@ -154,6 +155,7 @@ describe("GET /api/stack", () => {
             1,
             'Stack Test Meal',
             10,
+            'NO SALT',
             'ready',
             now(),
             now()
@@ -284,6 +286,10 @@ describe("GET /api/stack", () => {
               itemName: "Stack Test Meal",
               seatNumber: 1,
               status: "ready",
+              kitchenNote: "NO SALT",
+              kitchenDetails: [],
+              allocatedQuantity: 1,
+              remainingQuantity: 0,
             }),
           ],
         }),
@@ -297,6 +303,7 @@ describe("GET /api/stack", () => {
           totalAmount: 10.66,
           paidAmount: 5,
           balanceAmount: 5.66,
+          orderIds: [orderId],
         },
       ]);
 
@@ -381,4 +388,117 @@ describe("GET /api/stack", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+  it("includes active takeout and delivery orders without a party", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Standalone Stack Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Standalone Stack Meal',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            12
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            party_id,
+            fulfillment_type,
+            created_by_user_id,
+            customer_name
+          )
+          VALUES ($1, NULL, 'takeout', $2, 'Taylor')
+        `,
+        [orderId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_user_id,
+            item_name,
+            unit_price,
+            quantity,
+            status
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Standalone Stack Meal',
+            12,
+            2,
+            'submitted'
+          )
+        `,
+        [orderItemId, orderId, menuItemId, userId],
+      );
+
+      const response = await agent.get("/api/stack");
+
+      expect(response.status).toBe(200);
+
+      const snapshot = stackSnapshotSchema.parse(response.body);
+      const order = snapshot.standaloneOrders.find(
+        (candidate) => candidate.id === orderId,
+      );
+
+      expect(order).toEqual(
+        expect.objectContaining({
+          id: orderId,
+          fulfillmentType: "takeout",
+          customerName: "Taylor",
+          items: [
+            expect.objectContaining({
+              id: orderItemId,
+              quantity: 2,
+              status: "submitted",
+              allocatedQuantity: 0,
+              remainingQuantity: 2,
+            }),
+          ],
+        }),
+      );
+    } finally {
+      await pool.query(
+        "DELETE FROM order_items WHERE id = $1",
+        [orderItemId],
+      );
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
 });

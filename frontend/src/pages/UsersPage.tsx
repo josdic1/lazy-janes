@@ -221,7 +221,7 @@ export function UsersPage() {
       setError(
         saveError instanceof Error
           ? saveError.message
-          : "Unable to reset PIN.",
+          : "Unable to reset password.",
       );
     } finally {
       setSaving(false);
@@ -257,7 +257,7 @@ export function UsersPage() {
           </p>
           <h1>Users</h1>
           <p>
-            People, roles, PINs, and access.
+            People, roles, passwords, and access.
           </p>
         </div>
 
@@ -289,7 +289,7 @@ export function UsersPage() {
                 <th>Name</th>
                 <th>Roles</th>
                 <th>Status</th>
-                <th>PIN</th>
+                <th>Password</th>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -363,7 +363,7 @@ export function UsersPage() {
                           openPinReset(user)
                         }
                       >
-                        Reset PIN
+                        Reset Password
                       </button>
 
                       <button
@@ -405,7 +405,7 @@ export function UsersPage() {
                 ? "Add user"
                 : drawerMode === "edit"
                   ? "Edit user"
-                  : "Reset PIN"
+                  : "Reset Password"
             }
           >
             <header className="drawer-heading">
@@ -421,7 +421,7 @@ export function UsersPage() {
                     ? "Add User"
                     : drawerMode === "edit"
                       ? "Edit User"
-                      : "Reset PIN"}
+                      : "Reset Password"}
                 </h2>
               </div>
 
@@ -499,20 +499,14 @@ export function UsersPage() {
 
                 {drawerMode === "create" ? (
                   <label>
-                    <span>4-digit PIN</span>
+                    <span>Password</span>
                     <input
                       required
-                      inputMode="numeric"
                       autoComplete="new-password"
-                      pattern="[0-9]{4}"
-                      maxLength={4}
+                      maxLength={72}
                       value={pin}
                       onChange={(event) =>
-                        setPin(
-                          event.target.value
-                            .replace(/\D/g, "")
-                            .slice(0, 4),
-                        )
+                        setPin(event.target.value)
                       }
                     />
                   </label>
@@ -542,27 +536,21 @@ export function UsersPage() {
                 onSubmit={handlePinReset}
               >
                 <label>
-                  <span>New 4-digit PIN</span>
+                  <span>New Password</span>
                   <input
                     required
                     autoFocus
-                    inputMode="numeric"
                     autoComplete="new-password"
-                    pattern="[0-9]{4}"
-                    maxLength={4}
+                    maxLength={72}
                     value={pin}
                     onChange={(event) =>
-                      setPin(
-                        event.target.value
-                          .replace(/\D/g, "")
-                          .slice(0, 4),
-                      )
+                      setPin(event.target.value)
                     }
                   />
                 </label>
 
                 <p>
-                  Resetting the PIN signs this
+                  Resetting the password signs this
                   user out of all active sessions.
                 </p>
 
@@ -575,7 +563,7 @@ export function UsersPage() {
                   >
                     {saving
                       ? "Resetting…"
-                      : "Reset PIN"}
+                      : "Reset Password"}
                   </button>
                 </div>
               </form>

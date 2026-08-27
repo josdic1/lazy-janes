@@ -19,6 +19,7 @@ import type {
   UniversalOffering,
 } from "@lazy-janes/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   getMenuCustomizationCatalog,
   getMenuIngredientPopularity,
@@ -188,6 +189,8 @@ function safetyWarningLabel(
 }
 
 export function OrderEntryPage() {
+  const [searchParams] = useSearchParams();
+  const requestedPartyId = searchParams.get("partyId");
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [taxonomy, setTaxonomy] = useState<MenuGroup[]>([]);
   const [normalizedMenu, setNormalizedMenu] =
@@ -278,6 +281,18 @@ export function OrderEntryPage() {
         setParties(partyList);
         setTables(tableList);
 
+        if (
+          requestedPartyId &&
+          partyList.some(
+            (party) =>
+              party.id === requestedPartyId &&
+              (party.status === "seated" || party.status === "in_service") &&
+              party.tableLabels.length > 0,
+          )
+        ) {
+          setSelectedPartyId(requestedPartyId);
+        }
+
         const firstGroup = groups.find(
           (group) =>
             group.isActive && group.categories.some((category) => category.isActive),
@@ -304,7 +319,7 @@ export function OrderEntryPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [requestedPartyId]);
 
   useEffect(() => {
     if (!selectedItem || ingredientPopularityByItem[selectedItem.id]) {

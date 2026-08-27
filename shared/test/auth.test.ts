@@ -8,11 +8,11 @@ import {
 } from "../src/index.js";
 
 describe("user authentication contract", () => {
-  it("accepts exactly four numeric PIN digits", () => {
-    expect(userPinSchema.parse("0123")).toBe("0123");
-    expect(userPinSchema.safeParse("123").success).toBe(false);
-    expect(userPinSchema.safeParse("12345").success).toBe(false);
-    expect(userPinSchema.safeParse("12ab").success).toBe(false);
+  it("accepts non-empty passwords", () => {
+    expect(userPinSchema.parse("admin")).toBe("admin");
+    expect(userPinSchema.parse("4826")).toBe("4826");
+    expect(userPinSchema.safeParse("").success).toBe(false);
+    expect(userPinSchema.safeParse("x".repeat(73)).success).toBe(false);
   });
 
   it("accepts user login credentials", () => {

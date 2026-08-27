@@ -187,20 +187,14 @@ export function AuthPage({
           </label>
 
           <label>
-            <span>4-digit PIN</span>
+            <span>Password</span>
             <input
               required
-              inputMode="numeric"
               autoComplete="new-password"
-              pattern="[0-9]{4}"
-              maxLength={4}
+              maxLength={72}
               value={pin}
               onChange={(event) =>
-                setPin(
-                  event.target.value
-                    .replace(/\D/g, "")
-                    .slice(0, 4),
-                )
+                setPin(event.target.value)
               }
             />
           </label>
@@ -222,7 +216,7 @@ export function AuthPage({
           onSubmit={handleLogin}
         >
           <label>
-            <span>User</span>
+            <span>Username</span>
             <select
               required
               value={selectedUserId}
@@ -244,21 +238,15 @@ export function AuthPage({
           </label>
 
           <label>
-            <span>PIN</span>
+            <span>Password</span>
             <input
               autoFocus
               required
-              inputMode="numeric"
               autoComplete="current-password"
-              pattern="[0-9]{4}"
-              maxLength={4}
+              maxLength={72}
               value={pin}
               onChange={(event) =>
-                setPin(
-                  event.target.value
-                    .replace(/\D/g, "")
-                    .slice(0, 4),
-                )
+                setPin(event.target.value)
               }
             />
           </label>

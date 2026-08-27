@@ -22,6 +22,10 @@ describe("Stack read contract", () => {
             {
               id: "ba2939a9-76d8-426c-b28c-93e968145898",
               fulfillmentType: "dine_in" as const,
+              customerName: null,
+              customerPhone: null,
+              deliveryAddress: null,
+              requestedFor: null,
               submittedAt: "2026-08-12T18:15:00.000Z",
               cancelledAt: null,
               items: [
@@ -31,6 +35,8 @@ describe("Stack read contract", () => {
                   seatNumber: 1,
                   quantity: 1,
                   status: "ready" as const,
+                  allocatedQuantity: 0,
+                  remainingQuantity: 1,
                 },
               ],
             },
@@ -43,6 +49,9 @@ describe("Stack read contract", () => {
               totalAmount: 18.07,
               paidAmount: 0,
               balanceAmount: 18.07,
+              orderIds: [
+                "ba2939a9-76d8-426c-b28c-93e968145898",
+              ],
             },
           ],
           events: [
@@ -57,6 +66,8 @@ describe("Stack read contract", () => {
           ],
         },
       ],
+      standaloneOrders: [],
+      standaloneChecks: [],
     };
 
     expect(stackSnapshotSchema.parse(snapshot)).toEqual(
