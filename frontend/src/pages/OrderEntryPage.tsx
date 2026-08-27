@@ -1800,7 +1800,17 @@ export function OrderEntryPage() {
               <header className="service-customizer-header">
                 <div>
                   <p className="eyebrow">{editingCartId ? "Edit item" : "Customize"}</p>
-                  <h2>{selectedItem.isKids ? <span className="service-kids-badge">KIDS</span> : null}{selectedItem.name}</h2>
+                  <h2>
+                    {selectedItem.isKids ? <span className="service-kids-badge">KIDS</span> : null}
+                    {selectedItem.name}
+                    {selectedItem.hasManualSafetyOverride ? (
+                      <span
+                        className="manual-safety-cue"
+                        title="Admin safety override"
+                        aria-label="Admin safety override"
+                      />
+                    ) : null}
+                  </h2>
                   {selectedItem.description ? <p>{selectedItem.description}</p> : null}
                 </div>
                 <button type="button" className="button" data-variant="quiet" onClick={resetCustomizer}>
@@ -2148,7 +2158,17 @@ export function OrderEntryPage() {
                   onClick={() => chooseItem(item)}
                 >
                   {quantity > 0 ? <span className="service-item-qty">{quantity}</span> : null}
-                  <strong>{item.isKids ? <span className="service-kids-badge">KIDS</span> : null}{item.name}</strong>
+                  <strong>
+                    {item.isKids ? <span className="service-kids-badge">KIDS</span> : null}
+                    {item.name}
+                    {item.hasManualSafetyOverride ? (
+                      <span
+                        className="manual-safety-cue"
+                        title="Admin safety override"
+                        aria-label="Admin safety override"
+                      />
+                    ) : null}
+                  </strong>
                   {item.description ? <p>{item.description}</p> : null}
                   <footer>
                     <span>{money(item.price)}</span>

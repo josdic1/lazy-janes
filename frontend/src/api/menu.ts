@@ -6,6 +6,8 @@ import type {
   MenuCustomizationCatalog,
   MenuGroup,
   MenuItem,
+  MenuItemSafetyOverrideAuditEvent,
+  MenuItemSafetyOverrideInput,
   ReplaceMenuItemCustomizationInput,
   UpdateIngredientInput,
   UpdateMenuItemInput,
@@ -189,4 +191,37 @@ export async function deactivateMenuItem(
   if (!response.ok) {
     throw new Error(await readError(response));
   }
+}
+
+export async function setMenuItemSafetyOverride(
+  itemId: string,
+  input: MenuItemSafetyOverrideInput,
+): Promise<MenuItem> {
+  const response = await fetch(`/api/menu/${itemId}/safety-override`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<MenuItem>;
+}
+
+export async function getMenuItemSafetyOverrideHistory(
+  itemId: string,
+): Promise<MenuItemSafetyOverrideAuditEvent[]> {
+  const response = await fetch(
+    `/api/menu/${itemId}/safety-override-history`,
+  );
+
+  if (!response.ok) {
+    throw new Error(await readError(response));
+  }
+
+  return response.json() as Promise<MenuItemSafetyOverrideAuditEvent[]>;
 }

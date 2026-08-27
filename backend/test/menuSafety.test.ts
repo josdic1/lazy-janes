@@ -11,16 +11,22 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("menu item safety declarations", () => {
-  it("keeps authoritative item safety separate from ingredient allergen facts", async () => {
-    const userId = randomUUID();
+describe("admin safety override", () => {
+  it("keeps normal menu editing clean and records every admin override", async () => {
+    const managerId = randomUUID();
+    const adminId = randomUUID();
     let menuItemId: string | undefined;
 
     try {
-      const agent = await createAuthenticatedTestUser({
-        userId,
-        displayName: "Menu Safety Test Manager",
+      const manager = await createAuthenticatedTestUser({
+        userId: managerId,
+        displayName: "Safety Test Manager",
         roles: ["manager"],
+      });
+      const admin = await createAuthenticatedTestUser({
+        userId: adminId,
+        displayName: "Safety Test Admin",
+        roles: ["admin"],
       });
 
       const category = await pool.query<{ id: string }>(`
@@ -35,109 +41,158 @@ describe("menu item safety declarations", () => {
         throw new Error("Menu safety test requires an active category");
       }
 
-      const createdResponse = await agent
+      const createdResponse = await manager
         .post("/api/menu")
         .send({
           name: `Safety Test Item ${randomUUID()}`,
           categoryId,
           price: 12.5,
-          safetyDeclarations: [
-            {
-              kind: "contains",
-              allergenFlag: "shellfish",
-              sortOrder: 10,
-            },
-            {
-              kind: "may_contain",
-              allergenFlag: "tree_nut",
-              sortOrder: 20,
-            },
-            {
-              kind: "shared_fryer",
-              sortOrder: 30,
-            },
-          ],
         });
 
       expect(createdResponse.status).toBe(201);
       const created = menuItemSchema.parse(createdResponse.body);
       menuItemId = created.id;
+      expect(created.hasManualSafetyOverride).toBe(false);
 
-      expect(created.safetyDeclarations).toEqual([
-        expect.objectContaining({
-          kind: "contains",
-          allergenFlag: "shellfish",
-        }),
-        expect.objectContaining({
-          kind: "may_contain",
-          allergenFlag: "tree_nut",
-        }),
-        expect.objectContaining({
-          kind: "shared_fryer",
-          allergenFlag: null,
-        }),
-      ]);
-      expect(createdResponse.body).not.toHaveProperty("allergenFlags");
+      const normalPatch = await manager
+        .patch(`/api/menu/${menuItemId}`)
+        .send({
+          safetyDeclarations: [
+            {
+              kind: "contains",
+              allergenFlag: "milk",
+              sortOrder: 10,
+            },
+          ],
+        });
+      expect(normalPatch.status).toBe(400);
 
-      const stored = await pool.query<{
-        kind: string;
-        allergen_flag: string | null;
-      }>(
+      const managerOverride = await manager
+        .put(`/api/menu/${menuItemId}/safety-override`)
+        .send({
+          declarations: [
+            {
+              kind: "contains",
+              allergenFlag: "milk",
+              sortOrder: 10,
+            },
+          ],
+          reason: "Emergency test",
+        });
+      expect(managerOverride.status).toBe(403);
+
+      await pool.query(
         `
-          SELECT kind, allergen_flag
-          FROM menu_item_safety_declarations
-          WHERE menu_item_id = $1
-          ORDER BY sort_order, kind
+          INSERT INTO menu_item_safety_declarations (
+            menu_item_id,
+            kind,
+            allergen_flag,
+            sort_order
+          )
+          VALUES ($1, 'contains', 'shellfish', 5)
         `,
         [menuItemId],
       );
 
-      expect(stored.rows).toEqual([
-        { kind: "contains", allergen_flag: "shellfish" },
-        { kind: "may_contain", allergen_flag: "tree_nut" },
-        { kind: "shared_fryer", allergen_flag: null },
-      ]);
-
-      const updatedResponse = await agent
-        .patch(`/api/menu/${menuItemId}`)
+      const adminOverride = await admin
+        .put(`/api/menu/${menuItemId}/safety-override`)
         .send({
-          safetyDeclarations: [
+          declarations: [
             {
               kind: "cross_contact",
               allergenFlag: "wheat",
               sortOrder: 10,
             },
           ],
+          reason: "Supplier warning",
         });
 
-      expect(updatedResponse.status).toBe(200);
-      const updated = menuItemSchema.parse(updatedResponse.body);
-      expect(updated.safetyDeclarations).toEqual([
+      expect(adminOverride.status).toBe(200);
+      const overridden = menuItemSchema.parse(adminOverride.body);
+      expect(overridden.hasManualSafetyOverride).toBe(true);
+      expect(overridden.safetyDeclarations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "contains",
+            allergenFlag: "shellfish",
+            isManualOverride: false,
+          }),
+          expect.objectContaining({
+            kind: "cross_contact",
+            allergenFlag: "wheat",
+            isManualOverride: true,
+          }),
+        ]),
+      );
+
+      const historyResponse = await admin.get(
+        `/api/menu/${menuItemId}/safety-override-history`,
+      );
+      expect(historyResponse.status).toBe(200);
+      expect(historyResponse.body).toEqual([
         expect.objectContaining({
-          kind: "cross_contact",
-          allergenFlag: "wheat",
+          changedByUserId: adminId,
+          changedByDisplayName: "Safety Test Admin",
+          action: "set",
+          reason: "Supplier warning",
+          beforeDeclarations: [],
+          afterDeclarations: [
+            expect.objectContaining({
+              kind: "cross_contact",
+              allergenFlag: "wheat",
+            }),
+          ],
         }),
       ]);
 
-      const replaced = await pool.query<{
-        kind: string;
-        allergen_flag: string | null;
+      const clearedResponse = await admin
+        .put(`/api/menu/${menuItemId}/safety-override`)
+        .send({
+          declarations: [],
+          reason: "Supplier warning removed",
+        });
+      expect(clearedResponse.status).toBe(200);
+      const cleared = menuItemSchema.parse(clearedResponse.body);
+      expect(cleared.hasManualSafetyOverride).toBe(false);
+      expect(cleared.safetyDeclarations).toEqual([
+        expect.objectContaining({
+          kind: "contains",
+          allergenFlag: "shellfish",
+          isManualOverride: false,
+        }),
+      ]);
+
+      const auditRows = await pool.query<{
+        action: string;
+        reason: string;
+        changed_by_user_id: string;
       }>(
         `
-          SELECT kind, allergen_flag
-          FROM menu_item_safety_declarations
+          SELECT action, reason, changed_by_user_id
+          FROM menu_item_safety_override_audit
           WHERE menu_item_id = $1
+          ORDER BY changed_at, id
         `,
         [menuItemId],
       );
-      expect(replaced.rows).toEqual([
-        { kind: "cross_contact", allergen_flag: "wheat" },
+      expect(auditRows.rows).toEqual([
+        {
+          action: "set",
+          reason: "Supplier warning",
+          changed_by_user_id: adminId,
+        },
+        {
+          action: "cleared",
+          reason: "Supplier warning removed",
+          changed_by_user_id: adminId,
+        },
       ]);
     } finally {
       if (menuItemId) {
         await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
       }
-      await deleteAuthenticatedTestUser(userId);
+      await deleteAuthenticatedTestUser(managerId);
+      await deleteAuthenticatedTestUser(adminId);
     }
   });
 });

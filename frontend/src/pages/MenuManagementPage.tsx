@@ -25,6 +25,7 @@ import {
   type MenuItemIngredientReplacement,
   type MenuItemSafetyDeclarationInput,
   type MenuItemSafetyKind,
+  type MenuItemSafetyOverrideAuditEvent,
   type MenuItemStatus,
   type ReplaceMenuItemCustomizationInput,
   type UniversalComponentRole,
@@ -35,12 +36,15 @@ import {
   createMenuItem,
   deactivateMenuItem,
   getMenuCustomizationCatalog,
+  getMenuItemSafetyOverrideHistory,
   getMenuItems,
   getMenuTaxonomy,
   replaceMenuItemCustomization,
+  setMenuItemSafetyOverride,
   updateIngredient,
   updateMenuItem,
 } from "../api/menu.js";
+import { useAuth } from "../hooks/useAuth";
 
 const emptyForm: CreateMenuItemInput = {
   parentItemId: null,
@@ -130,13 +134,13 @@ const UMO_ROLE_OPTIONS: Array<{
   value: UniversalComponentRole;
   label: string;
 }> = [
-  { value: "primary", label: "Main part" },
+  { value: "primary", label: "Main item" },
   { value: "base", label: "Base" },
-  { value: "carrier", label: "Carrier / bread" },
-  { value: "filling", label: "Filling" },
+  { value: "carrier", label: "Bread / wrap / bun" },
+  { value: "filling", label: "Inside filling" },
   { value: "topping", label: "Topping" },
   { value: "sauce", label: "Sauce" },
-  { value: "accompaniment", label: "Side / accompaniment" },
+  { value: "accompaniment", label: "Side" },
 ];
 
 function isAllergenSafetyKind(
@@ -147,21 +151,16 @@ function isAllergenSafetyKind(
   );
 }
 
-function safetyDeclarationLabel(
+function safetyOverrideLabel(
   declaration: MenuItemSafetyDeclarationInput,
 ): string {
-  if (declaration.kind === "contains" && declaration.allergenFlag) {
-    return `contains ${declaration.allergenFlag.replace(/_/g, " ")}`;
-  }
-  if (declaration.kind === "may_contain" && declaration.allergenFlag) {
-    return `may contain ${declaration.allergenFlag.replace(/_/g, " ")}`;
-  }
-  if (declaration.kind === "cross_contact" && declaration.allergenFlag) {
-    return `cross-contact ${declaration.allergenFlag.replace(/_/g, " ")}`;
-  }
+  const allergen = declaration.allergenFlag?.replace(/_/g, " ");
+  if (declaration.kind === "contains" && allergen) return `contains ${allergen}`;
+  if (declaration.kind === "may_contain" && allergen) return `may contain ${allergen}`;
+  if (declaration.kind === "cross_contact" && allergen) return `possible contact: ${allergen}`;
   if (declaration.kind === "shared_fryer") return "shared fryer";
   if (declaration.kind === "shared_equipment") return "shared equipment";
-  return declaration.note ?? declaration.kind.replace(/_/g, " ");
+  return declaration.note ?? "other safety note";
 }
 
 function StatusBadge({ status }: { status: MenuItemStatus }) {
@@ -227,6 +226,9 @@ function replacementDraft(
 }
 
 export function MenuManagementPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.roles.includes("admin") ?? false;
+
   const [items, setItems] = useState<MenuItem[]>([]);
   const [taxonomy, setTaxonomy] = useState<MenuGroup[]>([]);
   const [catalog, setCatalog] = useState<MenuCustomizationCatalog>({
@@ -248,6 +250,13 @@ export function MenuManagementPage() {
   const [form, setForm] = useState<CreateMenuItemInput>(emptyForm);
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [safetyOverrideDeclarations, setSafetyOverrideDeclarations] =
+    useState<MenuItemSafetyDeclarationInput[]>([]);
+  const [safetyOverrideReason, setSafetyOverrideReason] = useState("");
+  const [safetyOverrideHistory, setSafetyOverrideHistory] =
+    useState<MenuItemSafetyOverrideAuditEvent[]>([]);
+  const [safetyOverrideSaving, setSafetyOverrideSaving] = useState(false);
+  const [safetyOverrideError, setSafetyOverrideError] = useState("");
 
   const [compositionItem, setCompositionItem] = useState<MenuItem | null>(null);
   const [ingredientLinks, setIngredientLinks] = useState<IngredientLinkDraft[]>([]);
@@ -418,6 +427,10 @@ export function MenuManagementPage() {
         categoryFilter || activeTaxonomy[0]?.categories[0]?.id || "",
     });
     setSaveError("");
+    setSafetyOverrideDeclarations([]);
+    setSafetyOverrideReason("");
+    setSafetyOverrideHistory([]);
+    setSafetyOverrideError("");
     setDrawerOpen(true);
   }
 
@@ -435,14 +448,27 @@ export function MenuManagementPage() {
       hasKidsVersion: item.hasKidsVersion,
       isModifier: false,
       dietaryFlags: [...item.dietaryFlags],
-      safetyDeclarations: item.safetyDeclarations.map((declaration) => ({
-        kind: declaration.kind,
-        allergenFlag: declaration.allergenFlag,
-        note: declaration.note,
-        sortOrder: declaration.sortOrder,
-      })),
+      safetyDeclarations: [],
       sortOrder: item.sortOrder,
     });
+    setSafetyOverrideDeclarations(
+      item.safetyDeclarations
+        .filter((declaration) => declaration.isManualOverride)
+        .map((declaration) => ({
+          kind: declaration.kind,
+          allergenFlag: declaration.allergenFlag,
+          note: declaration.note,
+          sortOrder: declaration.sortOrder,
+        })),
+    );
+    setSafetyOverrideReason("");
+    setSafetyOverrideError("");
+    setSafetyOverrideHistory([]);
+    if (isAdmin) {
+      void getMenuItemSafetyOverrideHistory(item.id)
+        .then(setSafetyOverrideHistory)
+        .catch(() => setSafetyOverrideHistory([]));
+    }
     setSaveError("");
     setDrawerOpen(true);
   }
@@ -465,7 +491,6 @@ export function MenuManagementPage() {
           isKids: form.isKids,
           hasKidsVersion: form.hasKidsVersion,
           dietaryFlags: form.dietaryFlags,
-          safetyDeclarations: form.safetyDeclarations,
           sortOrder: form.sortOrder,
         });
         setItems((current) =>
@@ -476,6 +501,7 @@ export function MenuManagementPage() {
           ...form,
           parentItemId: null,
           isModifier: false,
+          safetyDeclarations: [],
         });
         setItems((current) => [...current, created]);
         createdItem = created;
@@ -490,6 +516,46 @@ export function MenuManagementPage() {
       setSaveError(errorMessage(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveSafetyOverride(clear = false) {
+    if (!editingItem || !isAdmin) return;
+    if (safetyOverrideReason.trim().length < 3) {
+      setSafetyOverrideError("Add a short reason for this change.");
+      return;
+    }
+
+    setSafetyOverrideSaving(true);
+    setSafetyOverrideError("");
+
+    try {
+      const updated = await setMenuItemSafetyOverride(editingItem.id, {
+        declarations: clear ? [] : safetyOverrideDeclarations,
+        reason: safetyOverrideReason.trim(),
+      });
+      setEditingItem(updated);
+      setItems((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setSafetyOverrideDeclarations(
+        updated.safetyDeclarations
+          .filter((declaration) => declaration.isManualOverride)
+          .map((declaration) => ({
+            kind: declaration.kind,
+            allergenFlag: declaration.allergenFlag,
+            note: declaration.note,
+            sortOrder: declaration.sortOrder,
+          })),
+      );
+      setSafetyOverrideReason("");
+      setSafetyOverrideHistory(
+        await getMenuItemSafetyOverrideHistory(updated.id),
+      );
+    } catch (error: unknown) {
+      setSafetyOverrideError(errorMessage(error));
+    } finally {
+      setSafetyOverrideSaving(false);
     }
   }
 
@@ -724,7 +790,7 @@ export function MenuManagementPage() {
     }
 
     if (publish && compositionReadinessIssues.length > 0) {
-      setCompositionError(compositionReadinessIssues[0] ?? "Finish the food structure before publishing.");
+      setCompositionError(compositionReadinessIssues[0] ?? "Finish the item setup before publishing.");
       return;
     }
 
@@ -983,17 +1049,17 @@ export function MenuManagementPage() {
                   return (
                     <tr className={item.status === "inactive" ? "is-muted" : ""} key={item.id}>
                       <td>
-                        <strong>{item.name}</strong>
+                        <strong>
+                          {item.name}
+                          {item.hasManualSafetyOverride ? (
+                            <span
+                              className="manual-safety-cue"
+                              title="Admin safety override"
+                              aria-label="Admin safety override"
+                            />
+                          ) : null}
+                        </strong>
                         {item.description ? <small>{item.description}</small> : null}
-                        {item.safetyDeclarations.length > 0 ? (
-                          <div className="tag-list menu-allergen-tags">
-                            {item.safetyDeclarations.map((declaration) => (
-                              <span className="tag" key={declaration.id}>
-                                {safetyDeclarationLabel(declaration)}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
                       </td>
                       <td className="price">{money(item.price)}</td>
                       <td><StatusBadge status={item.status} /></td>
@@ -1003,7 +1069,7 @@ export function MenuManagementPage() {
                           className="menu-composition-button"
                           onClick={() => openComposition(item)}
                         >
-                          <strong>{item.status === "draft" ? "Finish food structure" : `${ingredientCount} ingredients`}</strong>
+                          <strong>{item.status === "draft" ? "Finish item setup" : `${ingredientCount} ingredients`}</strong>
                           <span>{ingredientCount} ingredients · {choiceCount} choice {choiceCount === 1 ? "group" : "groups"}</span>
                         </button>
                       </td>
@@ -1095,7 +1161,7 @@ export function MenuManagementPage() {
                   <div className="draft-state-note">
                     <span>Status</span>
                     <strong>Draft</strong>
-                    <small>It cannot appear in Order Entry until its food structure is complete.</small>
+                    <small>It cannot appear in Order Entry until item setup is complete.</small>
                   </div>
                 ) : (
                   <label>
@@ -1124,141 +1190,215 @@ export function MenuManagementPage() {
                 />
               </label>
 
-              <fieldset className="allergen-fieldset">
-                <legend>Authoritative safety declarations</legend>
-                <p className="field-help">
-                  Ingredient allergens are derived automatically. Use these only
-                  for item-level facts that cannot be trusted to the visible
-                  ingredient list.
-                </p>
-                <div className="allergen-declaration-grid">
-                  {ALLERGEN_FLAGS.map((flag, index) => {
-                    const declaration = form.safetyDeclarations.find(
-                      (candidate) =>
-                        candidate.allergenFlag === flag &&
-                        isAllergenSafetyKind(candidate.kind),
-                    );
+              {editingItem && isAdmin ? (
+                <details className="admin-safety-override">
+                  <summary>
+                    <span>
+                      Admin safety override
+                      {editingItem.hasManualSafetyOverride ? (
+                        <span className="manual-safety-cue" aria-hidden="true" />
+                      ) : null}
+                    </span>
+                    <small>Emergency use only</small>
+                  </summary>
 
-                    return (
-                      <label key={flag}>
-                        <span>{flag.replace(/_/g, " ")}</span>
-                        <select
-                          value={declaration?.kind ?? ""}
-                          onChange={(event) => {
-                            const kind = event.target.value as
-                              | ""
-                              | (typeof ALLERGEN_SAFETY_KINDS)[number];
-                            const remaining = form.safetyDeclarations.filter(
-                              (candidate) =>
-                                !(
-                                  candidate.allergenFlag === flag &&
-                                  isAllergenSafetyKind(candidate.kind)
-                                ),
-                            );
+                  <div className="admin-safety-override-body">
+                    <p className="field-help">
+                      Use only if this item needs a safety warning that its ingredients do not show.
+                      Every change records who changed it, when, what changed, and why.
+                    </p>
 
-                            setForm({
-                              ...form,
-                              safetyDeclarations:
-                                kind === ""
-                                  ? remaining
-                                  : [
-                                      ...remaining,
-                                      {
-                                        kind,
-                                        allergenFlag: flag,
-                                        note: null,
-                                        sortOrder: (index + 1) * 10,
-                                      },
-                                    ],
-                            });
-                          }}
+                    {editingItem.safetyDeclarations.some(
+                      (declaration) => !declaration.isManualOverride,
+                    ) ? (
+                      <div className="admin-safety-existing">
+                        <strong>Already on this item</strong>
+                        <span>
+                          {editingItem.safetyDeclarations
+                            .filter((declaration) => !declaration.isManualOverride)
+                            .map(safetyOverrideLabel)
+                            .join(" · ")}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    <div className="allergen-declaration-grid">
+                      {ALLERGEN_FLAGS.map((flag, index) => {
+                        const declaration = safetyOverrideDeclarations.find(
+                          (candidate) =>
+                            candidate.allergenFlag === flag &&
+                            isAllergenSafetyKind(candidate.kind),
+                        );
+
+                        return (
+                          <label key={flag}>
+                            <span>{flag.replace(/_/g, " ")}</span>
+                            <select
+                              value={declaration?.kind ?? ""}
+                              onChange={(event) => {
+                                const kind = event.target.value as
+                                  | ""
+                                  | (typeof ALLERGEN_SAFETY_KINDS)[number];
+                                const remaining = safetyOverrideDeclarations.filter(
+                                  (candidate) =>
+                                    !(
+                                      candidate.allergenFlag === flag &&
+                                      isAllergenSafetyKind(candidate.kind)
+                                    ),
+                                );
+                                setSafetyOverrideDeclarations(
+                                  kind === ""
+                                    ? remaining
+                                    : [
+                                        ...remaining,
+                                        {
+                                          kind,
+                                          allergenFlag: flag,
+                                          note: null,
+                                          sortOrder: (index + 1) * 10,
+                                        },
+                                      ],
+                                );
+                              }}
+                            >
+                              <option value="">No override</option>
+                              <option value="contains">Contains</option>
+                              <option value="may_contain">May contain</option>
+                              <option value="cross_contact">Possible contact</option>
+                            </select>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <div className="safety-process-options">
+                      {[
+                        ["shared_fryer", "Shared fryer"],
+                        ["shared_equipment", "Shared equipment"],
+                      ].map(([kind, label], index) => {
+                        const safetyKind = kind as "shared_fryer" | "shared_equipment";
+                        const checked = safetyOverrideDeclarations.some(
+                          (declaration) => declaration.kind === safetyKind,
+                        );
+                        return (
+                          <label className="checkbox-field" key={kind}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) => {
+                                const remaining = safetyOverrideDeclarations.filter(
+                                  (declaration) => declaration.kind !== safetyKind,
+                                );
+                                setSafetyOverrideDeclarations(
+                                  event.target.checked
+                                    ? [
+                                        ...remaining,
+                                        {
+                                          kind: safetyKind,
+                                          allergenFlag: null,
+                                          note: null,
+                                          sortOrder: 200 + index * 10,
+                                        },
+                                      ]
+                                    : remaining,
+                                );
+                              }}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    <label>
+                      <span>Other safety note</span>
+                      <input
+                        value={
+                          safetyOverrideDeclarations.find(
+                            (declaration) => declaration.kind === "other",
+                          )?.note ?? ""
+                        }
+                        placeholder="Only if the kitchen needs a special warning"
+                        onChange={(event) => {
+                          const note = event.target.value;
+                          const remaining = safetyOverrideDeclarations.filter(
+                            (declaration) => declaration.kind !== "other",
+                          );
+                          setSafetyOverrideDeclarations(
+                            note.trim() === ""
+                              ? remaining
+                              : [
+                                  ...remaining,
+                                  {
+                                    kind: "other",
+                                    allergenFlag: null,
+                                    note,
+                                    sortOrder: 300,
+                                  },
+                                ],
+                          );
+                        }}
+                      />
+                    </label>
+
+                    <label>
+                      <span>Reason for this override</span>
+                      <textarea
+                        value={safetyOverrideReason}
+                        placeholder="Why is this item different?"
+                        onChange={(event) => setSafetyOverrideReason(event.target.value)}
+                      />
+                    </label>
+
+                    {safetyOverrideError ? (
+                      <p className="error-message">{safetyOverrideError}</p>
+                    ) : null}
+
+                    <div className="admin-safety-actions">
+                      <button
+                        className="button"
+                        type="button"
+                        disabled={safetyOverrideSaving}
+                        onClick={() => void saveSafetyOverride(false)}
+                      >
+                        {safetyOverrideSaving ? "Saving…" : "Save override"}
+                      </button>
+                      {editingItem.hasManualSafetyOverride ? (
+                        <button
+                          className="button"
+                          data-variant="quiet"
+                          type="button"
+                          disabled={safetyOverrideSaving}
+                          onClick={() => void saveSafetyOverride(true)}
                         >
-                          <option value="">No item-level declaration</option>
-                          <option value="contains">Contains</option>
-                          <option value="may_contain">May contain</option>
-                          <option value="cross_contact">Cross-contact risk</option>
-                        </select>
-                      </label>
-                    );
-                  })}
-                </div>
+                          Clear override
+                        </button>
+                      ) : null}
+                    </div>
 
-                <div className="safety-process-options">
-                  {[
-                    ["shared_fryer", "Shared fryer"],
-                    ["shared_equipment", "Shared equipment"],
-                  ].map(([kind, label], index) => {
-                    const safetyKind = kind as
-                      | "shared_fryer"
-                      | "shared_equipment";
-                    const checked = form.safetyDeclarations.some(
-                      (declaration) => declaration.kind === safetyKind,
-                    );
-
-                    return (
-                      <label className="checkbox-field" key={kind}>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            const remaining = form.safetyDeclarations.filter(
-                              (declaration) => declaration.kind !== safetyKind,
-                            );
-                            setForm({
-                              ...form,
-                              safetyDeclarations: event.target.checked
-                                ? [
-                                    ...remaining,
-                                    {
-                                      kind: safetyKind,
-                                      allergenFlag: null,
-                                      note: null,
-                                      sortOrder: 200 + index * 10,
-                                    },
-                                  ]
-                                : remaining,
-                            });
-                          }}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-
-                <label>
-                  <span>Other safety note</span>
-                  <input
-                    value={
-                      form.safetyDeclarations.find(
-                        (declaration) => declaration.kind === "other",
-                      )?.note ?? ""
-                    }
-                    placeholder="Only when a specific process warning is needed"
-                    onChange={(event) => {
-                      const note = event.target.value;
-                      const remaining = form.safetyDeclarations.filter(
-                        (declaration) => declaration.kind !== "other",
-                      );
-                      setForm({
-                        ...form,
-                        safetyDeclarations:
-                          note.trim() === ""
-                            ? remaining
-                            : [
-                                ...remaining,
-                                {
-                                  kind: "other",
-                                  allergenFlag: null,
-                                  note,
-                                  sortOrder: 300,
-                                },
-                              ],
-                      });
-                    }}
-                  />
-                </label>
-              </fieldset>
+                    {safetyOverrideHistory.length > 0 ? (
+                      <div className="admin-safety-history">
+                        <strong>History</strong>
+                        {safetyOverrideHistory.slice(0, 5).map((event) => (
+                          <div key={event.id}>
+                            <span>{event.changedByDisplayName} · {event.action}</span>
+                            <small>{new Date(event.changedAt).toLocaleString()} · {event.reason}</small>
+                            <small>
+                              Before: {event.beforeDeclarations.length > 0
+                                ? event.beforeDeclarations.map(safetyOverrideLabel).join(", ")
+                                : "none"}
+                              {" → "}
+                              After: {event.afterDeclarations.length > 0
+                                ? event.afterDeclarations.map(safetyOverrideLabel).join(", ")
+                                : "none"}
+                            </small>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </details>
+              ) : null}
 
               <label className="checkbox-field">
                 <input type="checkbox" checked={form.isSpecial} onChange={(event) => setForm({ ...form, isSpecial: event.target.checked })} />
@@ -1274,7 +1414,7 @@ export function MenuManagementPage() {
               <footer className="drawer-actions">
                 <button className="button" data-variant="primary" disabled={saving} type="submit">
                   {saving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
-                  {editingItem ? "Save changes" : "Continue to food setup"}
+                  {editingItem ? "Save changes" : "Continue"}
                 </button>
                 <button className="button" data-variant="quiet" disabled={saving} type="button" onClick={() => setDrawerOpen(false)}>Cancel</button>
               </footer>
@@ -1288,9 +1428,9 @@ export function MenuManagementPage() {
           <section className="drawer drawer--wide composition-drawer" role="dialog" aria-modal="true" aria-label={`Configure ${compositionItem.name}`}>
             <header className="drawer-header composition-drawer-header">
               <div>
-                <p className="eyebrow">Step 2 of 2 · Food setup</p>
+                <p className="eyebrow">Step 2 of 2 · Item setup</p>
                 <h2>{compositionItem.name}</h2>
-                <p>Build the plate exactly as the kitchen and server should understand it.</p>
+                <p>Tell us what comes with this item and what customers can change.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setCompositionItem(null)}>
                 <X aria-hidden="true" />
@@ -1300,7 +1440,7 @@ export function MenuManagementPage() {
             <div className="composition-editor composition-editor--guided">
               <div className="composition-progress" aria-label="Item setup progress">
                 <div data-done="true"><CheckCircle aria-hidden="true" /><span><strong>1. Basics</strong><small>Name, category, price</small></span></div>
-                <div data-current="true"><span className="composition-progress-number">2</span><span><strong>Food setup</strong><small>Plate, choices, changes</small></span></div>
+                <div data-current="true"><span className="composition-progress-number">2</span><span><strong>Item setup</strong><small>Ingredients, choices, changes</small></span></div>
                 <div data-done={compositionReadinessIssues.length === 0}><span className="composition-progress-number">3</span><span><strong>Publish</strong><small>{compositionReadinessIssues.length === 0 ? "Ready" : "Finish setup first"}</small></span></div>
               </div>
 
@@ -1309,7 +1449,7 @@ export function MenuManagementPage() {
                   <div>
                     <p className="composition-step-label">A · BUILD THE PLATE</p>
                     <h3>What does the customer get?</h3>
-                    <p>Add every real ingredient or side that belongs to the standard item.</p>
+                    <p>Add everything the customer normally gets.</p>
                   </div>
                   <strong className="composition-count">{ingredientLinks.length} added</strong>
                 </header>
@@ -1326,7 +1466,7 @@ export function MenuManagementPage() {
                 {ingredientSearch.trim() !== "" ? (
                   <div className="composition-picker-results">
                     {addableRecipeIngredients.length === 0 ? (
-                      <p className="composition-empty-inline">No matching ingredient. Add it to the Ingredient Library first.</p>
+                      <p className="composition-empty-inline">Not found. Add it to Ingredients first.</p>
                     ) : addableRecipeIngredients.map((ingredient) => (
                       <button type="button" key={ingredient.id} onClick={() => addRecipeIngredient(ingredient)}>
                         <span><strong>{ingredient.name}</strong><small>{ingredient.kind.replace(/_/g, " ")}</small></span>
@@ -1339,7 +1479,7 @@ export function MenuManagementPage() {
                 {ingredientLinks.length === 0 ? (
                   <div className="composition-empty-start">
                     <strong>Start here.</strong>
-                    <span>Search above and add the parts of the item one by one.</span>
+                    <span>Search above and add what the customer gets.</span>
                   </div>
                 ) : (
                   <div className="composition-ingredient-list composition-ingredient-list--guided">
@@ -1389,7 +1529,7 @@ export function MenuManagementPage() {
                             </fieldset>
 
                             <label className="composition-role-field">
-                              <span>What job does it have?</span>
+                              <span>What is it used as?</span>
                               <select
                                 value={link.contextualRole ?? ""}
                                 onChange={(event) =>
@@ -1400,7 +1540,7 @@ export function MenuManagementPage() {
                                   ))
                                 }
                               >
-                                <option value="">Choose its job…</option>
+                                <option value="">Choose one…</option>
                                 {UMO_ROLE_OPTIONS.map((option) => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
                                 ))}
@@ -1445,7 +1585,7 @@ export function MenuManagementPage() {
                           {link.canExtra ? (
                             <div className="composition-inline-price">
                               <label>
-                                <span>Extra portion price</span>
+                                <span>Price for extra</span>
                                 <input
                                   type="number"
                                   min="0"
@@ -1464,16 +1604,16 @@ export function MenuManagementPage() {
                                     candidate.ingredientId === link.ingredientId ? { ...candidate, extraPriceConfigured: event.target.checked } : candidate,
                                   ))}
                                 />
-                                <span>Price confirmed, including $0</span>
+                                <span>Price is correct, including $0</span>
                               </label>
                             </div>
                           ) : null}
 
                           <details className="composition-more">
-                            <summary>Preparation & substitutions <span>{link.preparationSchemeId || ingredientReplacements.length > 0 ? "Configured" : "Optional"}</span></summary>
+                            <summary>Cooking & replacements <span>{link.preparationSchemeId || ingredientReplacements.length > 0 ? "Set" : "Optional"}</span></summary>
                             <div className="composition-more-body">
                               <label>
-                                <span>Cooking / preparation</span>
+                                <span>How can it be prepared?</span>
                                 <select
                                   value={link.preparationSchemeId ?? ""}
                                   onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
@@ -1482,7 +1622,7 @@ export function MenuManagementPage() {
                                       : candidate,
                                   ))}
                                 >
-                                  <option value="">No preparation choice</option>
+                                  <option value="">No preparation options</option>
                                   {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
                                     <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
                                   ))}
@@ -1491,7 +1631,7 @@ export function MenuManagementPage() {
 
                               <div className="composition-substitution-builder">
                                 <label>
-                                  <span>Allowed substitute</span>
+                                  <span>What can replace it?</span>
                                   <select
                                     value=""
                                     onChange={(event) => {
@@ -1499,7 +1639,7 @@ export function MenuManagementPage() {
                                       event.currentTarget.value = "";
                                     }}
                                   >
-                                    <option value="">Add a substitute…</option>
+                                    <option value="">Choose replacement…</option>
                                     {catalog.ingredients
                                       .filter((candidate) =>
                                         candidate.isActive &&
@@ -1523,7 +1663,7 @@ export function MenuManagementPage() {
                                     <div className="composition-substitution-row" key={replacement.replacementIngredientId}>
                                       <strong>{target.name}</strong>
                                       <label>
-                                        <span>Prep</span>
+                                        <span>Preparation</span>
                                         <select
                                           value={replacement.preparationSchemeId ?? ""}
                                           onChange={(event) => updateReplacement(link.ingredientId, target.id, {
@@ -1537,7 +1677,7 @@ export function MenuManagementPage() {
                                         </select>
                                       </label>
                                       <label>
-                                        <span>Price change</span>
+                                        <span>Price difference</span>
                                         <input
                                           type="number"
                                           step="0.01"
@@ -1555,7 +1695,7 @@ export function MenuManagementPage() {
                                             priceAdjustmentConfigured: event.target.checked,
                                           })}
                                         />
-                                        <span>Price confirmed</span>
+                                        <span>Price is correct</span>
                                       </label>
                                       <button type="button" className="composition-remove" onClick={() => removeReplacement(link.ingredientId, target.id)}>Remove</button>
                                     </div>
@@ -1575,8 +1715,8 @@ export function MenuManagementPage() {
                 <header className="composition-section-heading">
                   <div>
                     <p className="composition-step-label">B · CUSTOMER CHOICES</p>
-                    <h3>What questions does the server need to ask?</h3>
-                    <p>Only create a choice when the customer must pick from defined options.</p>
+                    <h3>What does the customer choose?</h3>
+                    <p>Add a choice only when the customer must pick one or more options.</p>
                   </div>
                   <button className="button" data-variant="quiet" type="button" onClick={addChoiceGroup}>
                     <Plus aria-hidden="true" /> Add a choice
@@ -1599,25 +1739,25 @@ export function MenuManagementPage() {
 
                         <div className="choice-guided-main">
                           <label className="choice-question-field">
-                            <span>Question the server asks</span>
+                            <span>Question to ask</span>
                             <input value={group.label} placeholder="Example: Choose your bread" onChange={(event) => updateChoiceGroup(group.key, { label: event.target.value })} />
                           </label>
 
                           <fieldset className="composition-question">
-                            <legend>What does this choice control?</legend>
+                            <legend>Where does this choice go?</legend>
                             <div className="composition-answer-row">
-                              <button type="button" data-selected={group.relationship === "contains"} onClick={() => updateChoiceGroup(group.key, { relationship: "contains" })}>Part of the item</button>
-                              <button type="button" data-selected={group.relationship === "comes_with"} onClick={() => updateChoiceGroup(group.key, { relationship: "comes_with" })}>Something alongside</button>
+                              <button type="button" data-selected={group.relationship === "contains"} onClick={() => updateChoiceGroup(group.key, { relationship: "contains" })}>In the item</button>
+                              <button type="button" data-selected={group.relationship === "comes_with"} onClick={() => updateChoiceGroup(group.key, { relationship: "comes_with" })}>Comes with it</button>
                             </div>
                           </fieldset>
 
                           <div className="choice-rule-fields">
                             <label>
-                              <span>Minimum picks</span>
+                              <span>At least</span>
                               <input type="number" min="0" step="1" value={group.minSelections} onChange={(event) => updateChoiceGroup(group.key, { minSelections: Number(event.target.value) })} />
                             </label>
                             <label>
-                              <span>Maximum picks</span>
+                              <span>At most</span>
                               <input type="number" min="1" step="1" value={group.maxSelections ?? ""} placeholder="Required" onChange={(event) => updateChoiceGroup(group.key, { maxSelections: event.target.value === "" ? null : Number(event.target.value) })} />
                             </label>
                           </div>
@@ -1635,19 +1775,19 @@ export function MenuManagementPage() {
                               <label>
                                 <span>Ingredient</span>
                                 <select value={option.ingredientId ?? ""} onChange={(event) => updateChoiceOption(group.key, option.key, { ingredientId: event.target.value || null })}>
-                                  <option value="">No ingredient link</option>
+                                  <option value="">No ingredient</option>
                                   {catalog.ingredients.filter((ingredient) => ingredient.isActive).map((ingredient) => (
                                     <option key={ingredient.id} value={ingredient.id}>{ingredient.name}</option>
                                   ))}
                                 </select>
                               </label>
                               <label>
-                                <span>Price change</span>
+                                <span>Price difference</span>
                                 <input type="number" step="0.01" value={option.priceAdjustment} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustment: Number(event.target.value) })} />
                               </label>
                               <label className="composition-toggle composition-toggle--confirm">
                                 <input type="checkbox" checked={option.priceAdjustmentConfigured} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustmentConfigured: event.target.checked })} />
-                                <span>Price confirmed</span>
+                                <span>Price is correct</span>
                               </label>
                               <label className="composition-toggle">
                                 <input type="checkbox" checked={option.isDefault} onChange={(event) => updateChoiceOption(group.key, option.key, { isDefault: event.target.checked })} />
@@ -1659,7 +1799,7 @@ export function MenuManagementPage() {
                                   <label>
                                     <span>Preparation</span>
                                     <select value={option.preparationSchemeId ?? ""} onChange={(event) => updateChoiceOption(group.key, option.key, { preparationSchemeId: event.target.value || null })}>
-                                      <option value="">No prep</option>
+                                      <option value="">No preparation</option>
                                       {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
                                         <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
                                       ))}
@@ -1667,7 +1807,7 @@ export function MenuManagementPage() {
                                   </label>
                                   <label className="composition-toggle">
                                     <input type="checkbox" checked={option.isNoneOption} onChange={(event) => updateChoiceOption(group.key, option.key, { isNoneOption: event.target.checked })} />
-                                    <span>This means “None”</span>
+                                    <span>Customer can choose none</span>
                                   </label>
                                 </div>
                               </details>
@@ -1685,9 +1825,9 @@ export function MenuManagementPage() {
               <section className="composition-section composition-section--review">
                 <header className="composition-section-heading">
                   <div>
-                    <p className="composition-step-label">C · PUBLISH CHECK</p>
-                    <h3>{compositionReadinessIssues.length === 0 ? "This item is ready." : "Finish these before publishing."}</h3>
-                    <p>The app checks the food structure so Order Entry and Kitchen cannot receive a broken item.</p>
+                    <p className="composition-step-label">C · READY TO PUBLISH</p>
+                    <h3>{compositionReadinessIssues.length === 0 ? "This item is ready." : "Finish these first."}</h3>
+                    <p>We check this item before it can appear in Order Entry or Kitchen.</p>
                   </div>
                   {compositionReadinessIssues.length === 0 ? <CheckCircle aria-hidden="true" className="composition-ready-icon" /> : <Warning aria-hidden="true" className="composition-warning-icon" />}
                 </header>
@@ -1697,7 +1837,7 @@ export function MenuManagementPage() {
                     {compositionReadinessIssues.map((issue) => <li key={issue}>{issue}</li>)}
                   </ol>
                 ) : (
-                  <div className="composition-ready-message"><CheckCircle aria-hidden="true" /><span>Food structure complete. Publish will make it available in Order Entry.</span></div>
+                  <div className="composition-ready-message"><CheckCircle aria-hidden="true" /><span>Item setup is complete. Publish will make it available in Order Entry.</span></div>
                 )}
               </section>
 
@@ -1831,7 +1971,7 @@ export function MenuManagementPage() {
                       disabled={!ingredientAddable}
                       onChange={(event) => setIngredientPriceConfigured(event.target.checked)}
                     />
-                    Price confirmed
+                    Price is correct
                   </span>
                 </label>
                 <fieldset className="allergen-fieldset">

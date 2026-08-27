@@ -1,6 +1,7 @@
 import {
   createIngredientInputSchema,
   createMenuItemInputSchema,
+  menuItemSafetyOverrideInputSchema,
   replaceMenuItemCustomizationInputSchema,
   updateIngredientInputSchema,
   updateMenuItemInputSchema,
@@ -21,6 +22,7 @@ import type {
   MenuItemIngredientReplacement,
   MenuItemSafetyDeclaration,
   MenuItemSafetyDeclarationInput,
+  MenuItemSafetyOverrideAuditEvent,
   MenuItemStatus,
   PreparationKind,
   PreparationScheme,
@@ -30,8 +32,10 @@ import { Router } from "express";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import {
+  getAuthenticatedUser,
   requireAnyRole,
   requireAuthenticatedUser,
+  requireRole,
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
 import { normalizeLazyJanesOffering } from "../menuNormalization/lazyJanesAdapter.js";
@@ -53,6 +57,7 @@ type MenuItemRow = {
   is_modifier: boolean;
   dietary_flags: string[];
   safety_declarations: MenuItemSafetyDeclaration[];
+  has_manual_safety_override: boolean;
   sort_order: number;
   created_at: Date;
   updated_at: Date;
@@ -197,7 +202,8 @@ const menuSelect = `
             'kind', safety.kind,
             'allergenFlag', safety.allergen_flag,
             'note', safety.note,
-            'sortOrder', safety.sort_order
+            'sortOrder', safety.sort_order,
+            'isManualOverride', safety.source = 'manual_override'
           )
           ORDER BY safety.sort_order, safety.kind, safety.id
         )
@@ -206,6 +212,12 @@ const menuSelect = `
       ),
       '[]'::jsonb
     ) AS safety_declarations,
+    EXISTS (
+      SELECT 1
+      FROM menu_item_safety_declarations manual_safety
+      WHERE manual_safety.menu_item_id = menu_items.id
+        AND manual_safety.source = 'manual_override'
+    ) AS has_manual_safety_override,
     menu_items.sort_order,
     menu_items.created_at,
     menu_items.updated_at
@@ -230,19 +242,49 @@ export function toMenuItem(row: MenuItemRow): MenuItem {
     isModifier: row.is_modifier,
     dietaryFlags: row.dietary_flags,
     safetyDeclarations: row.safety_declarations,
+    hasManualSafetyOverride: row.has_manual_safety_override,
     sortOrder: row.sort_order,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
 }
 
-async function replaceItemSafetyDeclarations(
+async function getManualSafetyDeclarations(
+  client: PoolClient,
+  menuItemId: string,
+): Promise<MenuItemSafetyDeclarationInput[]> {
+  const result = await client.query<{
+    kind: MenuItemSafetyDeclarationInput["kind"];
+    allergen_flag: MenuItemSafetyDeclarationInput["allergenFlag"];
+    note: string | null;
+    sort_order: number;
+  }>(
+    `
+      SELECT kind, allergen_flag, note, sort_order
+      FROM menu_item_safety_declarations
+      WHERE menu_item_id = $1
+        AND source = 'manual_override'
+      ORDER BY sort_order, kind, allergen_flag NULLS LAST, id
+    `,
+    [menuItemId],
+  );
+
+  return result.rows.map((row) => ({
+    kind: row.kind,
+    allergenFlag: row.allergen_flag,
+    note: row.note,
+    sortOrder: row.sort_order,
+  }));
+}
+
+async function replaceManualSafetyDeclarations(
   client: PoolClient,
   menuItemId: string,
   declarations: MenuItemSafetyDeclarationInput[],
 ): Promise<void> {
   await client.query(
-    "DELETE FROM menu_item_safety_declarations WHERE menu_item_id = $1",
+    `DELETE FROM menu_item_safety_declarations
+     WHERE menu_item_id = $1 AND source = 'manual_override'`,
     [menuItemId],
   );
 
@@ -250,13 +292,9 @@ async function replaceItemSafetyDeclarations(
     await client.query(
       `
         INSERT INTO menu_item_safety_declarations (
-          menu_item_id,
-          kind,
-          allergen_flag,
-          note,
-          sort_order
+          menu_item_id, kind, allergen_flag, note, sort_order, source
         )
-        VALUES ($1, $2, $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5, 'manual_override')
       `,
       [
         menuItemId,
@@ -268,7 +306,6 @@ async function replaceItemSafetyDeclarations(
     );
   }
 }
-
 function toIngredient(row: IngredientRow): Ingredient {
   return {
     id: row.id,
@@ -1330,6 +1367,192 @@ menuRouter.put(
   },
 );
 
+menuRouter.get(
+  "/:itemId/safety-override-history",
+  requireRole("admin"),
+  async (request, response) => {
+    const itemId = idSchema.safeParse(request.params.itemId);
+    if (!itemId.success) {
+      response.status(400).json({ error: "Invalid menu item ID" });
+      return;
+    }
+
+    const result = await pool.query<{
+      id: string;
+      menu_item_id: string;
+      changed_by_user_id: string;
+      changed_by_display_name: string;
+      action: MenuItemSafetyOverrideAuditEvent["action"];
+      reason: string;
+      before_declarations: MenuItemSafetyDeclarationInput[];
+      after_declarations: MenuItemSafetyDeclarationInput[];
+      changed_at: Date;
+    }>(
+      `
+        SELECT
+          audit.id,
+          audit.menu_item_id,
+          audit.changed_by_user_id,
+          users.display_name AS changed_by_display_name,
+          audit.action,
+          audit.reason,
+          audit.before_declarations,
+          audit.after_declarations,
+          audit.changed_at
+        FROM menu_item_safety_override_audit audit
+        JOIN users ON users.id = audit.changed_by_user_id
+        WHERE audit.menu_item_id = $1
+        ORDER BY audit.changed_at DESC, audit.id DESC
+      `,
+      [itemId.data],
+    );
+
+    response.json(
+      result.rows.map((row): MenuItemSafetyOverrideAuditEvent => ({
+        id: row.id,
+        menuItemId: row.menu_item_id,
+        changedByUserId: row.changed_by_user_id,
+        changedByDisplayName: row.changed_by_display_name,
+        action: row.action,
+        reason: row.reason,
+        beforeDeclarations: row.before_declarations,
+        afterDeclarations: row.after_declarations,
+        changedAt: row.changed_at.toISOString(),
+      })),
+    );
+  },
+);
+
+menuRouter.put(
+  "/:itemId/safety-override",
+  requireRole("admin"),
+  async (request, response) => {
+    const itemId = idSchema.safeParse(request.params.itemId);
+    const parsed = menuItemSafetyOverrideInputSchema.safeParse(request.body);
+
+    if (!itemId.success || !parsed.success) {
+      response.status(400).json({
+        error: "Invalid safety override",
+        issues: parsed.success ? undefined : parsed.error.issues,
+      });
+      return;
+    }
+
+    const user = getAuthenticatedUser(request);
+    const client = await pool.connect();
+
+    try {
+      await client.query("BEGIN");
+
+      const itemResult = await client.query<{ id: string }>(
+        `SELECT id FROM menu_items WHERE id = $1 AND is_modifier = false FOR UPDATE`,
+        [itemId.data],
+      );
+      if (!itemResult.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(404).json({ error: "Menu item not found" });
+        return;
+      }
+
+      const before = await getManualSafetyDeclarations(client, itemId.data);
+      const after = parsed.data.declarations;
+
+      const sourceSafetyResult = await client.query<{
+        kind: MenuItemSafetyDeclarationInput["kind"];
+        allergen_flag: MenuItemSafetyDeclarationInput["allergenFlag"];
+        note: string | null;
+      }>(
+        `
+          SELECT kind, allergen_flag, note
+          FROM menu_item_safety_declarations
+          WHERE menu_item_id = $1
+            AND source = 'source'
+        `,
+        [itemId.data],
+      );
+      const sourceKeys = new Set(
+        sourceSafetyResult.rows.map((row) =>
+          JSON.stringify([
+            row.kind,
+            row.allergen_flag,
+            row.note?.trim().toLowerCase() ?? null,
+          ]),
+        ),
+      );
+      const duplicateSourceFact = after.find((declaration) =>
+        sourceKeys.has(
+          JSON.stringify([
+            declaration.kind,
+            declaration.allergenFlag,
+            declaration.note?.trim().toLowerCase() ?? null,
+          ]),
+        ),
+      );
+      if (duplicateSourceFact) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "This safety fact is already recorded on the item",
+        });
+        return;
+      }
+
+      if (JSON.stringify(before) === JSON.stringify(after)) {
+        await client.query("ROLLBACK");
+        response.status(409).json({ error: "Safety override did not change" });
+        return;
+      }
+
+      await replaceManualSafetyDeclarations(client, itemId.data, after);
+      await client.query(
+        `UPDATE menu_items SET updated_at = now() WHERE id = $1`,
+        [itemId.data],
+      );
+
+      const action: MenuItemSafetyOverrideAuditEvent["action"] =
+        after.length === 0 ? "cleared" : before.length === 0 ? "set" : "updated";
+
+      await client.query(
+        `
+          INSERT INTO menu_item_safety_override_audit (
+            menu_item_id,
+            changed_by_user_id,
+            action,
+            reason,
+            before_declarations,
+            after_declarations
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+        `,
+        [
+          itemId.data,
+          user.id,
+          action,
+          parsed.data.reason,
+          JSON.stringify(before),
+          JSON.stringify(after),
+        ],
+      );
+
+      const result = await client.query<MenuItemRow>(
+        `${menuSelect} WHERE menu_items.id = $1`,
+        [itemId.data],
+      );
+      const updated = result.rows[0];
+      if (!updated) {
+        throw new Error("Updated menu item could not be reloaded");
+      }
+
+      await client.query("COMMIT");
+      response.json(toMenuItem(updated));
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
 menuRouter.get("/:itemId", async (request, response) => {
   const itemId = idSchema.safeParse(request.params.itemId);
   if (!itemId.success) {
@@ -1363,6 +1586,12 @@ menuRouter.post(
     }
 
     const item = parsed.data;
+    if (item.safetyDeclarations.length > 0) {
+      response.status(400).json({
+        error: "Use the admin safety override after creating the item",
+      });
+      return;
+    }
     if (item.isModifier || item.parentItemId !== null) {
       response.status(400).json({
         error: "Create ingredients or choice options instead of modifier menu items",
@@ -1433,12 +1662,6 @@ menuRouter.post(
         throw new Error("Menu item insert returned no record");
       }
 
-      await replaceItemSafetyDeclarations(
-        client,
-        itemId,
-        item.safetyDeclarations,
-      );
-
       const result = await client.query<MenuItemRow>(
         `${menuSelect} WHERE menu_items.id = $1`,
         [itemId],
@@ -1476,6 +1699,12 @@ menuRouter.patch(
     }
 
     const changes = parsed.data;
+    if (changes.safetyDeclarations !== undefined) {
+      response.status(400).json({
+        error: "Use the admin safety override for item-level safety changes",
+      });
+      return;
+    }
     if (
       changes.isModifier !== undefined ||
       changes.parentItemId !== undefined
@@ -1588,21 +1817,6 @@ menuRouter.patch(
           `,
           values,
         );
-      }
-
-      if (changes.safetyDeclarations !== undefined) {
-        await replaceItemSafetyDeclarations(
-          client,
-          itemId.data,
-          changes.safetyDeclarations,
-        );
-
-        if (assignments.length === 0) {
-          await client.query(
-            "UPDATE menu_items SET updated_at = now() WHERE id = $1",
-            [itemId.data],
-          );
-        }
       }
 
       const result = await client.query<MenuItemRow>(

@@ -128,6 +128,7 @@ export const menuItemSafetyDeclarationSchema =
     .extend({
       id: idSchema,
       menuItemId: idSchema,
+      isManualOverride: z.boolean().default(false),
     })
     .superRefine((declaration, context) => {
       if (
@@ -189,6 +190,29 @@ const safetyDeclarationsSchema = z
     "Safety declarations cannot be duplicated",
   );
 
+export const menuItemSafetyOverrideInputSchema = z.object({
+  declarations: safetyDeclarationsSchema,
+  reason: z.string().trim().min(3).max(500),
+});
+export type MenuItemSafetyOverrideInput = z.infer<
+  typeof menuItemSafetyOverrideInputSchema
+>;
+
+export const menuItemSafetyOverrideAuditEventSchema = z.object({
+  id: idSchema,
+  menuItemId: idSchema,
+  changedByUserId: idSchema,
+  changedByDisplayName: z.string().trim().min(1),
+  action: z.enum(["set", "updated", "cleared"]),
+  reason: z.string().trim().min(1),
+  beforeDeclarations: z.array(menuItemSafetyDeclarationInputSchema),
+  afterDeclarations: z.array(menuItemSafetyDeclarationInputSchema),
+  changedAt: z.string().datetime(),
+});
+export type MenuItemSafetyOverrideAuditEvent = z.infer<
+  typeof menuItemSafetyOverrideAuditEventSchema
+>;
+
 const menuItemInputObjectSchema = z.object({
   parentItemId: parentItemIdSchema.default(null),
   name: nameSchema,
@@ -245,6 +269,7 @@ export const menuItemSchema = menuItemInputObjectSchema.extend({
   sourceReviewNeeded: z.boolean().default(false),
   sourceReviewNotes: z.string().default(""),
   safetyDeclarations: z.array(menuItemSafetyDeclarationSchema),
+  hasManualSafetyOverride: z.boolean().default(false),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
