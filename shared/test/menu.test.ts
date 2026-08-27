@@ -34,7 +34,7 @@ describe("menu contract", () => {
       description: null,
       categoryId,
       price: 6.5,
-      status: "available",
+      status: "draft",
       isSpecial: false,
       isModifier: false,
       isKids: false,

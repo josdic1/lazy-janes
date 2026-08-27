@@ -24,6 +24,7 @@ import type {
   MenuItemStatus,
   PreparationKind,
   PreparationScheme,
+  UniversalComponentRole,
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import type { PoolClient } from "pg";
@@ -90,6 +91,7 @@ type ItemIngredientRow = {
   ingredient_name: string;
   ingredient_kind: IngredientKind;
   role: ComponentRole;
+  contextual_role: UniversalComponentRole | null;
   relationship: ComponentRelationship | null;
   preparation_scheme_id: string | null;
   allergen_flags: AllergenFlag[];
@@ -290,6 +292,7 @@ function toItemIngredient(
     ingredientName: row.ingredient_name,
     ingredientKind: row.ingredient_kind,
     role: row.role,
+    contextualRole: row.contextual_role,
     relationship: row.relationship,
     preparationSchemeId: row.preparation_scheme_id,
     allergenFlags: row.allergen_flags,
@@ -409,6 +412,7 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
         ingredient.name AS ingredient_name,
         ingredient.kind AS ingredient_kind,
         link.role,
+        link.umo_role AS contextual_role,
         link.relationship,
         link.preparation_scheme_id,
         ingredient.allergen_flags,
@@ -530,6 +534,135 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
   };
 }
 
+
+type ManualItemReadiness = {
+  ready: boolean;
+  issues: string[];
+};
+
+async function getManualItemReadiness(
+  client: PoolClient,
+  itemId: string,
+): Promise<ManualItemReadiness> {
+  const itemResult = await client.query<{ source_key: string | null }>(
+    "SELECT source_key FROM menu_items WHERE id = $1",
+    [itemId],
+  );
+  const item = itemResult.rows[0];
+  if (!item) return { ready: false, issues: ["Menu item not found"] };
+
+  // Imported menu items retain their historical evidence/unknowns. This gate
+  // exists only for manually-created items, which start with source_key NULL.
+  if (item.source_key !== null) return { ready: true, issues: [] };
+
+  const componentResult = await client.query<{
+    component_count: string;
+    missing_relationship_count: string;
+    missing_umo_role_count: string;
+    unconfirmed_extra_price_count: string;
+    incomplete_replacement_count: string;
+  }>(
+    `
+      SELECT
+        COUNT(*)::text AS component_count,
+        COUNT(*) FILTER (WHERE relationship IS NULL)::text AS missing_relationship_count,
+        COUNT(*) FILTER (WHERE umo_role IS NULL)::text AS missing_umo_role_count,
+        COUNT(*) FILTER (
+          WHERE can_extra = true AND extra_price_configured = false
+        )::text AS unconfirmed_extra_price_count,
+        COUNT(*) FILTER (
+          WHERE can_replace = true
+            AND (
+              replacement_options_configured = false
+              OR NOT EXISTS (
+                SELECT 1
+                FROM menu_item_ingredient_replacements replacement
+                WHERE replacement.menu_item_id = menu_item_ingredients.menu_item_id
+                  AND replacement.source_ingredient_id = menu_item_ingredients.ingredient_id
+              )
+            )
+        )::text AS incomplete_replacement_count
+      FROM menu_item_ingredients
+      WHERE menu_item_id = $1
+    `,
+    [itemId],
+  );
+
+  const choiceResult = await client.query<{
+    choice_count: string;
+    missing_relationship_count: string;
+    missing_maximum_count: string;
+    unconfirmed_price_count: string;
+  }>(
+    `
+      SELECT
+        COUNT(DISTINCT group_record.id)::text AS choice_count,
+        COUNT(DISTINCT group_record.id) FILTER (
+          WHERE group_record.relationship IS NULL
+        )::text AS missing_relationship_count,
+        COUNT(DISTINCT group_record.id) FILTER (
+          WHERE group_record.max_selections IS NULL
+        )::text AS missing_maximum_count,
+        COUNT(option_record.id) FILTER (
+          WHERE option_record.price_adjustment_configured = false
+        )::text AS unconfirmed_price_count
+      FROM menu_choice_groups group_record
+      LEFT JOIN menu_choice_options option_record
+        ON option_record.choice_group_id = group_record.id
+        AND option_record.is_active = true
+      WHERE group_record.menu_item_id = $1
+        AND group_record.is_active = true
+    `,
+    [itemId],
+  );
+
+  const replacementPriceResult = await client.query<{ count: string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM menu_item_ingredient_replacements
+      WHERE menu_item_id = $1
+        AND price_adjustment_configured = false
+    `,
+    [itemId],
+  );
+
+  const components = componentResult.rows[0];
+  const choices = choiceResult.rows[0];
+  const issues: string[] = [];
+
+  const componentCount = Number(components?.component_count ?? 0);
+  const choiceCount = Number(choices?.choice_count ?? 0);
+  if (componentCount + choiceCount === 0) {
+    issues.push("Add at least one component or real customer choice");
+  }
+  if (Number(components?.missing_relationship_count ?? 0) > 0) {
+    issues.push("Every component must say whether it is part of the item or comes alongside");
+  }
+  if (Number(components?.missing_umo_role_count ?? 0) > 0) {
+    issues.push("Every component must have its job in this item defined");
+  }
+  if (Number(components?.unconfirmed_extra_price_count ?? 0) > 0) {
+    issues.push("Confirm the price for every component that can be ordered EXTRA");
+  }
+  if (Number(components?.incomplete_replacement_count ?? 0) > 0) {
+    issues.push("Every enabled substitution must have at least one configured replacement");
+  }
+  if (Number(choices?.missing_relationship_count ?? 0) > 0) {
+    issues.push("Every component choice must say whether it belongs in the item or comes alongside");
+  }
+  if (Number(choices?.missing_maximum_count ?? 0) > 0) {
+    issues.push("Every choice must have a maximum selection count");
+  }
+  if (Number(choices?.unconfirmed_price_count ?? 0) > 0) {
+    issues.push("Confirm the price adjustment for every choice option, including $0");
+  }
+  if (Number(replacementPriceResult.rows[0]?.count ?? 0) > 0) {
+    issues.push("Confirm the price adjustment for every substitution, including $0");
+  }
+
+  return { ready: issues.length === 0, issues };
+}
+
 export const menuRouter = Router();
 menuRouter.use(requireAuthenticatedUser);
 
@@ -578,29 +711,17 @@ menuRouter.get("/normalized", async (_request, response) => {
     getCustomizationCatalog(),
   ]);
 
+  // Drafts may intentionally be incomplete while a manager is building them.
+  // Only service-visible/non-draft items belong in the normalized ordering feed.
   response.json(
-    items.map((item) =>
-      normalizeLazyJanesOffering({
-        item,
-        catalog,
-      }),
-    ),
-  );
-});
-
-menuRouter.get("/normalized", async (_request, response) => {
-  const [items, catalog] = await Promise.all([
-    getAllMenuItems(),
-    getCustomizationCatalog(),
-  ]);
-
-  response.json(
-    items.map((item) =>
-      normalizeLazyJanesOffering({
-        item,
-        catalog,
-      }),
-    ),
+    items
+      .filter((item) => item.status !== "draft")
+      .map((item) =>
+        normalizeLazyJanesOffering({
+          item,
+          catalog,
+        }),
+      ),
   );
 });
 
@@ -951,9 +1072,11 @@ menuRouter.put(
       const itemResult = await client.query<{
         id: string;
         is_modifier: boolean;
+        source_key: string | null;
+        status: MenuItemStatus;
       }>(
         `
-          SELECT id, is_modifier
+          SELECT id, is_modifier, source_key, status
           FROM menu_items
           WHERE id = $1
           FOR UPDATE
@@ -1055,6 +1178,7 @@ menuRouter.put(
               menu_item_id,
               ingredient_id,
               role,
+              umo_role,
               relationship,
               preparation_scheme_id,
               can_remove,
@@ -1067,14 +1191,15 @@ menuRouter.put(
               sort_order
             )
             VALUES (
-              $1, $2, $3, $4, $5, $6, $7,
-              $8, $9, $10, $11, $12, $13
+              $1, $2, $3, $4, $5, $6, $7, $8,
+              $9, $10, $11, $12, $13, $14
             )
           `,
           [
             item.id,
             ingredient.ingredientId,
             ingredient.role,
+            ingredient.contextualRole,
             ingredient.relationship,
             ingredient.preparationSchemeId,
             ingredient.canRemove,
@@ -1182,6 +1307,18 @@ menuRouter.put(
         [item.id],
       );
 
+      if (item.source_key === null && item.status === "available") {
+        const readiness = await getManualItemReadiness(client, item.id);
+        if (!readiness.ready) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "An active item cannot be saved with incomplete food structure",
+            issues: readiness.issues,
+          });
+          return;
+        }
+      }
+
       await client.query("COMMIT");
       response.json(await getCustomizationCatalog());
     } catch (error) {
@@ -1282,7 +1419,7 @@ menuRouter.post(
           item.description,
           item.categoryId,
           item.price,
-          item.status,
+          "draft",
           item.isSpecial,
           item.isKids,
           item.hasKidsVersion,
@@ -1357,9 +1494,10 @@ menuRouter.patch(
       const existingResult = await client.query<{
         id: string;
         is_modifier: boolean;
+        source_key: string | null;
       }>(
         `
-          SELECT id, is_modifier
+          SELECT id, is_modifier, source_key
           FROM menu_items
           WHERE id = $1
           FOR UPDATE
@@ -1372,6 +1510,18 @@ menuRouter.patch(
         await client.query("ROLLBACK");
         response.status(404).json({ error: "Menu item not found" });
         return;
+      }
+
+      if (changes.status === "available" && existing.source_key === null) {
+        const readiness = await getManualItemReadiness(client, itemId.data);
+        if (!readiness.ready) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "Finish the food structure before publishing this item",
+            issues: readiness.issues,
+          });
+          return;
+        }
       }
 
       if (changes.categoryId !== undefined) {

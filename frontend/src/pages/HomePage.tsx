@@ -587,6 +587,11 @@ export function HomePage() {
     const guestCount = Number(newPartyGuests);
     const name = newPartyName.trim();
 
+    if (!name) {
+      setError("Party name is required.");
+      return;
+    }
+
     if (!Number.isInteger(guestCount) || guestCount < 1) {
       setError("Guest count must be at least 1.");
       return;
@@ -595,10 +600,10 @@ export function HomePage() {
     const created = await runAction(
       "new-party",
       () => createParty({
+        name,
         guestCount,
-        ...(name ? { name } : {}),
       }),
-      name ? `${name} added to the wait.` : `Party of ${guestCount} added to the wait.`,
+      `${name} added to the wait.`,
     );
 
     if (created) setNewPartyName("");
@@ -975,6 +980,7 @@ export function HomePage() {
                   type="text"
                   maxLength={80}
                   placeholder="Smith"
+                  required
                   value={newPartyName}
                   onChange={(event) => setNewPartyName(event.target.value)}
                 />

@@ -27,6 +27,7 @@ import {
   type MenuItemSafetyKind,
   type MenuItemStatus,
   type ReplaceMenuItemCustomizationInput,
+  type UniversalComponentRole,
 } from "@lazy-janes/shared";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -47,7 +48,7 @@ const emptyForm: CreateMenuItemInput = {
   description: null,
   categoryId: "",
   price: 0,
-  status: "available",
+  status: "draft",
   isSpecial: false,
   isKids: false,
   hasKidsVersion: false,
@@ -60,6 +61,7 @@ const emptyForm: CreateMenuItemInput = {
 type IngredientLinkDraft = {
   ingredientId: string;
   role: ComponentRole;
+  contextualRole: UniversalComponentRole | null;
   relationship: ComponentRelationship | null;
   preparationSchemeId: string | null;
   canRemove: boolean;
@@ -124,6 +126,19 @@ const ALLERGEN_SAFETY_KINDS = [
   "cross_contact",
 ] as const;
 
+const UMO_ROLE_OPTIONS: Array<{
+  value: UniversalComponentRole;
+  label: string;
+}> = [
+  { value: "primary", label: "Main part" },
+  { value: "base", label: "Base" },
+  { value: "carrier", label: "Carrier / bread" },
+  { value: "filling", label: "Filling" },
+  { value: "topping", label: "Topping" },
+  { value: "sauce", label: "Sauce" },
+  { value: "accompaniment", label: "Side / accompaniment" },
+];
+
 function isAllergenSafetyKind(
   kind: MenuItemSafetyKind,
 ): kind is (typeof ALLERGEN_SAFETY_KINDS)[number] {
@@ -184,6 +199,7 @@ function linkDraft(link: MenuItemIngredient): IngredientLinkDraft {
   return {
     ingredientId: link.ingredientId,
     role: link.role,
+    contextualRole: link.contextualRole,
     relationship: link.relationship,
     preparationSchemeId: link.preparationSchemeId,
     canRemove: link.canRemove,
@@ -319,6 +335,55 @@ export function MenuManagementPage() {
     [catalog.ingredients],
   );
 
+  const compositionReadinessIssues = useMemo(() => {
+    const issues: string[] = [];
+
+    if (ingredientLinks.length + choiceGroups.length === 0) {
+      issues.push("Add at least one component or customer choice");
+    }
+    if (ingredientLinks.some((link) => link.relationship === null)) {
+      issues.push("Say whether every component is part of the item or comes alongside");
+    }
+    if (ingredientLinks.some((link) => link.contextualRole === null)) {
+      issues.push("Define the job of every component in this item");
+    }
+    if (ingredientLinks.some((link) => link.canExtra && !link.extraPriceConfigured)) {
+      issues.push("Confirm every EXTRA price, including $0");
+    }
+    if (ingredientLinks.some((link) => {
+      if (!link.canReplace) return false;
+      return !link.replacementOptionsConfigured || !replacements.some(
+        (replacement) => replacement.sourceIngredientId === link.ingredientId,
+      );
+    })) {
+      issues.push("Configure at least one target for every enabled substitution");
+    }
+    if (replacements.some((replacement) => !replacement.priceAdjustmentConfigured)) {
+      issues.push("Confirm every substitution price, including $0");
+    }
+    if (choiceGroups.some((group) => group.label.trim() === "")) {
+      issues.push("Name every customer choice");
+    }
+    if (choiceGroups.some((group) => group.relationship === null)) {
+      issues.push("Say whether every component choice belongs in the item or comes alongside");
+    }
+    if (choiceGroups.some((group) => group.maxSelections === null)) {
+      issues.push("Set a maximum for every customer choice");
+    }
+    if (choiceGroups.some((group) =>
+      group.options.length === 0 || group.options.some((option) => option.label.trim() === "")
+    )) {
+      issues.push("Give every choice at least one named option");
+    }
+    if (choiceGroups.some((group) =>
+      group.options.some((option) => !option.priceAdjustmentConfigured)
+    )) {
+      issues.push("Confirm every choice price, including $0");
+    }
+
+    return issues;
+  }, [choiceGroups, ingredientLinks, replacements]);
+
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -386,6 +451,7 @@ export function MenuManagementPage() {
     event.preventDefault();
     setSaveError("");
     setSaving(true);
+    let createdItem: MenuItem | null = null;
 
     try {
       if (editingItem) {
@@ -412,10 +478,14 @@ export function MenuManagementPage() {
           isModifier: false,
         });
         setItems((current) => [...current, created]);
+        createdItem = created;
       }
 
       setDrawerOpen(false);
       setEditingItem(null);
+      if (createdItem) {
+        openComposition(createdItem);
+      }
     } catch (error: unknown) {
       setSaveError(errorMessage(error));
     } finally {
@@ -486,12 +556,13 @@ export function MenuManagementPage() {
       ...current,
       {
         ingredientId: ingredient.id,
-        role: ingredient.kind,
+        role: "other",
+        contextualRole: null,
         relationship: null,
         preparationSchemeId: null,
-        canRemove: true,
+        canRemove: false,
         canSide: false,
-        canExtra: true,
+        canExtra: false,
         canReplace: false,
         replacementOptionsConfigured: false,
         extraPrice: ingredient.defaultAddPrice,
@@ -522,6 +593,11 @@ export function MenuManagementPage() {
         },
       ];
     });
+    setIngredientLinks((current) => current.map((link) =>
+      link.ingredientId === sourceIngredientId
+        ? { ...link, canReplace: true, replacementOptionsConfigured: true }
+        : link,
+    ));
   }
 
   function updateReplacement(
@@ -538,10 +614,20 @@ export function MenuManagementPage() {
   }
 
   function removeReplacement(sourceIngredientId: string, replacementIngredientId: string) {
-    setReplacements((current) => current.filter((replacement) =>
-      replacement.sourceIngredientId !== sourceIngredientId ||
-      replacement.replacementIngredientId !== replacementIngredientId
-    ));
+    setReplacements((current) => {
+      const next = current.filter((replacement) =>
+        replacement.sourceIngredientId !== sourceIngredientId ||
+        replacement.replacementIngredientId !== replacementIngredientId
+      );
+      if (!next.some((replacement) => replacement.sourceIngredientId === sourceIngredientId)) {
+        setIngredientLinks((links) => links.map((link) =>
+          link.ingredientId === sourceIngredientId
+            ? { ...link, canReplace: false, replacementOptionsConfigured: false }
+            : link,
+        ));
+      }
+      return next;
+    });
   }
 
   function addChoiceGroup() {
@@ -623,7 +709,7 @@ export function MenuManagementPage() {
     );
   }
 
-  async function saveComposition() {
+  async function saveComposition(publish = false) {
     if (!compositionItem) return;
 
     for (const group of choiceGroups) {
@@ -637,10 +723,16 @@ export function MenuManagementPage() {
       }
     }
 
+    if (publish && compositionReadinessIssues.length > 0) {
+      setCompositionError(compositionReadinessIssues[0] ?? "Finish the food structure before publishing.");
+      return;
+    }
+
     const input: ReplaceMenuItemCustomizationInput = {
       ingredients: ingredientLinks.map((link, index) => ({
         ingredientId: link.ingredientId,
         role: link.role,
+        contextualRole: link.contextualRole,
         relationship: link.relationship ?? null,
         preparationSchemeId: link.preparationSchemeId,
         canRemove: link.canRemove,
@@ -686,6 +778,16 @@ export function MenuManagementPage() {
     try {
       const updated = await replaceMenuItemCustomization(compositionItem.id, input);
       setCatalog(updated);
+
+      if (publish) {
+        const published = await updateMenuItem(compositionItem.id, {
+          status: "available",
+        });
+        setItems((current) => current.map((item) =>
+          item.id === published.id ? published : item,
+        ));
+      }
+
       setCompositionItem(null);
     } catch (error: unknown) {
       setCompositionError(errorMessage(error));
@@ -820,6 +922,7 @@ export function MenuManagementPage() {
           onChange={(event) => setStatusFilter(event.target.value as MenuItemStatus | "all")}
         >
           <option value="all">All statuses</option>
+          <option value="draft">Draft</option>
           <option value="available">Available</option>
           <option value="eighty_sixed">86’d</option>
           <option value="inactive">Inactive</option>
@@ -900,8 +1003,8 @@ export function MenuManagementPage() {
                           className="menu-composition-button"
                           onClick={() => openComposition(item)}
                         >
-                          <strong>{ingredientCount} ingredients</strong>
-                          <span>{choiceCount} choice {choiceCount === 1 ? "group" : "groups"}</span>
+                          <strong>{item.status === "draft" ? "Finish food structure" : `${ingredientCount} ingredients`}</strong>
+                          <span>{ingredientCount} ingredients · {choiceCount} choice {choiceCount === 1 ? "group" : "groups"}</span>
                         </button>
                       </td>
                       <td>
@@ -909,14 +1012,16 @@ export function MenuManagementPage() {
                           <button className="icon-button" type="button" title="Edit item" onClick={() => openEdit(item)}>
                             <PencilSimple aria-hidden="true" />
                           </button>
-                          <button
-                            className="icon-button"
-                            type="button"
-                            title={item.status === "available" ? "86 item" : "Make available"}
-                            onClick={() => void toggleItemStatus(item)}
-                          >
-                            {item.status === "available" ? <Warning aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}
-                          </button>
+                          {item.status !== "draft" ? (
+                            <button
+                              className="icon-button"
+                              type="button"
+                              title={item.status === "available" ? "86 item" : "Make available"}
+                              onClick={() => void toggleItemStatus(item)}
+                            >
+                              {item.status === "available" ? <Warning aria-hidden="true" /> : <CheckCircle aria-hidden="true" />}
+                            </button>
+                          ) : null}
                           {item.status !== "inactive" ? (
                             <button
                               className="icon-button"
@@ -986,14 +1091,22 @@ export function MenuManagementPage() {
                 </label>
               </div>
               <div className="form-grid">
-                <label>
-                  <span>Status</span>
-                  <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as MenuItemStatus })}>
-                    <option value="available">Available</option>
-                    <option value="eighty_sixed">86’d</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
-                </label>
+                {editingItem?.status === "draft" || !editingItem ? (
+                  <div className="draft-state-note">
+                    <span>Status</span>
+                    <strong>Draft</strong>
+                    <small>It cannot appear in Order Entry until its food structure is complete.</small>
+                  </div>
+                ) : (
+                  <label>
+                    <span>Status</span>
+                    <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as MenuItemStatus })}>
+                      <option value="available">Available</option>
+                      <option value="eighty_sixed">86’d</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                )}
                 <label>
                   <span>Display order</span>
                   <input type="number" step="1" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} />
@@ -1161,7 +1274,7 @@ export function MenuManagementPage() {
               <footer className="drawer-actions">
                 <button className="button" data-variant="primary" disabled={saving} type="submit">
                   {saving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
-                  {editingItem ? "Save changes" : "Add item"}
+                  {editingItem ? "Save changes" : "Continue to food setup"}
                 </button>
                 <button className="button" data-variant="quiet" disabled={saving} type="button" onClick={() => setDrawerOpen(false)}>Cancel</button>
               </footer>
@@ -1173,312 +1286,448 @@ export function MenuManagementPage() {
       {compositionItem ? (
         <div className="drawer-backdrop" role="presentation">
           <section className="drawer drawer--wide composition-drawer" role="dialog" aria-modal="true" aria-label={`Configure ${compositionItem.name}`}>
-            <header className="drawer-header">
+            <header className="drawer-header composition-drawer-header">
               <div>
-                <p className="eyebrow">Service configuration</p>
+                <p className="eyebrow">Step 2 of 2 · Food setup</p>
                 <h2>{compositionItem.name}</h2>
-                <p>What comes on the item, what can replace it, and the few choices the server must actually ask.</p>
+                <p>Build the plate exactly as the kitchen and server should understand it.</p>
               </div>
               <button className="icon-button" type="button" onClick={() => setCompositionItem(null)}>
                 <X aria-hidden="true" />
               </button>
             </header>
 
-            <div className="composition-editor">
-              <section className="composition-section">
-                <header>
+            <div className="composition-editor composition-editor--guided">
+              <div className="composition-progress" aria-label="Item setup progress">
+                <div data-done="true"><CheckCircle aria-hidden="true" /><span><strong>1. Basics</strong><small>Name, category, price</small></span></div>
+                <div data-current="true"><span className="composition-progress-number">2</span><span><strong>Food setup</strong><small>Plate, choices, changes</small></span></div>
+                <div data-done={compositionReadinessIssues.length === 0}><span className="composition-progress-number">3</span><span><strong>Publish</strong><small>{compositionReadinessIssues.length === 0 ? "Ready" : "Finish setup first"}</small></span></div>
+              </div>
+
+              <section className="composition-section composition-section--primary">
+                <header className="composition-section-heading">
                   <div>
-                    <h3>On it</h3>
-                    <p>Parts that come with the item. Turn on only the actions that make sense for each part.</p>
+                    <p className="composition-step-label">A · BUILD THE PLATE</p>
+                    <h3>What does the customer get?</h3>
+                    <p>Add every real ingredient or side that belongs to the standard item.</p>
                   </div>
-                  <strong>{ingredientLinks.length}</strong>
+                  <strong className="composition-count">{ingredientLinks.length} added</strong>
                 </header>
 
-                <div className="composition-ingredient-list">
-                  {ingredientLinks.map((link, index) => {
-                    const ingredient = ingredientById.get(link.ingredientId);
-                    if (!ingredient) return null;
-                    return (
-                      <div className="composition-ingredient-row" key={link.ingredientId}>
-                        <strong>{ingredient.name}</strong>
-                        <label className="composition-component-field">
-                          <span>PREP</span>
-                          <select
-                            value={link.preparationSchemeId ?? ""}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) =>
-                                candidate.ingredientId === link.ingredientId
-                                  ? { ...candidate, preparationSchemeId: event.target.value || null }
-                                  : candidate,
-                              ))
-                            }
-                          >
-                            <option value="">None</option>
-                            {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
-                              <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={link.canRemove}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, canRemove: event.target.checked } : candidate))
-                            }
-                          />
-                          NO
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={link.canSide}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, canSide: event.target.checked } : candidate))
-                            }
-                          />
-                          SIDE
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={link.canExtra}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, canExtra: event.target.checked } : candidate))
-                            }
-                          />
-                          EXTRA
-                        </label>
-                        <label className="composition-price-field">
-                          <span>Extra $</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={link.extraPrice}
-                            disabled={!link.canExtra}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, extraPrice: Number(event.target.value) } : candidate))
-                            }
-                          />
-                        </label>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={link.extraPriceConfigured}
-                            disabled={!link.canExtra}
-                            onChange={(event) =>
-                              setIngredientLinks((current) => current.map((candidate) => candidate.ingredientId === link.ingredientId ? { ...candidate, extraPriceConfigured: event.target.checked } : candidate))
-                            }
-                          />
-                          Price confirmed
-                        </label>
-                        <button type="button" className="composition-remove" onClick={() => {
-                          setIngredientLinks((current) => current.filter((_, position) => position !== index));
-                          setReplacements((current) => current.filter((replacement) => replacement.sourceIngredientId !== link.ingredientId));
-                        }}>Remove link</button>
-                        <div className="composition-replacements">
-                          <span>REPLACE</span>
-                          <select
-                            value=""
-                            onChange={(event) => {
-                              addReplacement(link.ingredientId, event.target.value);
-                              event.currentTarget.value = "";
-                            }}
-                          >
-                            <option value="">Add allowed replacement…</option>
-                            {catalog.ingredients
-                              .filter((candidate) =>
-                                candidate.isActive &&
-                                !ingredientLinks.some((standard) => standard.ingredientId === candidate.id) &&
-                                !replacements.some((replacement) =>
-                                  replacement.sourceIngredientId === link.ingredientId &&
-                                  replacement.replacementIngredientId === candidate.id
-                                )
-                              )
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map((candidate) => (
-                                <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
-                              ))}
-                          </select>
-                          {replacements
-                            .filter((replacement) => replacement.sourceIngredientId === link.ingredientId)
-                            .map((replacement) => {
-                              const target = ingredientById.get(replacement.replacementIngredientId);
-                              if (!target) return null;
-                              return (
-                                <div className="composition-replacement-row" key={replacement.replacementIngredientId}>
-                                  <strong>{target.name}</strong>
-                                  <select
-                                    value={replacement.preparationSchemeId ?? ""}
-                                    aria-label={`Preparation for ${target.name}`}
-                                    onChange={(event) => updateReplacement(
-                                      link.ingredientId,
-                                      target.id,
-                                      { preparationSchemeId: event.target.value || null },
-                                    )}
-                                  >
-                                    <option value="">No prep</option>
-                                    {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
-                                      <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
-                                    ))}
-                                  </select>
-                                  <label>
-                                    <span>±$</span>
-                                    <input
-                                      type="number"
-                                      step="0.01"
-                                      value={replacement.priceAdjustment}
-                                      onChange={(event) => updateReplacement(
-                                        link.ingredientId,
-                                        target.id,
-                                        { priceAdjustment: Number(event.target.value) },
-                                      )}
-                                    />
-                                  </label>
-                                  <label>
-                                    <input
-                                      type="checkbox"
-                                      checked={replacement.priceAdjustmentConfigured}
-                                      onChange={(event) => updateReplacement(
-                                        link.ingredientId,
-                                        target.id,
-                                        { priceAdjustmentConfigured: event.target.checked },
-                                      )}
-                                    />
-                                    Price confirmed
-                                  </label>
-                                  <button type="button" className="composition-remove" onClick={() => removeReplacement(link.ingredientId, target.id)}>×</button>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="composition-add-ingredient">
+                <div className="composition-picker">
                   <MagnifyingGlass aria-hidden="true" />
                   <input
                     type="search"
-                    placeholder="Add part…"
+                    placeholder="Search ingredients — turkey, rye, home fries…"
                     value={ingredientSearch}
                     onChange={(event) => setIngredientSearch(event.target.value)}
                   />
                 </div>
-                <div className="composition-ingredient-results">
-                  {addableRecipeIngredients.map((ingredient) => (
-                    <button type="button" key={ingredient.id} onClick={() => addRecipeIngredient(ingredient)}>
-                      <span>{ingredient.name}</span>
-                      <small>
-                        {!ingredient.isAddable
-                          ? "ADD not available"
-                          : ingredient.addPriceConfigured
-                            ? `ADD ${money(ingredient.defaultAddPrice)}`
-                            : "ADD · price TBD"}
-                      </small>
-                    </button>
-                  ))}
-                </div>
+                {ingredientSearch.trim() !== "" ? (
+                  <div className="composition-picker-results">
+                    {addableRecipeIngredients.length === 0 ? (
+                      <p className="composition-empty-inline">No matching ingredient. Add it to the Ingredient Library first.</p>
+                    ) : addableRecipeIngredients.map((ingredient) => (
+                      <button type="button" key={ingredient.id} onClick={() => addRecipeIngredient(ingredient)}>
+                        <span><strong>{ingredient.name}</strong><small>{ingredient.kind.replace(/_/g, " ")}</small></span>
+                        <Plus aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {ingredientLinks.length === 0 ? (
+                  <div className="composition-empty-start">
+                    <strong>Start here.</strong>
+                    <span>Search above and add the parts of the item one by one.</span>
+                  </div>
+                ) : (
+                  <div className="composition-ingredient-list composition-ingredient-list--guided">
+                    {ingredientLinks.map((link, index) => {
+                      const ingredient = ingredientById.get(link.ingredientId);
+                      if (!ingredient) return null;
+                      const ingredientReplacements = replacements.filter(
+                        (replacement) => replacement.sourceIngredientId === link.ingredientId,
+                      );
+
+                      return (
+                        <article className="composition-ingredient-card" key={link.ingredientId}>
+                          <header className="composition-ingredient-card-head">
+                            <div>
+                              <strong>{ingredient.name}</strong>
+                              <span>{ingredient.kind.replace(/_/g, " ")}</span>
+                            </div>
+                            <button type="button" className="composition-remove" onClick={() => {
+                              setIngredientLinks((current) => current.filter((_, position) => position !== index));
+                              setReplacements((current) => current.filter((replacement) => replacement.sourceIngredientId !== link.ingredientId));
+                            }}>Remove</button>
+                          </header>
+
+                          <div className="composition-required-grid">
+                            <fieldset className="composition-question">
+                              <legend>Where is it served?</legend>
+                              <div className="composition-answer-row">
+                                <button
+                                  type="button"
+                                  data-selected={link.relationship === "contains"}
+                                  onClick={() => setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId
+                                      ? { ...candidate, relationship: "contains" }
+                                      : candidate,
+                                  ))}
+                                >In the item</button>
+                                <button
+                                  type="button"
+                                  data-selected={link.relationship === "comes_with"}
+                                  onClick={() => setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId
+                                      ? { ...candidate, relationship: "comes_with" }
+                                      : candidate,
+                                  ))}
+                                >Comes with it</button>
+                              </div>
+                            </fieldset>
+
+                            <label className="composition-role-field">
+                              <span>What job does it have?</span>
+                              <select
+                                value={link.contextualRole ?? ""}
+                                onChange={(event) =>
+                                  setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId
+                                      ? { ...candidate, contextualRole: (event.target.value || null) as UniversalComponentRole | null }
+                                      : candidate,
+                                  ))
+                                }
+                              >
+                                <option value="">Choose its job…</option>
+                                {UMO_ROLE_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>{option.label}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+
+                          <div className="composition-customer-controls">
+                            <span className="composition-control-label">Customer can</span>
+                            <label className="composition-toggle">
+                              <input
+                                type="checkbox"
+                                checked={link.canRemove}
+                                onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                  candidate.ingredientId === link.ingredientId ? { ...candidate, canRemove: event.target.checked } : candidate,
+                                ))}
+                              />
+                              <span>Remove it</span>
+                            </label>
+                            <label className="composition-toggle">
+                              <input
+                                type="checkbox"
+                                checked={link.canSide}
+                                onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                  candidate.ingredientId === link.ingredientId ? { ...candidate, canSide: event.target.checked } : candidate,
+                                ))}
+                              />
+                              <span>Get it on the side</span>
+                            </label>
+                            <label className="composition-toggle">
+                              <input
+                                type="checkbox"
+                                checked={link.canExtra}
+                                onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                  candidate.ingredientId === link.ingredientId ? { ...candidate, canExtra: event.target.checked } : candidate,
+                                ))}
+                              />
+                              <span>Order extra</span>
+                            </label>
+                          </div>
+
+                          {link.canExtra ? (
+                            <div className="composition-inline-price">
+                              <label>
+                                <span>Extra portion price</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={link.extraPrice}
+                                  onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId ? { ...candidate, extraPrice: Number(event.target.value) } : candidate,
+                                  ))}
+                                />
+                              </label>
+                              <label className="composition-toggle composition-toggle--confirm">
+                                <input
+                                  type="checkbox"
+                                  checked={link.extraPriceConfigured}
+                                  onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId ? { ...candidate, extraPriceConfigured: event.target.checked } : candidate,
+                                  ))}
+                                />
+                                <span>Price confirmed, including $0</span>
+                              </label>
+                            </div>
+                          ) : null}
+
+                          <details className="composition-more">
+                            <summary>Preparation & substitutions <span>{link.preparationSchemeId || ingredientReplacements.length > 0 ? "Configured" : "Optional"}</span></summary>
+                            <div className="composition-more-body">
+                              <label>
+                                <span>Cooking / preparation</span>
+                                <select
+                                  value={link.preparationSchemeId ?? ""}
+                                  onChange={(event) => setIngredientLinks((current) => current.map((candidate) =>
+                                    candidate.ingredientId === link.ingredientId
+                                      ? { ...candidate, preparationSchemeId: event.target.value || null }
+                                      : candidate,
+                                  ))}
+                                >
+                                  <option value="">No preparation choice</option>
+                                  {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
+                                    <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <div className="composition-substitution-builder">
+                                <label>
+                                  <span>Allowed substitute</span>
+                                  <select
+                                    value=""
+                                    onChange={(event) => {
+                                      addReplacement(link.ingredientId, event.target.value);
+                                      event.currentTarget.value = "";
+                                    }}
+                                  >
+                                    <option value="">Add a substitute…</option>
+                                    {catalog.ingredients
+                                      .filter((candidate) =>
+                                        candidate.isActive &&
+                                        !ingredientLinks.some((standard) => standard.ingredientId === candidate.id) &&
+                                        !replacements.some((replacement) =>
+                                          replacement.sourceIngredientId === link.ingredientId &&
+                                          replacement.replacementIngredientId === candidate.id
+                                        )
+                                      )
+                                      .sort((a, b) => a.name.localeCompare(b.name))
+                                      .map((candidate) => (
+                                        <option key={candidate.id} value={candidate.id}>{candidate.name}</option>
+                                      ))}
+                                  </select>
+                                </label>
+
+                                {ingredientReplacements.map((replacement) => {
+                                  const target = ingredientById.get(replacement.replacementIngredientId);
+                                  if (!target) return null;
+                                  return (
+                                    <div className="composition-substitution-row" key={replacement.replacementIngredientId}>
+                                      <strong>{target.name}</strong>
+                                      <label>
+                                        <span>Prep</span>
+                                        <select
+                                          value={replacement.preparationSchemeId ?? ""}
+                                          onChange={(event) => updateReplacement(link.ingredientId, target.id, {
+                                            preparationSchemeId: event.target.value || null,
+                                          })}
+                                        >
+                                          <option value="">None</option>
+                                          {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
+                                            <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
+                                          ))}
+                                        </select>
+                                      </label>
+                                      <label>
+                                        <span>Price change</span>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          value={replacement.priceAdjustment}
+                                          onChange={(event) => updateReplacement(link.ingredientId, target.id, {
+                                            priceAdjustment: Number(event.target.value),
+                                          })}
+                                        />
+                                      </label>
+                                      <label className="composition-toggle composition-toggle--confirm">
+                                        <input
+                                          type="checkbox"
+                                          checked={replacement.priceAdjustmentConfigured}
+                                          onChange={(event) => updateReplacement(link.ingredientId, target.id, {
+                                            priceAdjustmentConfigured: event.target.checked,
+                                          })}
+                                        />
+                                        <span>Price confirmed</span>
+                                      </label>
+                                      <button type="button" className="composition-remove" onClick={() => removeReplacement(link.ingredientId, target.id)}>Remove</button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </details>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
 
               <section className="composition-section">
-                <header>
+                <header className="composition-section-heading">
                   <div>
-                    <h3>Actual choices</h3>
-                    <p>Only questions the server really has to ask. Defaults and replacements belong above.</p>
+                    <p className="composition-step-label">B · CUSTOMER CHOICES</p>
+                    <h3>What questions does the server need to ask?</h3>
+                    <p>Only create a choice when the customer must pick from defined options.</p>
                   </div>
                   <button className="button" data-variant="quiet" type="button" onClick={addChoiceGroup}>
-                    <Plus aria-hidden="true" /> Choice group
+                    <Plus aria-hidden="true" /> Add a choice
                   </button>
                 </header>
 
-                <div className="choice-editor-list">
-                  {choiceGroups.map((group) => (
-                    <article className="choice-editor-group" key={group.key}>
-                      <div className="choice-editor-group-head">
-                        <label>
-                          <span>Prompt</span>
-                          <input value={group.label} placeholder="Choose protein" onChange={(event) => updateChoiceGroup(group.key, { label: event.target.value })} />
-                        </label>
-                        <label>
-                          <span>Min</span>
-                          <input type="number" min="0" step="1" value={group.minSelections} onChange={(event) => updateChoiceGroup(group.key, { minSelections: Number(event.target.value) })} />
-                        </label>
-                        <label>
-                          <span>Max</span>
-                          <input
-                            type="number"
-                            min="1"
-                            step="1"
-                            value={group.maxSelections ?? ""}
-                            placeholder="Any"
-                            onChange={(event) => updateChoiceGroup(group.key, { maxSelections: event.target.value === "" ? null : Number(event.target.value) })}
-                          />
-                        </label>
-                        <button type="button" className="composition-remove" onClick={() => setChoiceGroups((current) => current.filter((candidate) => candidate.key !== group.key))}>Delete group</button>
-                      </div>
+                {choiceGroups.length === 0 ? (
+                  <div className="composition-choice-empty">
+                    <strong>No customer choices.</strong>
+                    <span>That is fine if this item is sold exactly as defined above.</span>
+                  </div>
+                ) : (
+                  <div className="choice-editor-list choice-editor-list--guided">
+                    {choiceGroups.map((group, groupIndex) => (
+                      <article className="choice-editor-group choice-editor-group--guided" key={group.key}>
+                        <header className="choice-guided-head">
+                          <strong>Choice {groupIndex + 1}</strong>
+                          <button type="button" className="composition-remove" onClick={() => setChoiceGroups((current) => current.filter((candidate) => candidate.key !== group.key))}>Delete</button>
+                        </header>
 
-                      <div className="choice-option-editor">
-                        {group.options.map((option) => (
-                          <div className="choice-option-row" key={option.key}>
-                            <input
-                              value={option.label}
-                              placeholder="Option label"
-                              onChange={(event) => updateChoiceOption(group.key, option.key, { label: event.target.value })}
-                            />
-                            <select
-                              value={option.ingredientId ?? ""}
-                              onChange={(event) => updateChoiceOption(group.key, option.key, { ingredientId: event.target.value || null })}
-                            >
-                              <option value="">No ingredient link</option>
-                              {catalog.ingredients.filter((ingredient) => ingredient.isActive).map((ingredient) => (
-                                <option key={ingredient.id} value={ingredient.id}>{ingredient.name}</option>
-                              ))}
-                            </select>
-                            <select
-                              value={option.preparationSchemeId ?? ""}
-                              aria-label="Preparation scheme"
-                              onChange={(event) => updateChoiceOption(group.key, option.key, { preparationSchemeId: event.target.value || null })}
-                            >
-                              <option value="">No prep</option>
-                              {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
-                                <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
-                              ))}
-                            </select>
-                            <label className="choice-default-check">
-                              <input type="checkbox" checked={option.isNoneOption} onChange={(event) => updateChoiceOption(group.key, option.key, { isNoneOption: event.target.checked })} /> None
+                        <div className="choice-guided-main">
+                          <label className="choice-question-field">
+                            <span>Question the server asks</span>
+                            <input value={group.label} placeholder="Example: Choose your bread" onChange={(event) => updateChoiceGroup(group.key, { label: event.target.value })} />
+                          </label>
+
+                          <fieldset className="composition-question">
+                            <legend>What does this choice control?</legend>
+                            <div className="composition-answer-row">
+                              <button type="button" data-selected={group.relationship === "contains"} onClick={() => updateChoiceGroup(group.key, { relationship: "contains" })}>Part of the item</button>
+                              <button type="button" data-selected={group.relationship === "comes_with"} onClick={() => updateChoiceGroup(group.key, { relationship: "comes_with" })}>Something alongside</button>
+                            </div>
+                          </fieldset>
+
+                          <div className="choice-rule-fields">
+                            <label>
+                              <span>Minimum picks</span>
+                              <input type="number" min="0" step="1" value={group.minSelections} onChange={(event) => updateChoiceGroup(group.key, { minSelections: Number(event.target.value) })} />
                             </label>
                             <label>
-                              <span>+$</span>
-                              <input type="number" step="0.01" value={option.priceAdjustment} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustment: Number(event.target.value) })} />
+                              <span>Maximum picks</span>
+                              <input type="number" min="1" step="1" value={group.maxSelections ?? ""} placeholder="Required" onChange={(event) => updateChoiceGroup(group.key, { maxSelections: event.target.value === "" ? null : Number(event.target.value) })} />
                             </label>
-                            <label className="choice-default-check">
-                              <input type="checkbox" checked={option.priceAdjustmentConfigured} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustmentConfigured: event.target.checked })} /> Price confirmed
-                            </label>
-                            <label className="choice-default-check">
-                              <input type="checkbox" checked={option.isDefault} onChange={(event) => updateChoiceOption(group.key, option.key, { isDefault: event.target.checked })} /> Default
-                            </label>
-                            <button type="button" className="composition-remove" onClick={() => updateChoiceGroup(group.key, { options: group.options.filter((candidate) => candidate.key !== option.key) })}>×</button>
                           </div>
-                        ))}
-                      </div>
-                      <button type="button" className="choice-add-option" onClick={() => addChoiceOption(group.key)}>+ Add option</button>
-                    </article>
-                  ))}
-                </div>
+                        </div>
+
+                        <div className="choice-option-editor choice-option-editor--guided">
+                          <div className="choice-options-label">OPTIONS</div>
+                          {group.options.map((option, optionIndex) => (
+                            <div className="choice-option-card" key={option.key}>
+                              <span className="choice-option-number">{optionIndex + 1}</span>
+                              <label>
+                                <span>Option name</span>
+                                <input value={option.label} placeholder="Example: Rye" onChange={(event) => updateChoiceOption(group.key, option.key, { label: event.target.value })} />
+                              </label>
+                              <label>
+                                <span>Ingredient</span>
+                                <select value={option.ingredientId ?? ""} onChange={(event) => updateChoiceOption(group.key, option.key, { ingredientId: event.target.value || null })}>
+                                  <option value="">No ingredient link</option>
+                                  {catalog.ingredients.filter((ingredient) => ingredient.isActive).map((ingredient) => (
+                                    <option key={ingredient.id} value={ingredient.id}>{ingredient.name}</option>
+                                  ))}
+                                </select>
+                              </label>
+                              <label>
+                                <span>Price change</span>
+                                <input type="number" step="0.01" value={option.priceAdjustment} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustment: Number(event.target.value) })} />
+                              </label>
+                              <label className="composition-toggle composition-toggle--confirm">
+                                <input type="checkbox" checked={option.priceAdjustmentConfigured} onChange={(event) => updateChoiceOption(group.key, option.key, { priceAdjustmentConfigured: event.target.checked })} />
+                                <span>Price confirmed</span>
+                              </label>
+                              <label className="composition-toggle">
+                                <input type="checkbox" checked={option.isDefault} onChange={(event) => updateChoiceOption(group.key, option.key, { isDefault: event.target.checked })} />
+                                <span>Default</span>
+                              </label>
+                              <details className="choice-option-more">
+                                <summary>More</summary>
+                                <div>
+                                  <label>
+                                    <span>Preparation</span>
+                                    <select value={option.preparationSchemeId ?? ""} onChange={(event) => updateChoiceOption(group.key, option.key, { preparationSchemeId: event.target.value || null })}>
+                                      <option value="">No prep</option>
+                                      {catalog.preparationSchemes.filter((scheme) => scheme.isActive).map((scheme) => (
+                                        <option key={scheme.id} value={scheme.id}>{scheme.label}</option>
+                                      ))}
+                                    </select>
+                                  </label>
+                                  <label className="composition-toggle">
+                                    <input type="checkbox" checked={option.isNoneOption} onChange={(event) => updateChoiceOption(group.key, option.key, { isNoneOption: event.target.checked })} />
+                                    <span>This means “None”</span>
+                                  </label>
+                                </div>
+                              </details>
+                              <button type="button" className="composition-remove" onClick={() => updateChoiceGroup(group.key, { options: group.options.filter((candidate) => candidate.key !== option.key) })}>Remove</button>
+                            </div>
+                          ))}
+                        </div>
+                        <button type="button" className="choice-add-option choice-add-option--guided" onClick={() => addChoiceOption(group.key)}><Plus aria-hidden="true" /> Add another option</button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="composition-section composition-section--review">
+                <header className="composition-section-heading">
+                  <div>
+                    <p className="composition-step-label">C · PUBLISH CHECK</p>
+                    <h3>{compositionReadinessIssues.length === 0 ? "This item is ready." : "Finish these before publishing."}</h3>
+                    <p>The app checks the food structure so Order Entry and Kitchen cannot receive a broken item.</p>
+                  </div>
+                  {compositionReadinessIssues.length === 0 ? <CheckCircle aria-hidden="true" className="composition-ready-icon" /> : <Warning aria-hidden="true" className="composition-warning-icon" />}
+                </header>
+
+                {compositionReadinessIssues.length > 0 ? (
+                  <ol className="composition-checklist">
+                    {compositionReadinessIssues.map((issue) => <li key={issue}>{issue}</li>)}
+                  </ol>
+                ) : (
+                  <div className="composition-ready-message"><CheckCircle aria-hidden="true" /><span>Food structure complete. Publish will make it available in Order Entry.</span></div>
+                )}
               </section>
 
               {compositionError ? <div className="notice notice--error">{compositionError}</div> : null}
             </div>
 
-            <footer className="drawer-actions composition-actions">
-              <button className="button" data-variant="primary" disabled={compositionSaving} type="button" onClick={() => void saveComposition()}>
-                {compositionSaving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
-                Save configuration
-              </button>
-              <button className="button" data-variant="quiet" disabled={compositionSaving} type="button" onClick={() => setCompositionItem(null)}>Cancel</button>
+            <footer className="drawer-actions composition-actions composition-actions--guided">
+              {compositionItem.status === "draft" ? (
+                <>
+                  <button className="button" data-variant="quiet" disabled={compositionSaving} type="button" onClick={() => void saveComposition(false)}>
+                    {compositionSaving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
+                    Save draft
+                  </button>
+                  <button
+                    className="button"
+                    data-variant="primary"
+                    disabled={compositionSaving || compositionReadinessIssues.length > 0}
+                    type="button"
+                    onClick={() => void saveComposition(true)}
+                  >
+                    Publish item
+                  </button>
+                </>
+              ) : (
+                <button className="button" data-variant="primary" disabled={compositionSaving} type="button" onClick={() => void saveComposition(false)}>
+                  {compositionSaving ? <SpinnerGap aria-hidden="true" className="spin" /> : null}
+                  Save configuration
+                </button>
+              )}
+              <button className="button" data-variant="quiet" disabled={compositionSaving} type="button" onClick={() => setCompositionItem(null)}>Close</button>
             </footer>
           </section>
         </div>

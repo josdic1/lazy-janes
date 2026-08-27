@@ -1,9 +1,11 @@
 import { z } from "zod";
+import { universalComponentRoleSchema } from "./menuGrammar.js";
 
 export const MENU_ITEM_STATUSES = [
   "available",
   "eighty_sixed",
   "inactive",
+  "draft",
 ] as const;
 
 export const menuItemStatusSchema = z.enum(MENU_ITEM_STATUSES);
@@ -193,7 +195,7 @@ const menuItemInputObjectSchema = z.object({
   description: descriptionSchema.default(null),
   categoryId: idSchema,
   price: priceSchema,
-  status: menuItemStatusSchema.default("available"),
+  status: menuItemStatusSchema.default("draft"),
   isSpecial: z.boolean().default(false),
   isKids: z.boolean().default(false),
   hasKidsVersion: z.boolean().default(false),
@@ -371,6 +373,7 @@ export const menuItemIngredientSchema = z.object({
   ingredientName: nameSchema,
   ingredientKind: ingredientKindSchema,
   role: componentRoleSchema,
+  contextualRole: universalComponentRoleSchema.nullable().default(null),
   relationship: componentRelationshipSchema.nullable(),
   preparationSchemeId: idSchema.nullable(),
   allergenFlags: allergenFlagsSchema,
@@ -469,6 +472,7 @@ export type MenuCustomizationCatalog = z.infer<
 const itemIngredientInputSchema = z.object({
   ingredientId: idSchema,
   role: componentRoleSchema.default("other"),
+  contextualRole: universalComponentRoleSchema.nullable().default(null),
   relationship: componentRelationshipSchema.nullable().default(null),
   preparationSchemeId: idSchema.nullable().default(null),
   canRemove: z.boolean().default(true),

@@ -101,6 +101,26 @@ afterAll(async () => {
 });
 
 describe("POST /api/parties", () => {
+  it("rejects a party without a name", async () => {
+    const userId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedHost(
+        userId,
+        "Unnamed Party Test Host",
+      );
+
+      const response = await agent
+        .post("/api/parties")
+        .send({ guestCount: 4 });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe("Invalid party");
+    } finally {
+      await deleteAuthenticatedUser(userId);
+    }
+  });
+
   it("creates a waiting party and records arrival", async () => {
     const userId = randomUUID();
     let partyId: string | undefined;

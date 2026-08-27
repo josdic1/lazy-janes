@@ -375,7 +375,7 @@ export function OrderEntryPage() {
   const visibleItems = useMemo(() => {
     const query = search.trim().toLowerCase();
     const availableItems = menu.filter(
-      (item) => !item.isModifier && item.status !== "inactive",
+      (item) => !item.isModifier && (item.status === "available" || item.status === "eighty_sixed"),
     );
 
     if (query !== "") {
@@ -1420,9 +1420,14 @@ export function OrderEntryPage() {
     }
 
     const name = partyName.trim();
+
+    if (!name) {
+      throw new Error("Party name is required.");
+    }
+
     const created = await createParty({
+      name,
       guestCount,
-      ...(name ? { name } : {}),
     });
     await seatParty(created.id, { tableIds: [selectedTable.id] });
     setSelectedPartyId(created.id);
@@ -1676,7 +1681,8 @@ export function OrderEntryPage() {
                 <input
                   type="text"
                   maxLength={80}
-                  placeholder="Optional"
+                  placeholder="Required"
+                  required
                   value={partyName}
                   onChange={(event) => setPartyName(event.target.value)}
                 />

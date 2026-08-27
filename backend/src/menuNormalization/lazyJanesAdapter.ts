@@ -192,7 +192,7 @@ export function normalizeLazyJanesOffering({
     return {
       id: component.ingredientId,
       name: component.ingredientName,
-      role: mapContextualRole(component.role),
+      role: component.contextualRole ?? mapContextualRole(component.role),
       relationship: component.relationship,
       capabilities,
       replacementTargets,

@@ -13,7 +13,7 @@ export const partyStatusSchema = z.enum(PARTY_STATUSES);
 export type PartyStatus = z.infer<typeof partyStatusSchema>;
 
 export const createPartyInputSchema = z.object({
-  name: z.string().trim().min(1).max(80).optional(),
+  name: z.string().trim().min(1, "Party name is required").max(80),
   guestCount: z.number().int().positive(),
 });
 
