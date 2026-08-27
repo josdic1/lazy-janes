@@ -103,11 +103,14 @@ function errorMessage(error: unknown): string {
 }
 
 function partyLabel(party: StackParty): string {
-  if (party.tables.length > 0) {
-    return party.tables.map((table) => `Table ${table.label}`).join(" + ");
-  }
+  const tableLabel = party.tables.length > 0
+    ? party.tables.map((table) => `Table ${table.label}`).join(" + ")
+    : null;
 
-  return `Waiting · ${party.guestCount} guests`;
+  if (party.name && tableLabel) return `${party.name} · ${tableLabel}`;
+  if (party.name) return party.name;
+  if (tableLabel) return tableLabel;
+  return `Party of ${party.guestCount}`;
 }
 
 function orderLabel(order: StackOrder, context?: string): string {
@@ -168,6 +171,97 @@ function nextTableLabelForSection(
   return String((usedNumbers.length > 0 ? Math.max(...usedNumbers) : 0) + 1);
 }
 
+const FLOOR_GRID_STEP = 5;
+const FLOOR_TABLE_WIDTH_PX = 86;
+const FLOOR_TABLE_HEIGHT_PX = 62;
+const FLOOR_TABLE_GAP_PX = 10;
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function snapToFloorGrid(value: number): number {
+  return Math.round(value / FLOOR_GRID_STEP) * FLOOR_GRID_STEP;
+}
+
+function nearestOpenFloorPosition({
+  rawX,
+  rawY,
+  bounds,
+  sectionId,
+  tableId,
+  tables,
+}: {
+  rawX: number;
+  rawY: number;
+  bounds: DOMRect;
+  sectionId: string;
+  tableId: string;
+  tables: DiningTableRecord[];
+}): { floorX: number; floorY: number } | null {
+  const marginX = Math.ceil(
+    (((FLOOR_TABLE_WIDTH_PX / 2) + FLOOR_TABLE_GAP_PX) / bounds.width * 100) /
+      FLOOR_GRID_STEP,
+  ) * FLOOR_GRID_STEP;
+  const marginY = Math.ceil(
+    (((FLOOR_TABLE_HEIGHT_PX / 2) + FLOOR_TABLE_GAP_PX) / bounds.height * 100) /
+      FLOOR_GRID_STEP,
+  ) * FLOOR_GRID_STEP;
+
+  const minX = clamp(marginX, FLOOR_GRID_STEP, 50);
+  const maxX = 100 - minX;
+  const minY = clamp(marginY, FLOOR_GRID_STEP, 50);
+  const maxY = 100 - minY;
+
+  const baseX = clamp(snapToFloorGrid(rawX), minX, maxX);
+  const baseY = clamp(snapToFloorGrid(rawY), minY, maxY);
+
+  const xClearance = ((FLOOR_TABLE_WIDTH_PX + FLOOR_TABLE_GAP_PX) / bounds.width) * 100;
+  const yClearance = ((FLOOR_TABLE_HEIGHT_PX + FLOOR_TABLE_GAP_PX) / bounds.height) * 100;
+
+  const collides = (floorX: number, floorY: number) =>
+    tables.some(
+      (table) =>
+        table.id !== tableId &&
+        table.isActive &&
+        table.sectionId === sectionId &&
+        Math.abs(table.floorX - floorX) < xClearance &&
+        Math.abs(table.floorY - floorY) < yClearance,
+    );
+
+  const candidates: Array<{ floorX: number; floorY: number; distance: number }> = [];
+  const maxRadius = Math.ceil(100 / FLOOR_GRID_STEP);
+
+  for (let radius = 0; radius <= maxRadius; radius += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      for (let dy = -radius; dy <= radius; dy += 1) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+
+        const floorX = baseX + dx * FLOOR_GRID_STEP;
+        const floorY = baseY + dy * FLOOR_GRID_STEP;
+
+        if (floorX < minX || floorX > maxX || floorY < minY || floorY > maxY) {
+          continue;
+        }
+
+        candidates.push({
+          floorX,
+          floorY,
+          distance: (floorX - rawX) ** 2 + (floorY - rawY) ** 2,
+        });
+      }
+    }
+
+    const open = candidates
+      .filter((candidate) => !collides(candidate.floorX, candidate.floorY))
+      .sort((a, b) => a.distance - b.distance)[0];
+
+    if (open) return { floorX: open.floorX, floorY: open.floorY };
+  }
+
+  return null;
+}
+
 export function HomePage() {
   const { user } = useAuth();
   const [snapshot, setSnapshot] = useState<StackSnapshot | null>(null);
@@ -181,6 +275,7 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [newPartyName, setNewPartyName] = useState("");
   const [newPartyGuests, setNewPartyGuests] = useState("2");
   const [seatingPartyId, setSeatingPartyId] = useState<string | null>(null);
   const [selectedFloorTableIds, setSelectedFloorTableIds] = useState<string[]>([]);
@@ -382,6 +477,14 @@ export function HomePage() {
     return sections;
   }, [tables]);
 
+  const partyByTableId = useMemo(() => {
+    const byTable = new Map<string, StackParty>();
+    for (const party of activeParties) {
+      for (const table of party.tables) byTable.set(table.id, party);
+    }
+    return byTable;
+  }, [activeParties]);
+
   const seatingParty = seatingPartyId
     ? waitingParties.find((party) => party.id === seatingPartyId) ?? null
     : null;
@@ -482,17 +585,23 @@ export function HomePage() {
   async function submitNewParty(event: FormEvent) {
     event.preventDefault();
     const guestCount = Number(newPartyGuests);
+    const name = newPartyName.trim();
 
     if (!Number.isInteger(guestCount) || guestCount < 1) {
       setError("Guest count must be at least 1.");
       return;
     }
 
-    await runAction(
+    const created = await runAction(
       "new-party",
-      () => createParty({ guestCount }),
-      `Party of ${guestCount} added to the wait.`,
+      () => createParty({
+        guestCount,
+        ...(name ? { name } : {}),
+      }),
+      name ? `${name} added to the wait.` : `Party of ${guestCount} added to the wait.`,
     );
+
+    if (created) setNewPartyName("");
   }
 
   function beginFloorSeating(party: StackParty) {
@@ -500,7 +609,7 @@ export function HomePage() {
     setSelectedFloorTableIds([]);
     setArrangeFloor(false);
     setError(null);
-    setNotice(`Choose table${tables.length === 1 ? "" : "s"} on the floor for ${party.guestCount} guests.`);
+    setNotice(`Choose table${tables.length === 1 ? "" : "s"} on the floor for ${party.name ?? `${party.guestCount} guests`}.`);
   }
 
   function toggleFloorTable(tableId: string) {
@@ -531,7 +640,7 @@ export function HomePage() {
     const seated = await runAction(
       `seat-${seatingParty.id}`,
       () => seatParty(seatingParty.id, { tableIds: selectedFloorTableIds }),
-      `${seatingParty.guestCount}-top seated.`,
+      seatingParty.name ? `${seatingParty.name} seated.` : `${seatingParty.guestCount}-top seated.`,
     );
 
     if (seated) {
@@ -553,19 +662,26 @@ export function HomePage() {
     if (!table) return;
 
     const bounds = event.currentTarget.getBoundingClientRect();
-    const floorX = Math.max(
-      5,
-      Math.min(95, Math.round(((event.clientX - bounds.left) / bounds.width) * 100)),
-    );
-    const floorY = Math.max(
-      8,
-      Math.min(92, Math.round(((event.clientY - bounds.top) / bounds.height) * 100)),
-    );
+    const rawX = ((event.clientX - bounds.left) / bounds.width) * 100;
+    const rawY = ((event.clientY - bounds.top) / bounds.height) * 100;
+    const position = nearestOpenFloorPosition({
+      rawX,
+      rawY,
+      bounds,
+      sectionId,
+      tableId: table.id,
+      tables: managedTables,
+    });
+
+    if (!position) {
+      setError("No open grid position is available there.");
+      return;
+    }
 
     await runAction(
       `move-table-${table.id}`,
-      () => updateDiningTable(table.id, { sectionId, floorX, floorY }),
-      `Table ${table.label} moved.`,
+      () => updateDiningTable(table.id, { sectionId, ...position }),
+      `Table ${table.label} snapped into place.`,
     );
   }
 
@@ -853,8 +969,18 @@ export function HomePage() {
 
           {canManageParties ? (
             <form className="operations-new-party" onSubmit={(event) => void submitNewParty(event)}>
-              <label>
-                <span>New party</span>
+              <label className="operations-party-name-field">
+                <span>Party name</span>
+                <input
+                  type="text"
+                  maxLength={80}
+                  placeholder="Smith"
+                  value={newPartyName}
+                  onChange={(event) => setNewPartyName(event.target.value)}
+                />
+              </label>
+              <label className="operations-party-size-field">
+                <span>Guests</span>
                 <input
                   type="number"
                   min="1"
@@ -881,7 +1007,7 @@ export function HomePage() {
                   <strong>Dining Room Floor</strong>
                   <span>
                     {seatingParty
-                      ? `Seating ${seatingParty.guestCount} guests · choose one or more available tables`
+                      ? `Seating ${seatingParty.name ? `${seatingParty.name} · ` : ""}${seatingParty.guestCount} guests · choose one or more available tables`
                       : floorSections.length > 0
                         ? "Tables created in Floor Setup appear here automatically."
                         : "Create tables in Floor Setup to build the room."}
@@ -942,6 +1068,7 @@ export function HomePage() {
                     >
                       {section.tables.map((table) => {
                         const selected = selectedFloorTableIds.includes(table.id);
+                        const occupyingParty = partyByTableId.get(table.id) ?? null;
                         return (
                           <button
                             type="button"
@@ -962,8 +1089,20 @@ export function HomePage() {
                             aria-label={`Table ${table.label}, ${table.capacity} seats${table.occupied ? ", occupied" : ", available"}`}
                           >
                             <strong>{table.label}</strong>
-                            <small>{table.capacity} seats</small>
-                            <span>{table.occupied ? "Occupied" : selected ? "Selected" : "Available"}</span>
+                            <small>
+                              {table.occupied && occupyingParty?.name
+                                ? occupyingParty.name
+                                : `${table.capacity} seats`}
+                            </small>
+                            <span>
+                              {table.occupied
+                                ? occupyingParty
+                                  ? `${occupyingParty.guestCount} guests`
+                                  : "Occupied"
+                                : selected
+                                  ? "Selected"
+                                  : "Available"}
+                            </span>
                           </button>
                         );
                       })}
@@ -973,7 +1112,7 @@ export function HomePage() {
               </div>
 
               {arrangeFloor ? (
-                <p className="operations-floor-arrange-help">Drag tables to match the real dining room. Positions are saved.</p>
+                <p className="operations-floor-arrange-help">Drag tables to match the real dining room. Tables snap to the grid and cannot overlap. Positions are saved.</p>
               ) : null}
             </section>
           ) : null}

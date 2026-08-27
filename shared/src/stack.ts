@@ -82,6 +82,7 @@ export type StackPartyEvent = z.infer<
 
 export const stackPartySchema = z.object({
   id: z.string().uuid(),
+  name: z.string().nullable(),
   guestCount: z.number().int().positive(),
   status: partyStatusSchema,
   arrivedAt: z.string().datetime(),

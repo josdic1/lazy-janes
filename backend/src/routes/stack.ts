@@ -16,6 +16,7 @@ import { pool } from "../db/pool.js";
 
 type PartyRow = {
   id: string;
+  name: string | null;
   guest_count: number;
   status: StackParty["status"];
   arrived_at: Date;
@@ -172,6 +173,7 @@ stackRouter.get("/", async (request, response) => {
       `
         SELECT
           id,
+          name,
           guest_count,
           status,
           arrived_at,
@@ -548,6 +550,7 @@ stackRouter.get("/", async (request, response) => {
       generatedAt: new Date().toISOString(),
       parties: parties.rows.map((party) => ({
         id: party.id,
+        name: party.name,
         guestCount: party.guest_count,
         status: party.status,
         arrivedAt: party.arrived_at.toISOString(),

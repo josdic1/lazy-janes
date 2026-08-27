@@ -23,6 +23,7 @@ import { pool } from "../db/pool.js";
 
 type PartyRow = {
   id: string;
+  name: string | null;
   guest_count: number;
   status: PartyStatus;
   created_by_user_id: string;
@@ -60,6 +61,7 @@ type DiningTableOptionRow = {
 const partySelect = `
   SELECT
     id,
+    name,
     guest_count,
     status,
     created_by_user_id,
@@ -75,6 +77,7 @@ const partySelect = `
 function toParty(row: PartyRow): Party {
   return {
     id: row.id,
+    name: row.name,
     guestCount: row.guest_count,
     status: row.status,
     createdByUserId: row.created_by_user_id,
@@ -124,6 +127,7 @@ partiesRouter.get("/", async (_request, response) => {
   const result = await pool.query<PartyListRow>(`
     SELECT
       parties.id,
+      parties.name,
       parties.guest_count,
       parties.status,
       parties.created_by_user_id,
@@ -379,8 +383,8 @@ partiesRouter.post(
         WHERE section_id = $1
       `, [section.id]);
       const slot = tableCount.rows[0]?.count ?? 0;
-      const floorX = input.data.floorX ?? 8 + ((slot % 5) * 20);
-      const floorY = input.data.floorY ?? 10 + ((Math.floor(slot / 5) % 4) * 27);
+      const floorX = input.data.floorX ?? 10 + ((slot % 5) * 20);
+      const floorY = input.data.floorY ?? 10 + ((Math.floor(slot / 5) % 5) * 20);
 
       const result = await client.query<DiningTableOptionRow>(`
         INSERT INTO dining_tables (
@@ -622,13 +626,15 @@ partiesRouter.post("/", async (request, response) => {
     const partyResult = await client.query<PartyRow>(
       `
         INSERT INTO parties (
+          name,
           guest_count,
           status,
           created_by_user_id
         )
-        VALUES ($1, 'waiting', $2)
+        VALUES ($1, $2, 'waiting', $3)
         RETURNING
           id,
+          name,
           guest_count,
           status,
           created_by_user_id,
@@ -639,7 +645,7 @@ partiesRouter.post("/", async (request, response) => {
           cancelled_by_user_id,
           cancellation_reason
       `,
-      [input.data.guestCount, userId],
+      [input.data.name ?? null, input.data.guestCount, userId],
     );
 
     const party = partyResult.rows[0];
@@ -811,6 +817,7 @@ partiesRouter.post(
           WHERE id = $1
           RETURNING
             id,
+            name,
             guest_count,
             status,
             created_by_user_id,
@@ -1009,6 +1016,7 @@ partiesRouter.post(
           WHERE id = $1
           RETURNING
             id,
+            name,
             guest_count,
             status,
             created_by_user_id,

@@ -113,13 +113,14 @@ describe("POST /api/parties", () => {
 
       const response = await agent
         .post("/api/parties")
-                .send({ guestCount: 7 });
+                .send({ name: "Dicker", guestCount: 7 });
 
       expect(response.status).toBe(201);
 
       const party = partySchema.parse(response.body);
       partyId = party.id;
 
+      expect(party.name).toBe("Dicker");
       expect(party.guestCount).toBe(7);
       expect(party.status).toBe("waiting");
       expect(party.createdByUserId).toBe(userId);
@@ -217,6 +218,8 @@ describe("dining room management", () => {
         label: "1",
         capacity: 4,
       });
+      expect(table.floorX % 5).toBe(0);
+      expect(table.floorY % 5).toBe(0);
     } finally {
       if (tableId) {
         await pool.query(

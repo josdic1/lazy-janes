@@ -13,6 +13,7 @@ export const partyStatusSchema = z.enum(PARTY_STATUSES);
 export type PartyStatus = z.infer<typeof partyStatusSchema>;
 
 export const createPartyInputSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
   guestCount: z.number().int().positive(),
 });
 
@@ -37,6 +38,7 @@ export type SeatPartyInput = z.infer<
 
 export const partySchema = z.object({
   id: z.string().uuid(),
+  name: z.string().nullable(),
   guestCount: z.number().int().positive(),
   status: partyStatusSchema,
   createdByUserId: z.string().uuid(),

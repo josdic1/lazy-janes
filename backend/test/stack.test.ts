@@ -59,11 +59,12 @@ describe("GET /api/stack", () => {
         `
           INSERT INTO parties (
             id,
+            name,
             guest_count,
             status,
             created_by_user_id
           )
-          VALUES ($1, 2, 'in_service', $2)
+          VALUES ($1, 'Stack Party', 2, 'in_service', $2)
         `,
         [partyId, userId],
       );
@@ -268,6 +269,7 @@ describe("GET /api/stack", () => {
       );
 
       expect(party).toBeDefined();
+      expect(party?.name).toBe("Stack Party");
       expect(party?.status).toBe("in_service");
       expect(party?.tables).toEqual([
         {

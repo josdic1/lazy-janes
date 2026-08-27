@@ -173,10 +173,13 @@ export function KitchenBoardPage() {
     if (!snapshot) return [];
 
     const partyOrders = snapshot.parties.flatMap((party) => {
-      const context =
+      const tableContext =
         party.tables.length > 0
           ? party.tables.map((table) => `Table ${table.label}`).join(" + ")
-          : `Party of ${party.guestCount}`;
+          : null;
+      const context = party.name && tableContext
+        ? `${party.name} · ${tableContext}`
+        : party.name ?? tableContext ?? `Party of ${party.guestCount}`;
 
       return party.orders.map((order) => ({ order, context }));
     });

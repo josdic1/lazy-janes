@@ -280,6 +280,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); box-sha
 .operations-payment-form label,
 .service-customer-details label,
 .service-guest-count,
+.service-party-name,
 .operations-new-party label,
 .ingredient-library-form label:not(.checkbox-field),
 .composition-editor label:not(.checkbox-field) {
@@ -670,7 +671,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .service-context-button small { color: var(--muted); font-size: 9px; }
 .service-context-button[data-selected="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
 .service-context-empty { color: var(--muted); font-size: 11px; }
-.service-context-new { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.service-context-new { min-width: 0; display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.service-party-name { width: 150px; }
+.service-party-name input { width: 150px; }
 .service-guest-count { width: 74px; }
 .service-guest-count input { width: 74px; }
 .service-customer-details { display: grid; grid-template-columns: 1fr 1fr 2fr; }
@@ -983,15 +986,16 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   min-width: 0;
   padding: 8px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 72px auto;
   gap: 6px;
   align-items: end;
   border-bottom: 1px solid var(--line);
   border-left: 1px solid var(--line);
   background: var(--surface-2);
 }
-.operations-new-party label { min-width: 0; grid-template-columns: 1fr 58px; align-items: center; gap: 6px; }
-.operations-new-party input { width: 58px; min-width: 0; }
+.operations-new-party label { min-width: 0; grid-template-columns: 1fr; align-items: stretch; gap: 3px; }
+.operations-new-party input { width: 100%; min-width: 0; }
+.operations-new-party .operations-party-size-field input { text-align: center; }
 .operations-new-party .button { min-width: 92px; padding-inline: 10px; }
 
 .operations-floor-map-shell {
@@ -1058,9 +1062,14 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   background-image:
     linear-gradient(rgba(23, 26, 24, .035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(23, 26, 24, .035) 1px, transparent 1px);
-  background-size: 28px 28px;
+  background-size: 5% 5%;
 }
-.operations-floor-room-canvas[data-arrange="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+.operations-floor-room-canvas[data-arrange="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background-image:
+    linear-gradient(rgba(15, 116, 111, .11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 116, 111, .11) 1px, transparent 1px);
+}
 .operations-floor-table {
   position: absolute;
   transform: translate(-50%, -50%);
@@ -1381,7 +1390,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 
 .operations-floor-room-canvas {
   height: 500px;
-  background-size: 32px 32px;
+  background-size: 5% 5%;
 }
 
 .operations-floor-table {

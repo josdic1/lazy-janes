@@ -91,7 +91,10 @@ function priceDelta(value: number, configured = true): string {
 }
 
 function partyLabel(party: PartyListItem): string {
-  return party.tableLabels.join(" + ");
+  const tables = party.tableLabels.map((label) => `Table ${label}`).join(" + ");
+  if (party.name && tables) return `${party.name} · ${tables}`;
+  if (party.name) return party.name;
+  return tables || `Party of ${party.guestCount}`;
 }
 
 function sortedKey(values: string[]): string {
@@ -204,6 +207,7 @@ export function OrderEntryPage() {
     useState<FulfillmentType>("dine_in");
   const [selectedPartyId, setSelectedPartyId] = useState("");
   const [newTableId, setNewTableId] = useState("");
+  const [partyName, setPartyName] = useState("");
   const [guestCount, setGuestCount] = useState(2);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -1415,10 +1419,15 @@ export function OrderEntryPage() {
       throw new Error("Choose an existing table or start a new table.");
     }
 
-    const created = await createParty({ guestCount });
+    const name = partyName.trim();
+    const created = await createParty({
+      guestCount,
+      ...(name ? { name } : {}),
+    });
     await seatParty(created.id, { tableIds: [selectedTable.id] });
     setSelectedPartyId(created.id);
     setNewTableId("");
+    setPartyName("");
     await refreshServiceContext();
     return created.id;
   }
@@ -1661,6 +1670,17 @@ export function OrderEntryPage() {
                   ))
                 )}
               </div>
+
+              <label className="service-party-name">
+                <span>Party name</span>
+                <input
+                  type="text"
+                  maxLength={80}
+                  placeholder="Optional"
+                  value={partyName}
+                  onChange={(event) => setPartyName(event.target.value)}
+                />
+              </label>
 
               <label className="service-guest-count">
                 <span>Guests</span>
