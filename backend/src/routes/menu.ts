@@ -39,7 +39,7 @@ import {
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
 import { getCustomizationCatalog } from "../menuCustomizationCatalog.js";
-import { normalizeLazyJanesOffering } from "../menuNormalization/lazyJanesAdapter.js";
+import { normalizeLazyJanesMenu } from "../menuNormalization/lazyJanesMenuAdapter.js";
 
 type MenuItemRow = {
   id: string;
@@ -608,17 +608,11 @@ menuRouter.get("/normalized", async (_request, response) => {
     getCustomizationCatalog(),
   ]);
 
-  // Drafts may intentionally be incomplete while a manager is building them.
-  // Only service-visible/non-draft items belong in the normalized ordering feed.
   response.json(
-    items
-      .filter((item) => item.status !== "draft")
-      .map((item) =>
-        normalizeLazyJanesOffering({
-          item,
-          catalog,
-        }),
-      ),
+    normalizeLazyJanesMenu({
+      items,
+      catalog,
+    }),
   );
 });
 

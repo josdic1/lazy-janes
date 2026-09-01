@@ -898,3 +898,193 @@ export const universalOfferingSchema = z.object({
 
 export type UniversalOffering =
   z.infer<typeof universalOfferingSchema>;
+
+export const menuRuleTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("menu"),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("offering"),
+    offeringId: z.string().min(1),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("choice_option"),
+    offeringId: z.string().min(1),
+    choiceSlotId: z.string().min(1),
+    optionId: z.string().min(1),
+  }).strict(),
+]);
+
+export type MenuRuleTarget =
+  z.infer<typeof menuRuleTargetSchema>;
+
+const localTimeConditionSchema = z.object({
+  kind: z.literal("local_time"),
+  before: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+  atOrAfter: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional(),
+}).strict().superRefine((condition, ctx) => {
+  if (
+    condition.before === undefined &&
+    condition.atOrAfter === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["before"],
+      message: "local-time condition must define before or atOrAfter",
+    });
+  }
+});
+
+const guestCountConditionSchema = z.object({
+  kind: z.literal("guest_count"),
+  minimum: z.number().int().positive().optional(),
+  maximum: z.number().int().positive().optional(),
+}).strict().superRefine((condition, ctx) => {
+  if (
+    condition.minimum === undefined &&
+    condition.maximum === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minimum"],
+      message: "guest-count condition must define minimum or maximum",
+    });
+  }
+
+  if (
+    condition.minimum !== undefined &&
+    condition.maximum !== undefined &&
+    condition.minimum > condition.maximum
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minimum"],
+      message: "guest-count minimum cannot exceed maximum",
+    });
+  }
+});
+
+export const menuRuleConditionSchema = z.discriminatedUnion("kind", [
+  localTimeConditionSchema,
+  guestCountConditionSchema,
+]);
+
+export type MenuRuleCondition =
+  z.infer<typeof menuRuleConditionSchema>;
+
+export const menuRuleSchema = z.object({
+  id: z.string().min(1),
+  target: menuRuleTargetSchema,
+  when: menuRuleConditionSchema,
+  effect: z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("availability"),
+      available: z.boolean(),
+    }).strict(),
+
+    z.object({
+      kind: z.literal("minimum_participants"),
+      count: z.number().int().positive(),
+    }).strict(),
+
+    z.object({
+      kind: z.literal("whole_party_required"),
+      required: z.boolean(),
+    }).strict(),
+  ]),
+  evidence: evidenceSchema.optional(),
+}).strict();
+
+export type MenuRule =
+  z.infer<typeof menuRuleSchema>;
+
+export const universalMenuSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  offerings: z.array(universalOfferingSchema).default([]),
+  rules: z.array(menuRuleSchema).default([]),
+  evidence: evidenceSchema.optional(),
+}).strict().superRefine((menu, ctx) => {
+  const offeringsById = new Map(
+    menu.offerings.map((offering) => [offering.id, offering]),
+  );
+
+  for (const [offeringIndex, offering] of menu.offerings.entries()) {
+    for (const [choiceIndex, choice] of offering.choices.entries()) {
+      for (const [optionIndex, option] of choice.options.entries()) {
+        if (
+          option.target.kind === "offering" &&
+          !offeringsById.has(option.target.id)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+              "offerings",
+              offeringIndex,
+              "choices",
+              choiceIndex,
+              "options",
+              optionIndex,
+              "target",
+              "id",
+            ],
+            message: "choice option targets an unavailable offering",
+          });
+        }
+      }
+    }
+  }
+
+  for (const [ruleIndex, rule] of menu.rules.entries()) {
+    const target = rule.target;
+
+    if (target.kind === "menu") {
+      continue;
+    }
+
+    const offering = offeringsById.get(target.offeringId);
+
+    if (!offering) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rules", ruleIndex, "target", "offeringId"],
+        message: "menu rule targets an unavailable offering",
+      });
+      continue;
+    }
+
+    if (target.kind !== "choice_option") {
+      continue;
+    }
+
+    const choice = offering.choices.find(
+      (candidate) => candidate.id === target.choiceSlotId,
+    );
+
+    if (!choice) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rules", ruleIndex, "target", "choiceSlotId"],
+        message: "menu rule targets an unavailable choice slot",
+      });
+      continue;
+    }
+
+    if (
+      !choice.options.some(
+        (option) => option.id === target.optionId,
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["rules", ruleIndex, "target", "optionId"],
+        message: "menu rule targets an unavailable choice option",
+      });
+    }
+  }
+});
+
+export type UniversalMenu =
+  z.infer<typeof universalMenuSchema>;

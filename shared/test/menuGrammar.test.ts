@@ -4,6 +4,7 @@ import {
   choiceSlotSchema,
   measureSchema,
   resourceRequirementSchema,
+  universalMenuSchema,
   universalOfferingSchema,
 } from "../src/menuGrammar.js";
 
@@ -302,6 +303,135 @@ describe("universal menu grammar", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+
+  it("rejects menu references to unavailable offerings", () => {
+    expect(() =>
+      universalMenuSchema.parse({
+        id: "broken-menu",
+        name: "Broken Menu",
+        offerings: [
+          {
+            id: "parent",
+            name: "Parent",
+            kind: null,
+            choices: [
+              {
+                id: "side",
+                label: "Side",
+                minSelections: 1,
+                maxSelections: 1,
+                options: [
+                  {
+                    id: "vegetables",
+                    label: "Vegetables",
+                    target: {
+                      kind: "offering",
+                      id: "missing-vegetable-offering",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow("choice option targets an unavailable offering");
+  });
+
+  it("supports menu-level local-time availability rules", () => {
+    const result = universalMenuSchema.parse({
+      id: "ritz-diner",
+      name: "Ritz Diner",
+      offerings: [
+        {
+          id: "dinner",
+          name: "Dinner",
+          kind: "preset",
+          choices: [
+            {
+              id: "vegetables",
+              label: "Vegetables",
+              minSelections: 1,
+              maxSelections: 2,
+              options: [
+                {
+                  id: "broccoli",
+                  label: "Broccoli",
+                  target: { kind: "component", id: "broccoli" },
+                },
+                {
+                  id: "carrots",
+                  label: "Carrots",
+                  target: { kind: "component", id: "carrots" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      rules: [
+        {
+          id: "broccoli-before-4",
+          target: {
+            kind: "choice_option",
+            offeringId: "dinner",
+            choiceSlotId: "vegetables",
+            optionId: "broccoli",
+          },
+          when: {
+            kind: "local_time",
+            before: "16:00",
+          },
+          effect: {
+            kind: "availability",
+            available: true,
+          },
+        },
+      ],
+    });
+
+    expect(result.rules[0]).toMatchObject({
+      when: { kind: "local_time", before: "16:00" },
+      effect: { kind: "availability", available: true },
+    });
+  });
+
+  it("supports guest-count rules above an offering", () => {
+    const result = universalMenuSchema.parse({
+      id: "catering-menu",
+      name: "Catering Menu",
+      offerings: [
+        {
+          id: "package-a",
+          name: "Package A",
+          kind: "preset",
+        },
+      ],
+      rules: [
+        {
+          id: "package-minimum",
+          target: {
+            kind: "offering",
+            offeringId: "package-a",
+          },
+          when: {
+            kind: "guest_count",
+            minimum: 20,
+          },
+          effect: {
+            kind: "minimum_participants",
+            count: 20,
+          },
+        },
+      ],
+    });
+
+    expect(result.rules[0]).toMatchObject({
+      target: { kind: "offering", offeringId: "package-a" },
+      when: { kind: "guest_count", minimum: 20 },
+    });
   });
 
 

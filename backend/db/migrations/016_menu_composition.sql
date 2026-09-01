@@ -324,7 +324,16 @@ BEGIN
         SELECT ingredient.id
         INTO ingredient_id_value
         FROM ingredients ingredient
-        WHERE lower(ingredient.name) = lower(option_row.name)
+        WHERE lower(ingredient.name) = lower(
+          CASE
+            WHEN lower(option_row.name) = 'pickle' THEN 'Pickles'
+            WHEN lower(option_row.name) = 'matzoh ball' THEN 'Matzoh Balls'
+            WHEN lower(option_row.name) = 'add fries' THEN 'French Fries'
+            WHEN lower(option_row.name) = 'add bacon' THEN 'Bacon'
+            WHEN lower(option_row.name) = 'veggie burger' THEN 'Veggie Burger'
+            ELSE option_row.name
+          END
+        )
         LIMIT 1;
 
         INSERT INTO menu_choice_options (

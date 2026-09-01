@@ -16,7 +16,7 @@ import type {
   PreparationScheme,
   Order,
   PartyListItem,
-  UniversalOffering,
+  UniversalMenu,
 } from "@lazy-janes/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -197,7 +197,12 @@ export function OrderEntryPage() {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [taxonomy, setTaxonomy] = useState<MenuGroup[]>([]);
   const [normalizedMenu, setNormalizedMenu] =
-    useState<UniversalOffering[]>([]);
+    useState<UniversalMenu>({
+      id: "",
+      name: "",
+      offerings: [],
+      rules: [],
+    });
   const [customization, setCustomization] =
     useState<MenuCustomizationCatalog>(EMPTY_CUSTOMIZATION);
   const [parties, setParties] = useState<PartyListItem[]>([]);
@@ -410,7 +415,7 @@ export function OrderEntryPage() {
   );
 
   const normalizedMenuById = useMemo(
-    () => new Map(normalizedMenu.map((offering) => [offering.id, offering])),
+    () => new Map(normalizedMenu.offerings.map((offering) => [offering.id, offering])),
     [normalizedMenu],
   );
 
