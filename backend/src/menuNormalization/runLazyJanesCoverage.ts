@@ -1,7 +1,9 @@
 import {
   getAllMenuItems,
-  getCustomizationCatalog,
 } from "../routes/menu.js";
+import {
+  getCustomizationCatalog,
+} from "../menuCustomizationCatalog.js";
 
 import {
   assessLazyJanesCoverage,
