@@ -86,7 +86,7 @@ export function App() {
               Users
             </NavLink>
           </Can>
-        </nav>
+</nav>
 
         <div className="app-session">
           <span>{user.displayName}</span>
@@ -156,8 +156,7 @@ export function App() {
             </RequireRoles>
           }
         />
-
-        <Route path="*" element={<Navigate to="/" replace />} />
+<Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
