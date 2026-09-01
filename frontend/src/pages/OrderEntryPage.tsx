@@ -613,8 +613,11 @@ export function OrderEntryPage() {
           return [{
             ...sourceOption,
             label: option.label,
-            ingredientId: option.componentId,
-            isNoneOption: option.isNoneOption,
+            ingredientId:
+              option.target.kind === "component"
+                ? option.target.id
+                : null,
+            isNoneOption: option.target.kind === "none",
             isDefault: option.isDefault,
             priceAdjustment: price?.amount ?? 0,
             priceAdjustmentConfigured:

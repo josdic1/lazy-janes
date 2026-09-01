@@ -175,14 +175,33 @@ export const universalPreparationSchemeSchema = z.object({
 export type UniversalPreparationScheme =
   z.infer<typeof universalPreparationSchemeSchema>;
 
+export const choiceOptionTargetSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("component"),
+    id: z.string().min(1),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("offering"),
+    id: z.string().min(1),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("none"),
+  }).strict(),
+]);
+export type ChoiceOptionTarget =
+  z.infer<typeof choiceOptionTargetSchema>;
+
 export const choiceOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
 
-  // Null when the choice is not tied to a canonical component.
-  componentId: z.string().min(1).nullable().default(null),
+  // A choice must select exactly one semantic target.
+  // Whole offerings retain their identity rather than being flattened
+  // into fake components merely because they appear inside a choice.
+  target: choiceOptionTargetSchema,
 
-  isNoneOption: z.boolean().default(false),
   isDefault: z.boolean().default(false),
 
   evidence: evidenceSchema.optional(),

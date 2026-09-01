@@ -102,13 +102,29 @@ export function normalizeLazyJanesOffering({
         label: group.label,
         minSelections: group.minSelections,
         maxSelections: group.maxSelections,
-        options: activeOptions.map((option) => ({
-          id: option.id,
-          label: option.label,
-          componentId: option.ingredientId,
-          isNoneOption: option.isNoneOption,
-          isDefault: option.isDefault,
-        })),
+        options: activeOptions.map((option) => {
+          const target = option.isNoneOption
+            ? { kind: "none" as const }
+            : option.ingredientId !== null
+              ? {
+                  kind: "component" as const,
+                  id: option.ingredientId,
+                }
+              : null;
+
+          if (target === null) {
+            throw new Error(
+              `Choice option "${option.label}" has no established component, offering, or none target`,
+            );
+          }
+
+          return {
+            id: option.id,
+            label: option.label,
+            target,
+            isDefault: option.isDefault,
+          };
+        }),
       };
     });
 

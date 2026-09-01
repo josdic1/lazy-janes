@@ -44,8 +44,8 @@ describe("universal menu grammar", () => {
       minSelections: 2,
       maxSelections: 1,
       options: [
-        { id: "a", label: "A" },
-        { id: "b", label: "B" },
+        { id: "a", label: "A", target: { kind: "component", id: "a" } },
+        { id: "b", label: "B", target: { kind: "component", id: "b" } },
       ],
     });
 
@@ -59,12 +59,93 @@ describe("universal menu grammar", () => {
       minSelections: 0,
       maxSelections: 3,
       options: [
-        { id: "a", label: "A" },
-        { id: "b", label: "B" },
+        { id: "a", label: "A", target: { kind: "component", id: "a" } },
+        { id: "b", label: "B", target: { kind: "component", id: "b" } },
       ],
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("supports component, offering, and none choice targets", () => {
+    const result = choiceSlotSchema.parse({
+      id: "target-types",
+      label: "Choose",
+      minSelections: 0,
+      maxSelections: 1,
+      options: [
+        {
+          id: "component-option",
+          label: "Cheddar",
+          target: { kind: "component", id: "cheddar" },
+        },
+        {
+          id: "offering-option",
+          label: "Caesar Salad",
+          target: { kind: "offering", id: "caesar-salad" },
+        },
+        {
+          id: "none-option",
+          label: "None",
+          target: { kind: "none" },
+        },
+      ],
+    });
+
+    expect(result.options[0]?.target).toEqual({
+      kind: "component",
+      id: "cheddar",
+    });
+    expect(result.options[1]?.target).toEqual({
+      kind: "offering",
+      id: "caesar-salad",
+    });
+    expect(result.options[2]?.target).toEqual({ kind: "none" });
+  });
+
+  it("rejects the old loose componentId/isNoneOption choice shape", () => {
+    const result = choiceSlotSchema.safeParse({
+      id: "legacy-target",
+      label: "Legacy",
+      minSelections: 0,
+      maxSelections: 1,
+      options: [
+        {
+          id: "legacy",
+          label: "Legacy Option",
+          componentId: "cheddar",
+          isNoneOption: false,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("locks offering-target choices with Trós, BubbaQue's, and prix-fixe fixtures", () => {
+    const proofRestaurants = new Set([
+      "Trós Greek Street Food",
+      "BubbaQue's",
+      "Prix Fixe Proof",
+    ]);
+
+    const proofExamples = UNIVERSAL_MENU_EXAMPLES.filter((example) =>
+      proofRestaurants.has(example.restaurant),
+    );
+
+    expect(proofExamples).toHaveLength(3);
+
+    for (const example of proofExamples) {
+      const result = universalOfferingSchema.parse(example.offering);
+      const targets = result.choices.flatMap((choice) =>
+        choice.options.map((option) => option.target),
+      );
+
+      expect(targets.length).toBeGreaterThan(0);
+      expect(
+        targets.every((target) => target.kind === "offering"),
+      ).toBe(true);
+    }
   });
 
   it("does not require restaurant-specific fields", () => {
