@@ -208,6 +208,106 @@ export const choiceOptionSchema = z.object({
 }).strict();
 export type ChoiceOption = z.infer<typeof choiceOptionSchema>;
 
+export const applicationScopeSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("whole"),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("fraction"),
+    numerator: z.number().int().positive(),
+    denominator: z.number().int().positive(),
+  }).strict(),
+
+  z.object({
+    kind: z.literal("section"),
+    sectionCount: z.number().int().min(2),
+  }).strict(),
+]).superRefine((scope, ctx) => {
+  if (
+    scope.kind === "fraction" &&
+    scope.numerator >= scope.denominator
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["numerator"],
+      message: "fraction scope must be smaller than the whole",
+    });
+  }
+});
+
+export type ApplicationScope =
+  z.infer<typeof applicationScopeSchema>;
+
+export const choiceSubsetConstraintSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).optional(),
+
+  // The subset is defined by ChoiceOption ids within this ChoiceSlot.
+  optionIds: z.array(z.string().min(1)).min(1),
+
+  // Either bound may be omitted, but at least one must be present.
+  minSelections: z.number().int().nonnegative().optional(),
+  maxSelections: z.number().int().nonnegative().optional(),
+
+  evidence: evidenceSchema.optional(),
+}).strict().superRefine((constraint, ctx) => {
+  if (
+    constraint.minSelections === undefined &&
+    constraint.maxSelections === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minSelections"],
+      message: "subset constraint must define a minimum or maximum",
+    });
+  }
+
+  if (
+    constraint.minSelections !== undefined &&
+    constraint.maxSelections !== undefined &&
+    constraint.minSelections > constraint.maxSelections
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minSelections"],
+      message: "subset minSelections cannot exceed maxSelections",
+    });
+  }
+
+  if (new Set(constraint.optionIds).size !== constraint.optionIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["optionIds"],
+      message: "subset optionIds must be unique",
+    });
+  }
+
+  if (
+    constraint.minSelections !== undefined &&
+    constraint.minSelections > constraint.optionIds.length
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["minSelections"],
+      message: "subset minSelections cannot exceed subset size",
+    });
+  }
+
+  if (
+    constraint.maxSelections !== undefined &&
+    constraint.maxSelections > constraint.optionIds.length
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["maxSelections"],
+      message: "subset maxSelections cannot exceed subset size",
+    });
+  }
+});
+export type ChoiceSubsetConstraint =
+  z.infer<typeof choiceSubsetConstraintSchema>;
+
 export const choiceSlotSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -215,7 +315,15 @@ export const choiceSlotSchema = z.object({
   minSelections: z.number().int().nonnegative(),
   maxSelections: z.number().int().positive(),
 
+  // Where selections from this choice may apply.
+  // Ordinary choices default to the entire offering.
+  applicationScopes: z.array(applicationScopeSchema)
+    .min(1)
+    .default([{ kind: "whole" }]),
+
   options: z.array(choiceOptionSchema).min(1),
+
+  subsetConstraints: z.array(choiceSubsetConstraintSchema).optional(),
 
   evidence: evidenceSchema.optional(),
 }).strict().superRefine((slot, ctx) => {
@@ -234,9 +342,98 @@ export const choiceSlotSchema = z.object({
       message: "maxSelections cannot exceed available options",
     });
   }
+
+  const availableOptionIds = new Set(
+    slot.options.map((option) => option.id),
+  );
+
+  for (
+    const [constraintIndex, constraint]
+    of (slot.subsetConstraints ?? []).entries()
+  ) {
+    for (
+      const [optionIndex, optionId]
+      of constraint.optionIds.entries()
+    ) {
+      if (!availableOptionIds.has(optionId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [
+            "subsetConstraints",
+            constraintIndex,
+            "optionIds",
+            optionIndex,
+          ],
+          message: "subset constraint references an unavailable option",
+        });
+      }
+    }
+
+    if (
+      constraint.minSelections !== undefined &&
+      constraint.minSelections > slot.maxSelections
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "subsetConstraints",
+          constraintIndex,
+          "minSelections",
+        ],
+        message: "subset minSelections cannot exceed ChoiceSlot maxSelections",
+      });
+    }
+  }
 });
 
 export type ChoiceSlot = z.infer<typeof choiceSlotSchema>;
+
+export const conditionalChoiceConstraintSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1).optional(),
+
+  // Selecting this option activates the constraint.
+  when: z.object({
+    choiceSlotId: z.string().min(1),
+    optionId: z.string().min(1),
+  }).strict(),
+
+  // The activated rule changes the allowed selection count
+  // of another ChoiceSlot.
+  then: z.object({
+    choiceSlotId: z.string().min(1),
+    minSelections: z.number().int().nonnegative().optional(),
+    maxSelections: z.number().int().nonnegative().optional(),
+  }).strict().superRefine((effect, ctx) => {
+    if (
+      effect.minSelections === undefined &&
+      effect.maxSelections === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minSelections"],
+        message: "conditional choice constraint must define a minimum or maximum",
+      });
+    }
+
+    if (
+      effect.minSelections !== undefined &&
+      effect.maxSelections !== undefined &&
+      effect.minSelections > effect.maxSelections
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["minSelections"],
+        message: "conditional minSelections cannot exceed maxSelections",
+      });
+    }
+  }),
+
+  evidence: evidenceSchema.optional(),
+}).strict();
+
+export type ConditionalChoiceConstraint =
+  z.infer<typeof conditionalChoiceConstraintSchema>;
 
 export const variantOptionSchema = z.object({
   id: z.string().min(1),
@@ -542,6 +739,47 @@ export const commercialPolicySchema = z.union([
 export type CommercialPolicy =
   z.infer<typeof commercialPolicySchema>;
 
+export const resourceRequirementSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+
+  resourceKind: z.enum([
+    "personnel",
+    "equipment",
+  ]),
+
+  // Example: 2 chefs per 50 guests means:
+  // quantity = 2, perCount = 50, countKind = guest.
+  calculation: z.object({
+    kind: z.literal("per_count"),
+    countKind: z.enum([
+      "guest",
+      "participant",
+    ]),
+    quantity: z.number().int().positive(),
+    perCount: z.number().int().positive(),
+    rounding: z.literal("up"),
+  }).strict(),
+
+  // Optional billing truth for the required resource.
+  // Examples:
+  // $100 per chef
+  // $30 per server-hour, four-hour minimum.
+  rate: z.object({
+    amount: z.number().nonnegative(),
+    basis: z.enum([
+      "resource",
+      "hour",
+    ]),
+    minimumBillableUnits: z.number().positive().nullable(),
+  }).strict().nullable(),
+
+  evidence: evidenceSchema.optional(),
+}).strict();
+
+export type ResourceRequirement =
+  z.infer<typeof resourceRequirementSchema>;
+
 export const universalOfferingSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -553,6 +791,7 @@ export const universalOfferingSchema = z.object({
   components: z.array(universalComponentSchema).default([]),
   preparations: z.array(universalPreparationSchemeSchema).default([]),
   choices: z.array(choiceSlotSchema).default([]),
+  choiceConstraints: z.array(conditionalChoiceConstraintSchema).default([]),
   variants: z.array(variantSchema).default([]),
   bundles: z.array(bundleSchema).default([]),
   nestedOfferings: z.array(nestedOfferingSchema).default([]),
@@ -560,10 +799,102 @@ export const universalOfferingSchema = z.object({
   measures: z.array(measureSchema).default([]),
   sequences: z.array(sequenceSchema).default([]),
 
+  resourceRequirements: z.array(resourceRequirementSchema).default([]),
   commercialPolicies: z.array(commercialPolicySchema).default([]),
 
   evidence: evidenceSchema.optional(),
-}).strict();
+}).strict().superRefine((offering, ctx) => {
+  const choicesById = new Map(
+    offering.choices.map((choice) => [choice.id, choice]),
+  );
+
+  for (
+    const [constraintIndex, constraint]
+    of offering.choiceConstraints.entries()
+  ) {
+    const sourceChoice = choicesById.get(
+      constraint.when.choiceSlotId,
+    );
+
+    if (!sourceChoice) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "choiceConstraints",
+          constraintIndex,
+          "when",
+          "choiceSlotId",
+        ],
+        message: "conditional choice constraint references an unavailable source ChoiceSlot",
+      });
+    } else if (
+      !sourceChoice.options.some(
+        (option) => option.id === constraint.when.optionId,
+      )
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "choiceConstraints",
+          constraintIndex,
+          "when",
+          "optionId",
+        ],
+        message: "conditional choice constraint references an unavailable source option",
+      });
+    }
+
+    const targetChoice = choicesById.get(
+      constraint.then.choiceSlotId,
+    );
+
+    if (!targetChoice) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "choiceConstraints",
+          constraintIndex,
+          "then",
+          "choiceSlotId",
+        ],
+        message: "conditional choice constraint references an unavailable target ChoiceSlot",
+      });
+      continue;
+    }
+
+    if (
+      constraint.then.minSelections !== undefined &&
+      constraint.then.minSelections > targetChoice.options.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "choiceConstraints",
+          constraintIndex,
+          "then",
+          "minSelections",
+        ],
+        message: "conditional minSelections cannot exceed available target options",
+      });
+    }
+
+    if (
+      constraint.then.maxSelections !== undefined &&
+      constraint.then.maxSelections > targetChoice.options.length
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [
+          "choiceConstraints",
+          constraintIndex,
+          "then",
+          "maxSelections",
+        ],
+        message: "conditional maxSelections cannot exceed available target options",
+      });
+    }
+  }
+});
 
 export type UniversalOffering =
   z.infer<typeof universalOfferingSchema>;

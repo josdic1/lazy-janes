@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   choiceSlotSchema,
+  measureSchema,
+  resourceRequirementSchema,
   universalOfferingSchema,
 } from "../src/menuGrammar.js";
 
@@ -157,4 +159,150 @@ describe("universal menu grammar", () => {
 
     expect(result.success).toBe(true);
   });
+
+  it("rejects subset constraints that reference unavailable options", () => {
+    const result = choiceSlotSchema.safeParse({
+      id: "subset-reference",
+      label: "Choose",
+      minSelections: 1,
+      maxSelections: 2,
+      options: [
+        {
+          id: "protein-a",
+          label: "Protein A",
+          target: { kind: "offering", id: "protein-a" },
+        },
+        {
+          id: "vegetarian-a",
+          label: "Vegetarian A",
+          target: { kind: "offering", id: "vegetarian-a" },
+        },
+      ],
+      subsetConstraints: [
+        {
+          id: "protein-limit",
+          optionIds: ["protein-a", "missing-protein"],
+          maxSelections: 1,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects impossible conditional choice counts", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "conditional-count",
+      name: "Conditional Count",
+      kind: "preset",
+      choices: [
+        {
+          id: "pot-type",
+          label: "Pot Type",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "yin-yang",
+              label: "Yin-Yang",
+              target: { kind: "offering", id: "yin-yang" },
+            },
+          ],
+        },
+        {
+          id: "soups",
+          label: "Soups",
+          minSelections: 1,
+          maxSelections: 2,
+          options: [
+            {
+              id: "soup-a",
+              label: "Soup A",
+              target: { kind: "offering", id: "soup-a" },
+            },
+            {
+              id: "soup-b",
+              label: "Soup B",
+              target: { kind: "offering", id: "soup-b" },
+            },
+          ],
+        },
+      ],
+      choiceConstraints: [
+        {
+          id: "bad-yin-yang-rule",
+          when: {
+            choiceSlotId: "pot-type",
+            optionId: "yin-yang",
+          },
+          then: {
+            choiceSlotId: "soups",
+            minSelections: 3,
+            maxSelections: 3,
+          },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid fractional application scopes", () => {
+    const result = choiceSlotSchema.safeParse({
+      id: "bad-fraction",
+      label: "Toppings",
+      minSelections: 0,
+      maxSelections: 1,
+      applicationScopes: [
+        {
+          kind: "fraction",
+          numerator: 1,
+          denominator: 1,
+        },
+      ],
+      options: [
+        {
+          id: "pepperoni",
+          label: "Pepperoni",
+          target: { kind: "component", id: "pepperoni" },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects nonpositive measure increments", () => {
+    const result = measureSchema.safeParse({
+      id: "china-place-settings",
+      label: "Place Settings",
+      unit: "serving",
+      minimum: 10,
+      maximum: null,
+      increment: 0,
+      defaultValue: 10,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid resource requirement calculations", () => {
+    const result = resourceRequirementSchema.safeParse({
+      id: "servers",
+      label: "Servers",
+      resourceKind: "personnel",
+      calculation: {
+        kind: "per_count",
+        countKind: "guest",
+        quantity: 1,
+        perCount: 0,
+        rounding: "up",
+      },
+      rate: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+
 });
