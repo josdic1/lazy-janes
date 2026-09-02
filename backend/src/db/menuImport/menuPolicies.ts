@@ -155,3 +155,217 @@ export const COMPONENT_RELATIONSHIP_OVERRIDES:
     ["cheese_steak_deluxe|ING_CHEESE", "contains"],
     ["cheese_steak_deluxe|ING_FRENCH_FRIES", "comes_with"],
   ]);
+
+/**
+ * Confirmed restaurant ingredient truth learned after the retained source
+ * snapshot was created.
+ *
+ * Keep these separate from menuData.ts so later confirmations are not
+ * misrepresented as original-source data.
+ */
+export const CONFIRMED_MENU_INGREDIENTS = [
+  {
+    id: "ING_BRUSSELS_SPROUTS",
+    name: "Brussels Sprouts",
+    allergenFlags: [],
+    defaultAddPrice: null,
+    priceConfigured: false,
+    isAddable: false,
+  },
+] as const;
+
+/**
+ * Selectable foods that are explicit in the retained source choices but were
+ * omitted from the retained flat ingredient list. These are source-derived
+ * identities, not restaurant facts learned after the snapshot.
+ *
+ * They are choice-only by default: the source proves they can be selected in
+ * these menu questions, not that they belong in the restaurant-wide Add list.
+ */
+export const SOURCE_DERIVED_CHOICE_INGREDIENTS = [
+  { id: "ING_ONION_RINGS", name: "Onion Rings", isAddable: false },
+  { id: "ING_ICE_CREAM", name: "Ice Cream", isAddable: false },
+  { id: "ING_VEGGIE_BURGER", name: "Veggie Burger", isAddable: false },
+  { id: "ING_WHITE_CLAM_SAUCE", name: "White Clam Sauce", isAddable: false },
+  { id: "ING_RED_CLAM_SAUCE", name: "Red Clam Sauce", isAddable: false },
+  { id: "ING_BLUEBERRY_MUFFIN", name: "Blueberry Muffin", isAddable: false },
+  {
+    id: "ING_APPLE_CINNAMON_MUFFIN",
+    name: "Apple Cinnamon Muffin",
+    isAddable: false,
+  },
+  { id: "ING_CORN_MUFFIN", name: "Corn Muffin", isAddable: false },
+  { id: "ING_BRAN_MUFFIN", name: "Bran Muffin", isAddable: false },
+  { id: "ING_PLAIN_CHALLAH", name: "Plain Challah", isAddable: false },
+  { id: "ING_RAISIN_CHALLAH", name: "Raisin Challah", isAddable: false },
+] as const;
+
+/**
+ * Source options whose text happens to match an ingredient name but whose
+ * source context proves that the label is not selecting that ingredient.
+ *
+ * Example: Apple in "Apple, Cherry or Blueberry Crumb Pie" is a pie flavor,
+ * not an Apple component. The Lazy Jane's adapter maps that source group to
+ * a structural UMO Variant; this blocklist prevents false component inference.
+ */
+export const SOURCE_CHOICE_COMPONENT_BLOCKLIST: ReadonlySet<string> =
+  new Set([
+    "MG_CHOOSE_PIE_CHOOSE_PIE_APPLE_CHERRY_BLUEBERRY|apple",
+  ]);
+
+/**
+ * Source labels that unambiguously name an existing/source-derived component
+ * but do not text-match that component's canonical ingredient name.
+ *
+ * Key format: sourceModifierGroupId|lowercase source option label.
+ */
+export const SOURCE_CHOICE_COMPONENT_ALIASES: ReadonlyMap<string, string> =
+  new Map([
+    [
+      "MG_SIDE_SIDE_CHOOSE_SIDE_POTATO_SALAD_COLE_SLAW|choose side: potato salad",
+      "ING_POTATO_SALAD",
+    ],
+    [
+      "MG_CHOOSE_CHALLAH_CHOOSE_CHALLAH_PLAIN_RAISIN|plain",
+      "ING_PLAIN_CHALLAH",
+    ],
+    [
+      "MG_CHOOSE_CHALLAH_CHOOSE_CHALLAH_PLAIN_RAISIN|raisin",
+      "ING_RAISIN_CHALLAH",
+    ],
+    [
+      "MG_CHOOSE_COFFEE_CHOOSE_COFFEE_REGULAR_DECAF|regular",
+      "ING_REGULAR_COFFEE",
+    ],
+    [
+      "MG_CHOOSE_COFFEE_CHOOSE_COFFEE_REGULAR_DECAF|decaf",
+      "ING_DECAF_COFFEE",
+    ],
+    [
+      "MG_CHOOSE_COFFEE_CHOOSE_COFFEE_ICED_COFFEE_ICED_DECAF|iced coffee",
+      "ING_REGULAR_COFFEE",
+    ],
+    [
+      "MG_CHOOSE_COFFEE_CHOOSE_COFFEE_ICED_COFFEE_ICED_DECAF|iced decaf",
+      "ING_DECAF_COFFEE",
+    ],
+  ]);
+
+/**
+ * Source-proven preparation choices. These labels change how the whole
+ * offering is prepared; they are not ingredients and not structural variants.
+ *
+ * The adapter maps each source choice option to a UMO preparation target.
+ */
+export const SOURCE_PREPARATION_CHOICE_POLICIES = [
+  {
+    itemSourceKey: "broiled_or_fried_combo_platter",
+    sourceChoiceGroupId: "MG_PREPARATION_PREPARATION_BROILED_FRIED",
+    sourceChoiceGroupLabel: "Preparation",
+    preparationSourceKey: "prep_other_broiled_fried",
+    preparationLabel: "Preparation",
+    options: [
+      { label: "Broiled", sortOrder: 1, priceAdjustment: 0, priceConfigured: true },
+      { label: "Fried", sortOrder: 2, priceAdjustment: 0, priceConfigured: true },
+    ],
+  },
+  {
+    itemSourceKey: "linguini_ala_ritz_spicy_or_mild",
+    sourceChoiceGroupId: "MG_SAUCE_CHOOSE_HEAT_MILD_SPICY",
+    sourceChoiceGroupLabel: "Choose Heat",
+    preparationSourceKey: "prep_other_mild_spicy",
+    preparationLabel: "Heat",
+    options: [
+      { label: "Mild", sortOrder: 1, priceAdjustment: 0, priceConfigured: true },
+      { label: "Spicy", sortOrder: 2, priceAdjustment: 0, priceConfigured: true },
+    ],
+  },
+  {
+    itemSourceKey: "linguini_ala_ritz_spicy_or_mild",
+    sourceChoiceGroupId: "MG_CHOOSE_HEAT_CHOOSE_HEAT_MILD_SPICY",
+    sourceChoiceGroupLabel: "Choose Heat",
+    preparationSourceKey: "prep_other_mild_spicy",
+    preparationLabel: "Heat",
+    options: [
+      { label: "Mild", sortOrder: 1, priceAdjustment: 0, priceConfigured: true },
+      { label: "Spicy", sortOrder: 2, priceAdjustment: 0, priceConfigured: true },
+    ],
+  },
+] as const;
+
+
+/**
+ * Source-proven structural variants. These are not component choices: they
+ * select which form of the same offering is being ordered.
+ *
+ * Price adjustments are relative to the menu item's base price.
+ */
+export const SOURCE_VARIANT_POLICIES = [
+  {
+    itemSourceKey: "apple_cherry_or_blueberry_crumb_pie",
+    sourceChoiceGroupId: "MG_CHOOSE_PIE_CHOOSE_PIE_APPLE_CHERRY_BLUEBERRY",
+    sourceChoiceGroupLabel: "Choose Pie",
+    variantLabel: "Pie Flavor",
+    options: [
+      { label: "Apple", priceAdjustment: 0, priceConfigured: true },
+      { label: "Cherry", priceAdjustment: 0, priceConfigured: true },
+      { label: "Blueberry", priceAdjustment: 0, priceConfigured: true },
+    ],
+  },
+  {
+    itemSourceKey: "blueberry_pancakes",
+    sourceChoiceGroupId: "MG_CHOOSE_SIZE_CHOOSE_SIZE_FULL_STACK_SHORT_STACK",
+    sourceChoiceGroupLabel: "Choose Size",
+    variantLabel: "Size",
+    options: [
+      { label: "Full Stack", priceAdjustment: 0, priceConfigured: true },
+      { label: "Short Stack", priceAdjustment: -2, priceConfigured: true },
+    ],
+  },
+  {
+    itemSourceKey: "chocolate_chip_pancakes",
+    sourceChoiceGroupId: "MG_CHOOSE_SIZE_CHOOSE_SIZE_FULL_STACK_SHORT_STACK",
+    sourceChoiceGroupLabel: "Choose Size",
+    variantLabel: "Size",
+    options: [
+      { label: "Full Stack", priceAdjustment: 0, priceConfigured: true },
+      { label: "Short Stack", priceAdjustment: -2.55, priceConfigured: true },
+    ],
+  },
+] as const;
+
+/**
+ * Confirmed Ritz vegetable-choice behavior.
+ *
+ * These source options are configuration decisions:
+ * choosing one of them activates the actual Vegetables choice slot.
+ */
+export const RITZ_VEGETABLE_CHOICE_POLICIES = [
+  {
+    sourceChoiceGroupId:
+      "MG_SIDE_SIDE_TWO_VEGETABLES_SIDE_OF_SPAGHETTI",
+    sourceChoiceOptionLabel: "Two Vegetables",
+    targetChoiceGroupId: "CONFIRMED_RITZ_VEGETABLES",
+    minSelections: 2,
+    maxSelections: 2,
+    priceAdjustment: 0,
+    priceConfigured: true,
+  },
+  {
+    sourceChoiceGroupId:
+      "MG_SIDE_SIDE_FRENCH_FRIES_ONE_VEGETABLE",
+    sourceChoiceOptionLabel: "One Vegetable",
+    targetChoiceGroupId: "CONFIRMED_RITZ_VEGETABLES",
+    minSelections: 1,
+    maxSelections: 1,
+    priceAdjustment: 0,
+    priceConfigured: true,
+  },
+] as const;
+
+export const RITZ_VEGETABLE_INGREDIENT_IDS = [
+  "ING_CARROTS",
+  "ING_BROCCOLI",
+  "ING_ZUCCHINI",
+  "ING_BRUSSELS_SPROUTS",
+] as const;

@@ -438,6 +438,7 @@ export const menuChoiceOptionSchema = z.object({
   label: nameSchema,
   ingredientId: idSchema.nullable(),
   preparationSchemeId: idSchema.nullable(),
+  targetPreparationOptionId: idSchema.nullable().default(null),
   isNoneOption: z.boolean(),
   priceAdjustment: priceAdjustmentSchema,
   priceAdjustmentConfigured: z.boolean(),
@@ -463,6 +464,22 @@ export const menuChoiceGroupSchema = z.object({
 });
 export type MenuChoiceGroup = z.infer<
   typeof menuChoiceGroupSchema
+>;
+
+export const menuChoiceConstraintSchema = z.object({
+  id: idSchema,
+  menuItemId: idSchema,
+  sourceChoiceGroupId: idSchema,
+  sourceChoiceOptionId: idSchema,
+  targetChoiceGroupId: idSchema,
+  minSelections: z.number().int().nonnegative().nullable(),
+  maxSelections: z.number().int().nonnegative().nullable(),
+  label: nameSchema.nullable(),
+  sortOrder: sortOrderSchema,
+  isActive: z.boolean(),
+});
+export type MenuChoiceConstraint = z.infer<
+  typeof menuChoiceConstraintSchema
 >;
 
 export const INGREDIENT_POPULARITY_SCOPES = [
@@ -491,6 +508,7 @@ export const menuCustomizationCatalogSchema = z.object({
   itemIngredients: z.array(menuItemIngredientSchema),
   replacements: z.array(menuItemIngredientReplacementSchema),
   choiceGroups: z.array(menuChoiceGroupSchema),
+  choiceConstraints: z.array(menuChoiceConstraintSchema),
 });
 export type MenuCustomizationCatalog = z.infer<
   typeof menuCustomizationCatalogSchema

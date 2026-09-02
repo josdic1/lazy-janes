@@ -4,8 +4,11 @@ import {
   deliverOrderItemsInputSchema,
   fireOrderInputSchema,
   markKitchenItemsReadyInputSchema,
+  menuRuleConditionMatches,
+  resolveChoiceCardinalities,
   voidOrderItemsInputSchema,
   type AllergenFlag,
+  type ConditionalChoiceConstraint,
   type KitchenChit,
   type Order,
   type OrderItem,
@@ -24,6 +27,7 @@ import {
   requireAuthenticatedUser,
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
+import { getMenuRules } from "../menuRules.js";
 
 type MenuRow = {
   id: string;
@@ -121,7 +125,18 @@ type ChoiceRuleRow = {
   option_label: string;
   ingredient_id: string | null;
   preparation_scheme_id: string | null;
+  target_preparation_option_id: string | null;
   price_adjustment: string;
+};
+
+type ChoiceConstraintRuleRow = {
+  id: string;
+  source_choice_group_id: string;
+  source_choice_option_id: string;
+  target_choice_group_id: string;
+  min_selections: number | null;
+  max_selections: number | null;
+  label: string | null;
 };
 
 type PreparationRuleRow = {
@@ -167,8 +182,28 @@ type ItemCustomizationRules = {
   addableById: Map<string, IngredientRuleRow>;
   replacementsBySource: Map<string, Map<string, ReplacementRuleRow>>;
   choiceRows: ChoiceRuleRow[];
+  choiceConstraints: ConditionalChoiceConstraint[];
   preparationByOptionId: Map<string, PreparationRuleRow>;
 };
+
+const RESTAURANT_TIME_ZONE = "America/New_York";
+
+function restaurantLocalTime(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+
+  if (!hour || !minute) {
+    throw new Error("Could not resolve restaurant local time");
+  }
+
+  return `${hour}:${minute}`;
+}
 
 function toModifier(row: ModifierRow): OrderItemModifier {
   return {
@@ -323,13 +358,18 @@ ordersRouter.post(
       }
 
       let partyStatus: PartyStatus | null = null;
+      let partyGuestCount: number | undefined;
 
       if (input.data.partyId !== null) {
-        const party = await client.query<{ status: PartyStatus }>(
-          `SELECT status FROM parties WHERE id = $1 FOR UPDATE`,
+        const party = await client.query<{
+          status: PartyStatus;
+          guest_count: number;
+        }>(
+          `SELECT status, guest_count FROM parties WHERE id = $1 FOR UPDATE`,
           [input.data.partyId],
         );
         partyStatus = party.rows[0]?.status ?? null;
+        partyGuestCount = party.rows[0]?.guest_count;
 
         if (partyStatus === null) {
           await client.query("ROLLBACK");
@@ -359,6 +399,29 @@ ordersRouter.post(
       const requestedMenuIds = Array.from(
         new Set(input.data.items.map((item) => item.menuItemId)),
       );
+      const menuRules = await getMenuRules();
+      const runtimeRuleContext = {
+        localTime: restaurantLocalTime(),
+        ...(partyGuestCount === undefined
+          ? {}
+          : { guestCount: partyGuestCount }),
+      };
+      const activeRuntimeRules = menuRules.filter((rule) =>
+        menuRuleConditionMatches(rule.when, runtimeRuleContext),
+      );
+
+      if (
+        activeRuntimeRules.some(
+          (rule) =>
+            rule.target.kind === "menu" &&
+            rule.effect.kind === "availability" &&
+            rule.effect.available === false,
+        )
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({ error: "The menu is currently unavailable" });
+        return;
+      }
 
       const menuResult = await client.query<MenuRow>(
         `
@@ -379,6 +442,22 @@ ordersRouter.post(
           await client.query("ROLLBACK");
           response.status(409).json({
             error: "One or more menu items are unavailable",
+          });
+          return;
+        }
+
+        if (
+          activeRuntimeRules.some(
+            (rule) =>
+              rule.target.kind === "offering" &&
+              rule.target.offeringId === menuItem.id &&
+              rule.effect.kind === "availability" &&
+              rule.effect.available === false,
+          )
+        ) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: `${menuItem.name} is currently unavailable`,
           });
           return;
         }
@@ -476,6 +555,7 @@ ordersRouter.post(
                   option_record.label AS option_label,
                   option_record.ingredient_id,
                   option_record.preparation_scheme_id,
+                  option_record.target_preparation_option_id,
                   option_record.price_adjustment
                 FROM menu_choice_groups group_record
                 JOIN menu_choice_options option_record
@@ -487,6 +567,27 @@ ordersRouter.post(
                   group_record.sort_order,
                   option_record.sort_order,
                   option_record.label
+              `,
+              [menuItem.id],
+            );
+
+          const choiceConstraintResult =
+            await client.query<ChoiceConstraintRuleRow>(
+              `
+                SELECT
+                  constraint_record.id,
+                  constraint_record.source_choice_group_id,
+                  constraint_record.source_choice_option_id,
+                  constraint_record.target_choice_group_id,
+                  constraint_record.min_selections,
+                  constraint_record.max_selections,
+                  constraint_record.label
+                FROM menu_choice_constraints constraint_record
+                WHERE constraint_record.menu_item_id = $1
+                  AND constraint_record.is_active = true
+                ORDER BY
+                  constraint_record.sort_order,
+                  constraint_record.id
               `,
               [menuItem.id],
             );
@@ -521,6 +622,27 @@ ordersRouter.post(
             ),
             replacementsBySource,
             choiceRows: choiceResult.rows,
+            choiceConstraints: choiceConstraintResult.rows.map(
+              (constraint) => ({
+                id: constraint.id,
+                when: {
+                  choiceSlotId: constraint.source_choice_group_id,
+                  optionId: constraint.source_choice_option_id,
+                },
+                then: {
+                  choiceSlotId: constraint.target_choice_group_id,
+                  ...(constraint.min_selections === null
+                    ? {}
+                    : { minSelections: constraint.min_selections }),
+                  ...(constraint.max_selections === null
+                    ? {}
+                    : { maxSelections: constraint.max_selections }),
+                },
+                ...(constraint.label === null
+                  ? {}
+                  : { label: constraint.label }),
+              }),
+            ),
             preparationByOptionId: new Map(
               preparationResult.rows.map((row) => [row.option_id, row]),
             ),
@@ -631,13 +753,48 @@ ordersRouter.post(
         );
 
         for (const optionId of selectedOptions) {
-          if (!choiceByOptionId.has(optionId)) {
+          const choice = choiceByOptionId.get(optionId);
+          if (!choice) {
             await client.query("ROLLBACK");
             response.status(409).json({
               error: `One or more choices are unavailable for ${menuItem.name}`,
             });
             return;
           }
+
+          if (
+            choice.target_preparation_option_id !== null &&
+            !rules.preparationByOptionId.has(choice.target_preparation_option_id)
+          ) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: `That preparation choice is unavailable for ${menuItem.name}`,
+            });
+            return;
+          }
+        }
+
+        const unavailableChoiceOptionIds = new Set(
+          activeRuntimeRules.flatMap((rule) =>
+            rule.target.kind === "choice_option" &&
+            rule.target.offeringId === menuItem.id &&
+            rule.effect.kind === "availability" &&
+            rule.effect.available === false
+              ? [rule.target.optionId]
+              : [],
+          ),
+        );
+
+        if (
+          Array.from(selectedOptions).some((optionId) =>
+            unavailableChoiceOptionIds.has(optionId),
+          )
+        ) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: `One or more choices are currently unavailable for ${menuItem.name}`,
+          });
+          return;
         }
 
         const selectedChoiceIngredientIds = Array.from(selectedOptions)
@@ -685,11 +842,38 @@ ordersRouter.post(
           }
         }
 
-        for (const group of groups.values()) {
+        const effectiveGroups = new Map(
+          resolveChoiceCardinalities(
+            Array.from(groups.entries()).map(([id, group]) => ({
+              id,
+              minSelections: group.min,
+              maxSelections: group.max,
+            })),
+            rules.choiceConstraints,
+            selectedOptions,
+          ).map((group) => [group.id, group]),
+        );
+
+        for (const [groupId, group] of groups) {
+          const effective = effectiveGroups.get(groupId);
+
+          if (!effective) {
+            throw new Error(`Missing effective choice state for ${groupId}`);
+          }
+
           const selectedCount = group.optionIds.filter((id) =>
             selectedOptions.has(id),
           ).length;
-          if (selectedCount < group.min) {
+
+          if (!effective.isActive && selectedCount > 0) {
+            await client.query("ROLLBACK");
+            response.status(409).json({
+              error: `${group.label} is not active for ${menuItem.name}`,
+            });
+            return;
+          }
+
+          if (selectedCount < effective.minSelections) {
             const prompt = /^choose\b/i.test(group.label)
               ? group.label
               : `Choose ${group.label}`;
@@ -699,7 +883,10 @@ ordersRouter.post(
             });
             return;
           }
-          if (group.max !== null && selectedCount > group.max) {
+          if (
+            effective.maxSelections !== null &&
+            selectedCount > effective.maxSelections
+          ) {
             await client.query("ROLLBACK");
             response.status(409).json({
               error: `Too many selections in ${group.label} for ${menuItem.name}`,

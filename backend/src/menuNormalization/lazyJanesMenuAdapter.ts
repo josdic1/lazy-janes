@@ -2,6 +2,7 @@ import {
   universalMenuSchema,
   type MenuCustomizationCatalog,
   type MenuItem,
+  type MenuRule,
   type UniversalMenu,
 } from "@lazy-janes/shared";
 import { normalizeLazyJanesOffering } from "./lazyJanesAdapter.js";
@@ -9,11 +10,13 @@ import { normalizeLazyJanesOffering } from "./lazyJanesAdapter.js";
 export type LazyJanesMenuAdapterInput = {
   items: MenuItem[];
   catalog: MenuCustomizationCatalog;
+  rules: MenuRule[];
 };
 
 export function normalizeLazyJanesMenu({
   items,
   catalog,
+  rules,
 }: LazyJanesMenuAdapterInput): UniversalMenu {
   const offerings = items
     .filter((item) => item.status !== "draft")
@@ -28,6 +31,6 @@ export function normalizeLazyJanesMenu({
     id: "lazy-janes-menu",
     name: "Lazy Jane's Menu",
     offerings,
-    rules: [],
+    rules,
   });
 }

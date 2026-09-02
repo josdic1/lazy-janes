@@ -1,12 +1,12 @@
 import type {
+  ChoiceOption,
   CreateOrderInput,
   DiningTableOption,
+  EffectiveChoiceSlot,
   FulfillmentType,
   Ingredient,
   IngredientPopularity,
   MenuCategory,
-  MenuChoiceGroup,
-  MenuChoiceOption,
   MenuCustomizationCatalog,
   MenuGroup,
   MenuItem,
@@ -17,7 +17,10 @@ import type {
   Order,
   PartyListItem,
   UniversalMenu,
+  Variant,
+  VariantOption,
 } from "@lazy-janes/shared";
+import { activeMenuRules, resolveChoiceSlots } from "@lazy-janes/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -36,8 +39,17 @@ import {
 } from "../api/parties";
 
 type ChoiceSelection = {
-  group: MenuChoiceGroup;
-  option: MenuChoiceOption;
+  group: EffectiveChoiceSlot;
+  option: ChoiceOption;
+  priceAdjustment: number;
+  priceAdjustmentConfigured: boolean;
+};
+
+type VariantSelection = {
+  variant: Variant;
+  option: VariantOption;
+  priceAdjustment: number;
+  priceAdjustmentConfigured: boolean;
 };
 
 type ReplacementSelection = {
@@ -63,6 +75,7 @@ type CartItem = {
   extraIngredients: MenuItemIngredient[];
   addedIngredients: Ingredient[];
   replacements: ReplacementSelection[];
+  variantSelections: VariantSelection[];
   choiceSelections: ChoiceSelection[];
   preparationSelections: PreparationSelection[];
   kitchenNote: string;
@@ -74,6 +87,7 @@ const EMPTY_CUSTOMIZATION: MenuCustomizationCatalog = {
   itemIngredients: [],
   replacements: [],
   choiceGroups: [],
+  choiceConstraints: [],
 };
 
 function errorMessage(error: unknown): string {
@@ -108,6 +122,7 @@ function cartKey(
   extraIds: string[],
   addedIds: string[],
   replacementKeys: string[],
+  variantOptionIds: string[],
   choiceOptionIds: string[],
   preparationKeys: string[] = [],
 ): string {
@@ -118,6 +133,7 @@ function cartKey(
     `extra=${sortedKey(extraIds)}`,
     `add=${sortedKey(addedIds)}`,
     `replace=${sortedKey(replacementKeys)}`,
+    `variant=${sortedKey(variantOptionIds)}`,
     `choice=${sortedKey(choiceOptionIds)}`,
     `prep=${sortedKey(preparationKeys)}`,
   ].join(":");
@@ -139,13 +155,18 @@ function lineAdjustment(entry: CartItem): number {
       sum + (selection.rule.priceAdjustmentConfigured ? selection.rule.priceAdjustment : 0),
     0,
   );
+  const variants = entry.variantSelections.reduce(
+    (sum, selection) =>
+      sum + (selection.priceAdjustmentConfigured ? selection.priceAdjustment : 0),
+    0,
+  );
   const choices = entry.choiceSelections.reduce(
     (sum, selection) =>
-      sum + (selection.option.priceAdjustmentConfigured ? selection.option.priceAdjustment : 0),
+      sum + (selection.priceAdjustmentConfigured ? selection.priceAdjustment : 0),
     0,
   );
 
-  return extras + additions + replacements + choices;
+  return extras + additions + replacements + variants + choices;
 }
 
 function hasPendingPrice(entry: CartItem): boolean {
@@ -159,14 +180,36 @@ function hasPendingPrice(entry: CartItem): boolean {
     entry.replacements.some(
       (selection) => !selection.rule.priceAdjustmentConfigured,
     ) ||
+    entry.variantSelections.some(
+      (selection) => !selection.priceAdjustmentConfigured,
+    ) ||
     entry.choiceSelections.some(
-      (selection) => !selection.option.priceAdjustmentConfigured,
+      (selection) => !selection.priceAdjustmentConfigured,
     )
   );
 }
 
 function allergenLabel(flag: string): string {
   return flag.replace(/_/g, " ").toUpperCase();
+}
+
+const RESTAURANT_TIME_ZONE = "America/New_York";
+
+function restaurantLocalTime(now: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: RESTAURANT_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const hour = parts.find((part) => part.type === "hour")?.value;
+  const minute = parts.find((part) => part.type === "minute")?.value;
+
+  if (!hour || !minute) {
+    throw new Error("Could not resolve restaurant local time");
+  }
+
+  return `${hour}:${minute}`;
 }
 
 function safetyWarningLabel(
@@ -207,6 +250,37 @@ export function OrderEntryPage() {
     useState<MenuCustomizationCatalog>(EMPTY_CUSTOMIZATION);
   const [parties, setParties] = useState<PartyListItem[]>([]);
   const [tables, setTables] = useState<DiningTableOption[]>([]);
+  const [ruleClock, setRuleClock] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setRuleClock(new Date()),
+      30_000,
+    );
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const ruleLocalTime = restaurantLocalTime(ruleClock);
+
+  const activeRules = useMemo(
+    () => activeMenuRules(normalizedMenu, { localTime: ruleLocalTime }),
+    [normalizedMenu, ruleLocalTime],
+  );
+
+  const unavailableChoiceOptionIds = useMemo(
+    () =>
+      new Set(
+        activeRules.flatMap((rule) =>
+          rule.target.kind === "choice_option" &&
+          rule.effect.kind === "availability" &&
+          rule.effect.available === false
+            ? [rule.target.optionId]
+            : [],
+        ),
+      ),
+    [activeRules],
+  );
 
   const [fulfillmentType, setFulfillmentType] =
     useState<FulfillmentType>("dine_in");
@@ -228,6 +302,8 @@ export function OrderEntryPage() {
   const [extraIngredientIds, setExtraIngredientIds] = useState<string[]>([]);
   const [addedIngredientIds, setAddedIngredientIds] = useState<string[]>([]);
   const [replacementIngredientIdBySource, setReplacementIngredientIdBySource] =
+    useState<Record<string, string>>({});
+  const [selectedVariantOptionIdByVariant, setSelectedVariantOptionIdByVariant] =
     useState<Record<string, string>>({});
   const [selectedChoiceOptionIds, setSelectedChoiceOptionIds] =
     useState<string[]>([]);
@@ -470,6 +546,31 @@ export function OrderEntryPage() {
     };
   }
 
+  function normalizedVariantPrice(
+    itemId: string,
+    variantId: string,
+    optionId: string,
+  ): { amount: number | null; configured: boolean } | null {
+    const offering = normalizedMenuById.get(itemId);
+
+    const policy = offering?.commercialPolicies.find(
+      (candidate) =>
+        candidate.kind === "price" &&
+        candidate.appliesTo.kind === "variant_option" &&
+        candidate.appliesTo.variantId === variantId &&
+        candidate.appliesTo.optionId === optionId,
+    );
+
+    if (!policy || policy.kind !== "price") {
+      return null;
+    }
+
+    return {
+      amount: policy.amount,
+      configured: policy.configured,
+    };
+  }
+
   function normalizedChoicePrice(
     itemId: string,
     choiceSlotId: string,
@@ -577,77 +678,60 @@ export function OrderEntryPage() {
       .sort((a, b) => a.sortOrder - b.sortOrder || a.replacementIngredientName.localeCompare(b.replacementIngredientName));
   }
 
-  function choiceGroupsForItem(itemId: string): MenuChoiceGroup[] {
+  function variantsForItem(itemId: string): Variant[] {
+    return normalizedMenuById.get(itemId)?.variants ?? [];
+  }
+
+  function choiceSlotsForItem(
+    itemId: string,
+    selectedOptionIds: string[] = selectedChoiceOptionIds,
+  ): EffectiveChoiceSlot[] {
     const offering = normalizedMenuById.get(itemId);
 
     if (!offering) {
       return [];
     }
 
-    const sourceGroups = new Map(
-      customization.choiceGroups
-        .filter((group) => group.menuItemId === itemId)
-        .map((group) => [group.id, group]),
-    );
-
-    return offering.choices.flatMap((choice) => {
-      const sourceGroup = sourceGroups.get(choice.id);
-
-      if (!sourceGroup) {
-        return [];
-      }
-
-      const sourceOptions = new Map(
-        sourceGroup.options.map((option) => [option.id, option]),
-      );
-
-      const options: MenuChoiceOption[] = choice.options.flatMap(
-        (option) => {
-          const sourceOption = sourceOptions.get(option.id);
-
-          if (!sourceOption) {
-            return [];
-          }
-
-          const price = normalizedChoicePrice(
-            itemId,
-            choice.id,
-            option.id,
-          );
-
-          return [{
-            ...sourceOption,
-            label: option.label,
-            ingredientId:
-              option.target.kind === "component"
-                ? option.target.id
-                : null,
-            isNoneOption: option.target.kind === "none",
-            isDefault: option.isDefault,
-            priceAdjustment: price?.amount ?? 0,
-            priceAdjustmentConfigured:
-              price?.configured ?? false,
-          }];
-        },
-      );
-
-      if (options.length === 0) {
-        return [];
-      }
-
-      return [{
-        ...sourceGroup,
-        label: choice.label,
-        minSelections: choice.minSelections,
-        maxSelections: choice.maxSelections,
-        options,
-      }];
-    });
+    return resolveChoiceSlots(offering, selectedOptionIds)
+      .filter((choice) => choice.isActive)
+      .map((choice) => ({
+        ...choice,
+        options: choice.options.filter(
+          (option) => !unavailableChoiceOptionIds.has(option.id),
+        ),
+      }))
+      .filter((choice) => choice.options.length > 0);
   }
 
-  const selectedChoiceGroups = selectedItem
-    ? choiceGroupsForItem(selectedItem.id)
+  const selectedVariants = selectedItem
+    ? variantsForItem(selectedItem.id)
     : [];
+
+  const selectedChoiceGroups = selectedItem
+    ? choiceSlotsForItem(selectedItem.id, selectedChoiceOptionIds)
+    : [];
+
+  useEffect(() => {
+    if (!selectedItem) {
+      return;
+    }
+
+    setSelectedChoiceOptionIds((current) => {
+      const allowedOptionIds = new Set(
+        choiceSlotsForItem(selectedItem.id, current).flatMap((group) =>
+          group.options.map((option) => option.id),
+        ),
+      );
+      const next = current.filter((id) => allowedOptionIds.has(id));
+
+      return next.length === current.length ? current : next;
+    });
+  }, [
+    selectedItem?.id,
+    normalizedMenu,
+    customization,
+    unavailableChoiceOptionIds,
+  ]);
   // The INCLUDED section is the item's standard recipe.
   // Never hide a standard ingredient merely because a choice group also references it.
   // Choice groups describe decisions; they do not redefine what the base dish contains.
@@ -673,10 +757,10 @@ export function OrderEntryPage() {
     for (const group of selectedChoiceGroups) {
       for (const option of group.options) {
         if (
-          option.ingredientId &&
+          option.target.kind === "component" &&
           selectedChoiceOptionIds.includes(option.id)
         ) {
-          ids.add(option.ingredientId);
+          ids.add(option.target.id);
         }
       }
     }
@@ -775,10 +859,10 @@ export function OrderEntryPage() {
       for (const option of group.options) {
         if (
           selectedChoiceOptionIds.includes(option.id) &&
-          option.ingredientId
+          option.target.kind === "component"
         ) {
           ingredientsById
-            .get(option.ingredientId)
+            .get(option.target.id)
             ?.allergenFlags.forEach((flag) => flags.add(flag));
         }
       }
@@ -826,6 +910,7 @@ export function OrderEntryPage() {
     setExtraIngredientIds([]);
     setAddedIngredientIds([]);
     setReplacementIngredientIdBySource({});
+    setSelectedVariantOptionIdByVariant({});
     setSelectedChoiceOptionIds([]);
     setSelectedPreparationOptionByTarget({});
     setAddSearch("");
@@ -848,7 +933,7 @@ export function OrderEntryPage() {
   }
 
   function addDirect(item: MenuItem) {
-    const key = cartKey(item, [], [], [], [], [], []);
+    const key = cartKey(item, [], [], [], [], [], [], []);
 
     setCart((current) => {
       const existing = current.find((entry) => entry.id === key);
@@ -872,6 +957,7 @@ export function OrderEntryPage() {
           extraIngredients: [],
           addedIngredients: [],
           replacements: [],
+          variantSelections: [],
           choiceSelections: [],
           preparationSelections: [],
           kitchenNote: "",
@@ -889,10 +975,16 @@ export function OrderEntryPage() {
     }
 
     const itemIngredients = ingredientsForItem(item.id);
-    const choiceGroups = choiceGroupsForItem(item.id);
+    const variants = variantsForItem(item.id);
+    const choiceGroups = choiceSlotsForItem(item.id);
     const replacements = replacementsForItem(item.id);
 
-    if (itemIngredients.length === 0 && choiceGroups.length === 0 && replacements.length === 0) {
+    if (
+      itemIngredients.length === 0 &&
+      variants.length === 0 &&
+      choiceGroups.length === 0 &&
+      replacements.length === 0
+    ) {
       addDirect(item);
       return;
     }
@@ -909,6 +1001,15 @@ export function OrderEntryPage() {
     setExtraIngredientIds([]);
     setAddedIngredientIds([]);
     setReplacementIngredientIdBySource({});
+    setSelectedVariantOptionIdByVariant(
+      Object.fromEntries(
+        variants.flatMap((variant) =>
+          variant.defaultOptionId === null
+            ? []
+            : [[variant.id, variant.defaultOptionId]],
+        ),
+      ),
+    );
     const defaultChoiceIds = choiceGroups.flatMap((group) =>
       group.options.filter((option) => option.isDefault).map((option) => option.id),
     );
@@ -1118,13 +1219,26 @@ export function OrderEntryPage() {
     });
   }
 
-  function toggleChoice(group: MenuChoiceGroup, optionId: string) {
+  function chooseVariant(variant: Variant, optionId: string) {
+    if (!variant.options.some((option) => option.id === optionId)) {
+      return;
+    }
+
+    setSelectedVariantOptionIdByVariant((current) => ({
+      ...current,
+      [variant.id]: optionId,
+    }));
+  }
+
+  function toggleChoice(group: EffectiveChoiceSlot, optionId: string) {
     const optionIds = new Set(group.options.map((option) => option.id));
     const option = group.options.find((candidate) => candidate.id === optionId);
 
-    if (option?.ingredientId) {
+    if (option?.target.kind === "component") {
+      const componentId = option.target.id;
+
       setAddedIngredientIds((current) =>
-        current.filter((id) => id !== option.ingredientId),
+        current.filter((id) => id !== componentId),
       );
     }
 
@@ -1148,12 +1262,20 @@ export function OrderEntryPage() {
       } else {
         const selectedInGroup = current.filter((id) => optionIds.has(id));
         if (
-          group.maxSelections !== null &&
           selectedInGroup.length >= group.maxSelections
         ) {
           return current;
         }
         next = [...current, optionId];
+      }
+
+      if (selectedItem) {
+        const allowedOptionIds = new Set(
+          choiceSlotsForItem(selectedItem.id, next).flatMap((choiceGroup) =>
+            choiceGroup.options.map((choiceOption) => choiceOption.id),
+          ),
+        );
+        next = next.filter((id) => allowedOptionIds.has(id));
       }
 
       setSelectedPreparationOptionByTarget((currentPrep) => {
@@ -1182,6 +1304,18 @@ export function OrderEntryPage() {
       return;
     }
 
+    for (const variant of selectedVariants) {
+      const selectedOptionId = selectedVariantOptionIdByVariant[variant.id];
+
+      if (
+        variant.selectionRequired === true &&
+        !variant.options.some((option) => option.id === selectedOptionId)
+      ) {
+        setError(`Choose ${variant.label} for ${selectedItem.name}.`);
+        return;
+      }
+    }
+
     for (const group of selectedChoiceGroups) {
       const optionIds = new Set(group.options.map((option) => option.id));
       const selectedCount = selectedChoiceOptionIds.filter((id) => optionIds.has(id)).length;
@@ -1194,7 +1328,7 @@ export function OrderEntryPage() {
         return;
       }
 
-      if (group.maxSelections !== null && selectedCount > group.maxSelections) {
+      if (selectedCount > group.maxSelections) {
         setError(`Too many selections in ${group.label}.`);
         return;
       }
@@ -1222,10 +1356,45 @@ export function OrderEntryPage() {
         return rule && replacementIngredient ? { rule, replacementIngredient } : null;
       })
       .filter((selection): selection is ReplacementSelection => selection !== null);
+    const variantSelections: VariantSelection[] = selectedVariants.flatMap((variant) => {
+      const optionId = selectedVariantOptionIdByVariant[variant.id];
+      const option = variant.options.find((candidate) => candidate.id === optionId);
+
+      if (!option) {
+        return [];
+      }
+
+      const price = normalizedVariantPrice(
+        selectedItem.id,
+        variant.id,
+        option.id,
+      );
+
+      return [{
+        variant,
+        option,
+        priceAdjustment: price?.amount ?? 0,
+        priceAdjustmentConfigured: price?.configured ?? false,
+      }];
+    });
+
     const choiceSelections: ChoiceSelection[] = selectedChoiceGroups.flatMap((group) =>
       group.options
         .filter((option) => selectedChoiceOptionIds.includes(option.id))
-        .map((option) => ({ group, option })),
+        .map((option) => {
+          const price = normalizedChoicePrice(
+            selectedItem.id,
+            group.id,
+            option.id,
+          );
+
+          return {
+            group,
+            option,
+            priceAdjustment: price?.amount ?? 0,
+            priceAdjustmentConfigured: price?.configured ?? false,
+          };
+        }),
     );
 
     const preparationSelections: PreparationSelection[] = [];
@@ -1309,6 +1478,7 @@ export function OrderEntryPage() {
       extraIngredientIds,
       addedIngredientIds,
       replacements.map((selection) => `${selection.rule.sourceIngredientId}>${selection.rule.replacementIngredientId}`),
+      variantSelections.map((selection) => selection.option.id),
       selectedChoiceOptionIds,
       preparationSelections.map(
         (selection) =>
@@ -1329,6 +1499,7 @@ export function OrderEntryPage() {
                 extraIngredients,
                 addedIngredients,
                 replacements,
+                variantSelections,
                 choiceSelections,
                 preparationSelections,
                 kitchenNote: note,
@@ -1358,6 +1529,7 @@ export function OrderEntryPage() {
           extraIngredients,
           addedIngredients,
           replacements,
+          variantSelections,
           choiceSelections,
           preparationSelections,
           kitchenNote: note,
@@ -1383,6 +1555,14 @@ export function OrderEntryPage() {
         selection.rule.replacementIngredientId,
       ]),
     ));
+    setSelectedVariantOptionIdByVariant(
+      Object.fromEntries(
+        entry.variantSelections.map((selection) => [
+          selection.variant.id,
+          selection.option.id,
+        ]),
+      ),
+    );
     setSelectedChoiceOptionIds(entry.choiceSelections.map((selection) => selection.option.id));
     setSelectedPreparationOptionByTarget(
       Object.fromEntries(
@@ -1484,7 +1664,10 @@ export function OrderEntryPage() {
             sourceIngredientId: selection.rule.sourceIngredientId,
             replacementIngredientId: selection.rule.replacementIngredientId,
           })),
-          choiceOptionIds: entry.choiceSelections.map((selection) => selection.option.id),
+          choiceOptionIds: [
+            ...entry.variantSelections.map((selection) => selection.option.id),
+            ...entry.choiceSelections.map((selection) => selection.option.id),
+          ],
           preparationSelections: entry.preparationSelections.map((selection) => ({
             ingredientId: selection.ingredientId,
             choiceOptionId: selection.choiceOptionId,
@@ -1987,6 +2170,63 @@ export function OrderEntryPage() {
                 </section>
               ) : null}
 
+              {selectedVariants.map((variant) => {
+                const selectedOptionId =
+                  selectedVariantOptionIdByVariant[variant.id] ?? "";
+
+                return (
+                  <section
+                    className="service-customizer-section service-choice-group"
+                    key={variant.id}
+                  >
+                    <div className="service-customizer-section-heading">
+                      <div>
+                        <span>{variant.label}</span>
+                        <small>
+                          {variant.selectionRequired === true
+                            ? "Required"
+                            : "Optional"}
+                        </small>
+                      </div>
+                      {variant.selectionRequired === true ? (
+                        <strong>{selectedOptionId ? "1/1" : "0/1"}</strong>
+                      ) : null}
+                    </div>
+                    <div className="service-choice-options">
+                      {variant.options.map((option) => {
+                        const selected = selectedOptionId === option.id;
+                        const price = selectedItem
+                          ? normalizedVariantPrice(
+                              selectedItem.id,
+                              variant.id,
+                              option.id,
+                            )
+                          : null;
+
+                        return (
+                          <div
+                            className="service-choice-option-node"
+                            key={option.id}
+                          >
+                            <button
+                              type="button"
+                              data-selected={selected}
+                              onClick={() => chooseVariant(variant, option.id)}
+                            >
+                              <span>{option.label}</span>
+                              <small>{priceDelta(
+                                price?.amount ?? 0,
+                                price?.configured ?? false,
+                              )}</small>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
+
               {selectedChoiceGroups.map((group) => {
                 const required = group.minSelections > 0;
                 const selectedCount = group.options.filter((option) =>
@@ -2010,6 +2250,13 @@ export function OrderEntryPage() {
                     <div className="service-choice-options">
                       {group.options.map((option) => {
                         const selected = selectedChoiceOptionIds.includes(option.id);
+                        const price = selectedItem
+                          ? normalizedChoicePrice(
+                              selectedItem.id,
+                              group.id,
+                              option.id,
+                            )
+                          : null;
                         return (
                           <div className="service-choice-option-node" key={option.id}>
                             <button
@@ -2018,7 +2265,10 @@ export function OrderEntryPage() {
                               onClick={() => toggleChoice(group, option.id)}
                             >
                               <span>{option.label}</span>
-                              <small>{priceDelta(option.priceAdjustment, option.priceAdjustmentConfigured)}</small>
+                              <small>{priceDelta(
+                                price?.amount ?? 0,
+                                price?.configured ?? false,
+                              )}</small>
                             </button>
                             {preparationControls(
                               option.preparationSchemeId,
@@ -2150,7 +2400,9 @@ export function OrderEntryPage() {
             {visibleItems.map((item) => {
               const hasCustomization =
                 ingredientsForItem(item.id).length > 0 ||
-                choiceGroupsForItem(item.id).length > 0;
+                variantsForItem(item.id).length > 0 ||
+                choiceSlotsForItem(item.id).length > 0 ||
+                replacementsForItem(item.id).length > 0;
               const quantity = quantityForItem(item.id);
               const selected = selectedItem?.id === item.id;
 
@@ -2254,6 +2506,16 @@ export function OrderEntryPage() {
                       <small className="service-cart-change" data-kind="add" key={`add-${ingredient.id}`}>
                         ADD {ingredient.name}
                         {!ingredient.addPriceConfigured ? " · PRICE TBD" : ""}
+                      </small>
+                    ))}
+                    {entry.variantSelections.map((selection) => (
+                      <small
+                        className="service-cart-change"
+                        data-kind="variant"
+                        key={`variant-${selection.variant.id}`}
+                      >
+                        {selection.variant.label}: {selection.option.label}
+                        {!selection.priceAdjustmentConfigured ? " · PRICE TBD" : ""}
                       </small>
                     ))}
                     {entry.choiceSelections.map((selection) => (

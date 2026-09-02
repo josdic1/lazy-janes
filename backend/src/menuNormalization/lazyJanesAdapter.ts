@@ -6,6 +6,7 @@ import {
   type UniversalComponentRole,
   type UniversalOffering,
 } from "@lazy-janes/shared";
+import { SOURCE_VARIANT_POLICIES } from "../db/menuImport/menuPolicies.js";
 
 export type LazyJanesAdapterInput = {
   item: MenuItem;
@@ -38,10 +39,49 @@ export function normalizeLazyJanesOffering({
       group.isActive,
   );
 
+  const activeChoiceConstraints = catalog.choiceConstraints
+    .filter((constraint) => constraint.menuItemId === item.id)
+    .filter((constraint) => constraint.isActive)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
+  const preparationTargetByOptionId = new Map<
+    string,
+    { preparationSchemeId: string; preparationOptionId: string }
+  >();
+  for (const scheme of catalog.preparationSchemes) {
+    for (const option of scheme.options) {
+      preparationTargetByOptionId.set(option.id, {
+        preparationSchemeId: scheme.id,
+        preparationOptionId: option.id,
+      });
+    }
+  }
+
   const referencedPreparationIds = new Set(
-    itemIngredients
-      .map((component) => component.preparationSchemeId)
-      .filter((id): id is string => id !== null),
+    [
+      ...itemIngredients.map(
+        (component) => component.preparationSchemeId,
+      ),
+      ...activeChoiceGroups.flatMap((group) =>
+        group.options
+          .filter((option) => option.isActive)
+          .map((option) => option.preparationSchemeId),
+      ),
+      ...activeChoiceGroups.flatMap((group) =>
+        group.options
+          .filter((option) => option.isActive)
+          .map((option) =>
+            option.targetPreparationOptionId === null
+              ? null
+              : preparationTargetByOptionId.get(
+                  option.targetPreparationOptionId,
+                )?.preparationSchemeId ?? null,
+          ),
+      ),
+      ...catalog.replacements
+        .filter((replacement) => replacement.menuItemId === item.id)
+        .map((replacement) => replacement.preparationSchemeId),
+    ].filter((id): id is string => id !== null),
   );
 
   const preparations = catalog.preparationSchemes
@@ -68,7 +108,83 @@ export function normalizeLazyJanesOffering({
 
   const commercialPolicies: CommercialPolicy[] = [];
 
+  const variantPolicyByGroupId = new Map<
+    string,
+    (typeof SOURCE_VARIANT_POLICIES)[number]
+  >();
+
+  if (item.sourceKey !== null) {
+    for (const group of activeChoiceGroups) {
+      const policy = SOURCE_VARIANT_POLICIES.find(
+        (candidate) =>
+          candidate.itemSourceKey === item.sourceKey &&
+          candidate.sourceChoiceGroupLabel === group.label,
+      );
+
+      if (!policy) continue;
+
+      const activeLabels = group.options
+        .filter((option) => option.isActive)
+        .map((option) => option.label.toLowerCase())
+        .sort();
+      const policyLabels = policy.options
+        .map((option) => option.label.toLowerCase())
+        .sort();
+
+      if (JSON.stringify(activeLabels) === JSON.stringify(policyLabels)) {
+        variantPolicyByGroupId.set(group.id, policy);
+      }
+    }
+  }
+
+  const variants = activeChoiceGroups
+    .filter((group) => variantPolicyByGroupId.has(group.id))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((group) => {
+      const policy = variantPolicyByGroupId.get(group.id)!;
+      const activeOptions = group.options
+        .filter((option) => option.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+      if (group.maxSelections !== 1 || group.minSelections > 1) {
+        throw new Error(
+          `Variant group "${group.label}" must select at most one option`,
+        );
+      }
+
+      for (const option of activeOptions) {
+        commercialPolicies.push({
+          id: `${group.id}:${option.id}:variant-price-adjustment`,
+          kind: "price" as const,
+          appliesTo: {
+            kind: "variant_option" as const,
+            variantId: group.id,
+            optionId: option.id,
+          },
+          amount: option.priceAdjustmentConfigured
+            ? option.priceAdjustment
+            : null,
+          configured: option.priceAdjustmentConfigured,
+        });
+      }
+
+      return {
+        id: group.id,
+        label: policy.variantLabel,
+        selectionRequired: group.minSelections > 0,
+        defaultOptionId:
+          activeOptions.find((option) => option.isDefault)?.id ?? null,
+        options: activeOptions.map((option) => ({
+          id: option.id,
+          label: option.label,
+          evidence: { state: "explicit" as const },
+        })),
+        evidence: { state: "explicit" as const },
+      };
+    });
+
   const choices = activeChoiceGroups
+    .filter((group) => !variantPolicyByGroupId.has(group.id))
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((group) => {
       const activeOptions = group.options
@@ -110,23 +226,67 @@ export function normalizeLazyJanesOffering({
                   kind: "component" as const,
                   id: option.ingredientId,
                 }
-              : null;
-
-          if (target === null) {
-            throw new Error(
-              `Choice option "${option.label}" has no established component, offering, or none target`,
-            );
-          }
+              : option.targetPreparationOptionId !== null
+                ? (() => {
+                    const preparationTarget = preparationTargetByOptionId.get(
+                      option.targetPreparationOptionId,
+                    );
+                    if (!preparationTarget) {
+                      return { kind: "unknown" as const };
+                    }
+                    return {
+                      kind: "preparation" as const,
+                      ...preparationTarget,
+                    };
+                  })()
+              : activeChoiceConstraints.some(
+                    (constraint) =>
+                      constraint.sourceChoiceGroupId === group.id &&
+                      constraint.sourceChoiceOptionId === option.id,
+                  )
+                ? { kind: "configuration" as const }
+                : { kind: "unknown" as const };
 
           return {
             id: option.id,
             label: option.label,
             target,
+            preparationSchemeId: option.preparationSchemeId,
             isDefault: option.isDefault,
+            ...(target.kind === "unknown"
+              ? {
+                  evidence: {
+                    state: "unknown" as const,
+                    note:
+                      "Legacy source establishes this selectable label but not its reusable semantic target.",
+                  },
+                }
+              : {}),
           };
         }),
       };
     });
+
+  const choiceConstraints = activeChoiceConstraints
+    .map((constraint) => ({
+      id: constraint.id,
+      when: {
+        choiceSlotId: constraint.sourceChoiceGroupId,
+        optionId: constraint.sourceChoiceOptionId,
+      },
+      then: {
+        choiceSlotId: constraint.targetChoiceGroupId,
+        ...(constraint.minSelections !== null
+          ? { minSelections: constraint.minSelections }
+          : {}),
+        ...(constraint.maxSelections !== null
+          ? { maxSelections: constraint.maxSelections }
+          : {}),
+      },
+      ...(constraint.label !== null
+        ? { label: constraint.label }
+        : {}),
+    }));
 
   const components = itemIngredients.map((component) => {
     const capabilities = [];
@@ -227,6 +387,8 @@ export function normalizeLazyJanesOffering({
     components,
     preparations,
     choices,
+    choiceConstraints,
+    variants,
     commercialPolicies,
   });
 }

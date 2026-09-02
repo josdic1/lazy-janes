@@ -106,6 +106,194 @@ describe("universal menu grammar", () => {
     expect(result.options[2]?.target).toEqual({ kind: "none" });
   });
 
+  it("supports a choice that directly selects a preparation state", () => {
+    const offering = universalOfferingSchema.parse({
+      id: "combo",
+      name: "Combo",
+      kind: null,
+      preparations: [
+        {
+          id: "cook-method",
+          label: "Preparation",
+          selectionRequired: true,
+          defaultOptionId: null,
+          options: [
+            { id: "broiled", label: "Broiled" },
+            { id: "fried", label: "Fried" },
+          ],
+        },
+      ],
+      choices: [
+        {
+          id: "preparation-choice",
+          label: "Preparation",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "choose-broiled",
+              label: "Broiled",
+              target: {
+                kind: "preparation",
+                preparationSchemeId: "cook-method",
+                preparationOptionId: "broiled",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(offering.choices[0]?.options[0]?.target).toEqual({
+      kind: "preparation",
+      preparationSchemeId: "cook-method",
+      preparationOptionId: "broiled",
+    });
+  });
+
+  it("rejects a preparation choice target outside its scheme", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "combo",
+      name: "Combo",
+      preparations: [
+        {
+          id: "cook-method",
+          label: "Preparation",
+          selectionRequired: true,
+          defaultOptionId: null,
+          options: [{ id: "broiled", label: "Broiled" }],
+        },
+      ],
+      choices: [
+        {
+          id: "preparation-choice",
+          label: "Preparation",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "choose-fried",
+              label: "Fried",
+              target: {
+                kind: "preparation",
+                preparationSchemeId: "cook-method",
+                preparationOptionId: "fried",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("preserves a real choice whose semantic target is still unknown", () => {
+    const result = choiceSlotSchema.parse({
+      id: "starter",
+      label: "Starter",
+      minSelections: 1,
+      maxSelections: 1,
+      options: [
+        {
+          id: "soup",
+          label: "Soup",
+          target: { kind: "unknown" },
+          evidence: {
+            state: "unknown",
+            note: "The source names Soup but does not identify a reusable target.",
+          },
+        },
+      ],
+    });
+
+    expect(result.options[0]?.target).toEqual({ kind: "unknown" });
+  });
+
+  it("rejects unknown choice targets without explicit unknown evidence", () => {
+    const result = choiceSlotSchema.safeParse({
+      id: "starter",
+      label: "Starter",
+      minSelections: 1,
+      maxSelections: 1,
+      options: [
+        {
+          id: "soup",
+          label: "Soup",
+          target: { kind: "unknown" },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+
+  it("allows a choice option to reference an offering preparation scheme", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "prepared-choice",
+      name: "Prepared Choice",
+      kind: "preset",
+      preparations: [
+        {
+          id: "temperature",
+          label: "Temperature",
+          selectionRequired: true,
+          defaultOptionId: "medium",
+          options: [
+            { id: "medium", label: "Medium" },
+          ],
+        },
+      ],
+      choices: [
+        {
+          id: "protein",
+          label: "Protein",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "burger",
+              label: "Burger",
+              target: { kind: "unknown" },
+              preparationSchemeId: "temperature",
+              evidence: { state: "unknown" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a choice preparation scheme that is not on the offering", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "bad-prepared-choice",
+      name: "Bad Prepared Choice",
+      kind: "preset",
+      choices: [
+        {
+          id: "protein",
+          label: "Protein",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "burger",
+              label: "Burger",
+              target: { kind: "unknown" },
+              preparationSchemeId: "missing-temperature",
+              evidence: { state: "unknown" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects the old loose componentId/isNoneOption choice shape", () => {
     const result = choiceSlotSchema.safeParse({
       id: "legacy-target",
@@ -248,6 +436,88 @@ describe("universal menu grammar", () => {
     expect(result.success).toBe(false);
   });
 
+  it("accepts a configuration choice that activates another choice", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "vegetable-trigger",
+      name: "Vegetable Trigger",
+      kind: "preset",
+      choices: [
+        {
+          id: "side-choice",
+          label: "Side Choice",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "one-vegetable",
+              label: "One Vegetable",
+              target: { kind: "configuration" },
+            },
+          ],
+        },
+        {
+          id: "vegetables",
+          label: "Vegetables",
+          minSelections: 0,
+          maxSelections: 2,
+          options: [
+            {
+              id: "carrots",
+              label: "Carrots",
+              target: { kind: "component", id: "carrots" },
+            },
+            {
+              id: "broccoli",
+              label: "Broccoli",
+              target: { kind: "component", id: "broccoli" },
+            },
+          ],
+        },
+      ],
+      choiceConstraints: [
+        {
+          id: "one-vegetable-rule",
+          when: {
+            choiceSlotId: "side-choice",
+            optionId: "one-vegetable",
+          },
+          then: {
+            choiceSlotId: "vegetables",
+            minSelections: 1,
+            maxSelections: 1,
+          },
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a configuration choice with no conditional rule", () => {
+    const result = universalOfferingSchema.safeParse({
+      id: "orphan-trigger",
+      name: "Orphan Trigger",
+      kind: "preset",
+      choices: [
+        {
+          id: "side-choice",
+          label: "Side Choice",
+          minSelections: 1,
+          maxSelections: 1,
+          options: [
+            {
+              id: "one-vegetable",
+              label: "One Vegetable",
+              target: { kind: "configuration" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects invalid fractional application scopes", () => {
     const result = choiceSlotSchema.safeParse({
       id: "bad-fraction",
@@ -338,6 +608,49 @@ describe("universal menu grammar", () => {
         ],
       }),
     ).toThrow("choice option targets an unavailable offering");
+  });
+
+  it("supports price policies on structural variant options", () => {
+    const offering = universalOfferingSchema.parse({
+      id: "blueberry-pancakes",
+      name: "Blueberry Pancakes",
+      kind: "preset",
+      variants: [
+        {
+          id: "size",
+          label: "Size",
+          selectionRequired: true,
+          defaultOptionId: null,
+          options: [
+            { id: "full", label: "Full Stack" },
+            { id: "short", label: "Short Stack" },
+          ],
+        },
+      ],
+      commercialPolicies: [
+        {
+          id: "short-price",
+          kind: "price",
+          appliesTo: {
+            kind: "variant_option",
+            variantId: "size",
+            optionId: "short",
+          },
+          amount: -2,
+          configured: true,
+        },
+      ],
+    });
+
+    expect(offering.commercialPolicies[0]).toMatchObject({
+      appliesTo: {
+        kind: "variant_option",
+        variantId: "size",
+        optionId: "short",
+      },
+      amount: -2,
+      configured: true,
+    });
   });
 
   it("supports menu-level local-time availability rules", () => {

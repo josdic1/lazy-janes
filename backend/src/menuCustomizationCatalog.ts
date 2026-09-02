@@ -4,6 +4,7 @@ import type {
   ComponentRole,
   Ingredient,
   IngredientKind,
+  MenuChoiceConstraint,
   MenuChoiceGroup,
   MenuCustomizationCatalog,
   MenuItemIngredient,
@@ -72,12 +73,26 @@ type ChoiceRow = {
   option_label: string | null;
   ingredient_id: string | null;
   preparation_scheme_id: string | null;
+  target_preparation_option_id: string | null;
   is_none_option: boolean | null;
   price_adjustment: string | null;
   price_adjustment_configured: boolean | null;
   option_sort_order: number | null;
   is_default: boolean | null;
   option_is_active: boolean | null;
+};
+
+type MenuChoiceConstraintRow = {
+  id: string;
+  menu_item_id: string;
+  source_choice_group_id: string;
+  source_choice_option_id: string;
+  target_choice_group_id: string;
+  min_selections: number | null;
+  max_selections: number | null;
+  label: string | null;
+  sort_order: number;
+  is_active: boolean;
 };
 
 type PreparationSchemeRow = {
@@ -97,6 +112,23 @@ type PreparationOptionRow = {
   is_default: boolean;
   is_active: boolean;
 };
+
+function toMenuChoiceConstraint(
+  row: MenuChoiceConstraintRow,
+): MenuChoiceConstraint {
+  return {
+    id: row.id,
+    menuItemId: row.menu_item_id,
+    sourceChoiceGroupId: row.source_choice_group_id,
+    sourceChoiceOptionId: row.source_choice_option_id,
+    targetChoiceGroupId: row.target_choice_group_id,
+    minSelections: row.min_selections,
+    maxSelections: row.max_selections,
+    label: row.label,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+  };
+}
 
 function toIngredient(row: IngredientRow): Ingredient {
   return {
@@ -188,6 +220,7 @@ function toChoiceGroups(rows: ChoiceRow[]): MenuChoiceGroup[] {
         label: row.option_label,
         ingredientId: row.ingredient_id,
         preparationSchemeId: row.preparation_scheme_id,
+        targetPreparationOptionId: row.target_preparation_option_id,
         isNoneOption: row.is_none_option ?? false,
         priceAdjustment: Number(row.price_adjustment),
         priceAdjustmentConfigured: row.price_adjustment_configured ?? false,
@@ -207,6 +240,7 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
     itemIngredientResult,
     replacementResult,
     choiceResult,
+    choiceConstraintResult,
     preparationSchemeResult,
     preparationOptionResult,
   ] = await Promise.all([
@@ -286,6 +320,7 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
         option_record.label AS option_label,
         option_record.ingredient_id,
         option_record.preparation_scheme_id,
+        option_record.target_preparation_option_id,
         option_record.is_none_option,
         option_record.price_adjustment,
         option_record.price_adjustment_configured,
@@ -301,6 +336,22 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
         group_record.label,
         option_record.sort_order,
         option_record.label
+    `),
+    pool.query<MenuChoiceConstraintRow>(`
+      SELECT
+        id,
+        menu_item_id,
+        source_choice_group_id,
+        source_choice_option_id,
+        target_choice_group_id,
+        min_selections,
+        max_selections,
+        label,
+        sort_order,
+        is_active
+      FROM menu_choice_constraints
+      WHERE is_active = true
+      ORDER BY menu_item_id, sort_order, id
     `),
     pool.query<PreparationSchemeRow>(`
       SELECT id, source_key, label, kind, sort_order, is_active
@@ -350,5 +401,6 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
     itemIngredients: itemIngredientResult.rows.map(toItemIngredient),
     replacements: replacementResult.rows.map(toItemIngredientReplacement),
     choiceGroups: toChoiceGroups(choiceResult.rows),
+    choiceConstraints: choiceConstraintResult.rows.map(toMenuChoiceConstraint),
   };
 }

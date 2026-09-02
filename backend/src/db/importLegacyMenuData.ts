@@ -1,9 +1,22 @@
 import type { PoolClient } from "pg";
 import {
-  ingredients as sourceIngredients,
+  ingredients as retainedSourceIngredients,
   items as sourceItems,
 } from "./menuImport/menuData.js";
 import { buildMenuOntology, ingredientKind } from "./menuImport/menuOntology.js";
+import {
+  CONFIRMED_MENU_INGREDIENTS,
+  SOURCE_DERIVED_CHOICE_INGREDIENTS,
+} from "./menuImport/menuPolicies.js";
+
+const sourceIngredients = [
+  ...retainedSourceIngredients.map((ingredient) => ({
+    ...ingredient,
+    isAddable: true,
+  })),
+  ...CONFIRMED_MENU_INGREDIENTS,
+  ...SOURCE_DERIVED_CHOICE_INGREDIENTS,
+];
 
 type DbItem = {
   id: string;
@@ -97,14 +110,15 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           allergen_flags,
           sort_order
         )
-        VALUES ($1, $2, true, true, 0, false, '{}', 0)
+        VALUES ($1, $2, true, $3, 0, false, '{}', 0)
         ON CONFLICT ((lower(name))) DO UPDATE
         SET
           kind = EXCLUDED.kind,
           is_active = true,
+          is_addable = EXCLUDED.is_addable,
           updated_at = now()
       `,
-      [ingredient.name, ingredientKind(ingredient.name)],
+      [ingredient.name, ingredientKind(ingredient.name), ingredient.isAddable],
     );
   }
 
@@ -192,6 +206,28 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
     SET is_active = false, updated_at = now()
     WHERE NOT (source_key = ANY($1::text[]))
   `, [ontology.preparationSchemes.map((scheme) => scheme.sourceKey)]);
+
+  const preparationOptionResult = await client.query<{
+    source_key: string;
+    option_id: string;
+    option_label: string;
+  }>(`
+    SELECT
+      scheme.source_key,
+      option_record.id AS option_id,
+      option_record.label AS option_label
+    FROM preparation_options option_record
+    JOIN preparation_schemes scheme
+      ON scheme.id = option_record.preparation_scheme_id
+    WHERE scheme.is_active = true
+      AND option_record.is_active = true
+  `);
+  const preparationOptionUuidBySourceKey = new Map(
+    preparationOptionResult.rows.map((row) => [
+      `${row.source_key}|${row.option_label.toLowerCase()}`,
+      row.option_id,
+    ]),
+  );
 
   const desiredIngredientIdsByItem = new Map<string, string[]>();
   for (const rule of ontology.componentRules) {
@@ -341,6 +377,9 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
     await client.query("DELETE FROM menu_choice_groups WHERE menu_item_id = $1", [itemId]);
   }
 
+  const choiceGroupUuidBySourceKey = new Map<string, string>();
+  const choiceOptionUuidBySourceKey = new Map<string, string>();
+
   for (const slot of ontology.choiceSlots) {
     const itemId = itemUuidBySourceId.get(slot.itemId);
     if (!itemId) continue;
@@ -373,6 +412,11 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
     const groupId = groupResult.rows[0]?.id;
     if (!groupId) throw new Error(`Choice slot insert failed: ${slot.label}`);
 
+    choiceGroupUuidBySourceKey.set(
+      `${slot.itemId}|${slot.sourceGroupId}`,
+      groupId,
+    );
+
     for (const option of slot.options) {
       const ingredientId = option.ingredientId
         ? ingredientUuidBySourceId.get(option.ingredientId) ?? null
@@ -380,14 +424,22 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
       const preparationSchemeId = option.preparationSourceKey
         ? preparationUuidBySourceKey.get(option.preparationSourceKey) ?? null
         : null;
+      const targetPreparationOptionId =
+        option.targetPreparationSourceKey &&
+        option.targetPreparationOptionLabel
+          ? preparationOptionUuidBySourceKey.get(
+              `${option.targetPreparationSourceKey}|${option.targetPreparationOptionLabel.toLowerCase()}`,
+            ) ?? null
+          : null;
 
-      await client.query(
+      const optionResult = await client.query<{ id: string }>(
         `
           INSERT INTO menu_choice_options (
             choice_group_id,
             label,
             ingredient_id,
             preparation_scheme_id,
+            target_preparation_option_id,
             is_none_option,
             price_adjustment,
             price_adjustment_configured,
@@ -395,13 +447,15 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
             is_default,
             is_active
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+          RETURNING id
         `,
         [
           groupId,
           option.label,
           ingredientId,
           preparationSchemeId,
+          targetPreparationOptionId,
           option.isNoneOption,
           option.priceAdjustment ?? 0,
           option.priceConfigured,
@@ -409,6 +463,64 @@ export async function importLegacyMenuData(client: PoolClient): Promise<void> {
           option.isDefault,
         ],
       );
+
+      const optionId = optionResult.rows[0]?.id;
+      if (!optionId) {
+        throw new Error(
+          `Choice option insert failed: ${slot.label} > ${option.label}`,
+        );
+      }
+
+      choiceOptionUuidBySourceKey.set(
+        `${slot.itemId}|${slot.sourceGroupId}|${option.label.toLowerCase()}`,
+        optionId,
+      );
     }
+  }
+
+  for (const constraint of ontology.conditionalChoiceConstraints) {
+    const itemId = itemUuidBySourceId.get(constraint.itemId);
+    const sourceGroupId = choiceGroupUuidBySourceKey.get(
+      `${constraint.itemId}|${constraint.sourceChoiceGroupId}`,
+    );
+    const sourceOptionId = choiceOptionUuidBySourceKey.get(
+      `${constraint.itemId}|${constraint.sourceChoiceGroupId}|${constraint.sourceChoiceOptionLabel.toLowerCase()}`,
+    );
+    const targetGroupId = choiceGroupUuidBySourceKey.get(
+      `${constraint.itemId}|${constraint.targetChoiceGroupId}`,
+    );
+
+    if (!itemId || !sourceGroupId || !sourceOptionId || !targetGroupId) {
+      throw new Error(
+        `Conditional choice constraint could not resolve: ${constraint.itemId} / ${constraint.sourceChoiceOptionLabel}`,
+      );
+    }
+
+    await client.query(
+      `
+        INSERT INTO menu_choice_constraints (
+          menu_item_id,
+          source_choice_group_id,
+          source_choice_option_id,
+          target_choice_group_id,
+          min_selections,
+          max_selections,
+          label,
+          sort_order,
+          is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+      `,
+      [
+        itemId,
+        sourceGroupId,
+        sourceOptionId,
+        targetGroupId,
+        constraint.minSelections,
+        constraint.maxSelections,
+        constraint.label,
+        constraint.sortOrder,
+      ],
+    );
   }
 }

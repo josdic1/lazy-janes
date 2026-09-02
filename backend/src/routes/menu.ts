@@ -14,7 +14,6 @@ import type {
   IngredientKind,
   IngredientPopularity,
   MenuCategory,
-  MenuChoiceGroup,
   MenuCustomizationCatalog,
   MenuGroup,
   MenuItem,
@@ -39,6 +38,7 @@ import {
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
 import { getCustomizationCatalog } from "../menuCustomizationCatalog.js";
+import { getMenuRules } from "../menuRules.js";
 import { normalizeLazyJanesMenu } from "../menuNormalization/lazyJanesMenuAdapter.js";
 
 type MenuItemRow = {
@@ -122,28 +122,6 @@ type ItemIngredientReplacementRow = {
   price_adjustment: string;
   price_adjustment_configured: boolean;
   sort_order: number;
-};
-
-type ChoiceRow = {
-  group_id: string;
-  menu_item_id: string;
-  group_label: string;
-  group_role: ComponentRole;
-  group_relationship: ComponentRelationship | null;
-  min_selections: number;
-  max_selections: number | null;
-  group_sort_order: number;
-  group_is_active: boolean;
-  option_id: string | null;
-  option_label: string | null;
-  ingredient_id: string | null;
-  preparation_scheme_id: string | null;
-  is_none_option: boolean | null;
-  price_adjustment: string | null;
-  price_adjustment_configured: boolean | null;
-  option_sort_order: number | null;
-  is_default: boolean | null;
-  option_is_active: boolean | null;
 };
 
 type PreparationSchemeRow = {
@@ -364,55 +342,6 @@ function toItemIngredientReplacement(
   };
 }
 
-function toChoiceGroups(rows: ChoiceRow[]): MenuChoiceGroup[] {
-  const groups = new Map<string, MenuChoiceGroup>();
-
-  for (const row of rows) {
-    let group = groups.get(row.group_id);
-
-    if (!group) {
-      group = {
-        id: row.group_id,
-        menuItemId: row.menu_item_id,
-        label: row.group_label,
-        role: row.group_role,
-        relationship: row.group_relationship,
-        minSelections: row.min_selections,
-        maxSelections: row.max_selections,
-        sortOrder: row.group_sort_order,
-        isActive: row.group_is_active,
-        options: [],
-      };
-      groups.set(row.group_id, group);
-    }
-
-    if (
-      row.option_id &&
-      row.option_label !== null &&
-      row.price_adjustment !== null &&
-      row.option_sort_order !== null &&
-      row.is_default !== null &&
-      row.option_is_active !== null
-    ) {
-      group.options.push({
-        id: row.option_id,
-        choiceGroupId: row.group_id,
-        label: row.option_label,
-        ingredientId: row.ingredient_id,
-        preparationSchemeId: row.preparation_scheme_id,
-        isNoneOption: row.is_none_option ?? false,
-        priceAdjustment: Number(row.price_adjustment),
-        priceAdjustmentConfigured: row.price_adjustment_configured ?? false,
-        sortOrder: row.option_sort_order,
-        isDefault: row.is_default,
-        isActive: row.option_is_active,
-      });
-    }
-  }
-
-  return Array.from(groups.values());
-}
-
 export async function getAllMenuItems(): Promise<MenuItem[]> {
   const result = await pool.query<MenuItemRow>(`
     ${menuSelect}
@@ -603,15 +532,17 @@ menuRouter.get("/taxonomy", async (_request, response) => {
 });
 
 menuRouter.get("/normalized", async (_request, response) => {
-  const [items, catalog] = await Promise.all([
+  const [items, catalog, rules] = await Promise.all([
     getAllMenuItems(),
     getCustomizationCatalog(),
+    getMenuRules(),
   ]);
 
   response.json(
     normalizeLazyJanesMenu({
       items,
       catalog,
+      rules,
     }),
   );
 });

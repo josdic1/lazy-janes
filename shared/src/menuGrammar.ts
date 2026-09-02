@@ -186,8 +186,31 @@ export const choiceOptionTargetSchema = z.discriminatedUnion("kind", [
     id: z.string().min(1),
   }).strict(),
 
+  // The option directly selects a preparation state for the containing
+  // offering (for example Broiled/Fried or Mild/Spicy).
+  z.object({
+    kind: z.literal("preparation"),
+    preparationSchemeId: z.string().min(1),
+    preparationOptionId: z.string().min(1),
+  }).strict(),
+
   z.object({
     kind: z.literal("none"),
+  }).strict(),
+
+  // The option represents a configuration decision rather than
+  // selecting a component or whole offering. It must drive a
+  // conditional choice constraint on the containing offering.
+  z.object({
+    kind: z.literal("configuration"),
+  }).strict(),
+
+  // The source proves that this is a real selectable option, but does not
+  // establish whether its semantic target is a reusable component, another
+  // offering, or a configuration decision. This preserves source truth
+  // without inventing identity.
+  z.object({
+    kind: z.literal("unknown"),
   }).strict(),
 ]);
 export type ChoiceOptionTarget =
@@ -202,10 +225,24 @@ export const choiceOptionSchema = z.object({
   // into fake components merely because they appear inside a choice.
   target: choiceOptionTargetSchema,
 
+  // Null means this option has no established preparation scheme.
+  preparationSchemeId: z.string().min(1).nullable().default(null),
+
   isDefault: z.boolean().default(false),
 
   evidence: evidenceSchema.optional(),
-}).strict();
+}).strict().superRefine((option, ctx) => {
+  if (
+    option.target.kind === "unknown" &&
+    option.evidence?.state !== "unknown"
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["evidence"],
+      message: "unknown choice targets must carry unknown evidence",
+    });
+  }
+});
 export type ChoiceOption = z.infer<typeof choiceOptionSchema>;
 
 export const applicationScopeSchema = z.discriminatedUnion("kind", [
@@ -685,6 +722,12 @@ export const commercialPolicyTargetSchema =
       choiceSlotId: z.string().min(1),
       optionId: z.string().min(1),
     }).strict(),
+
+    z.object({
+      kind: z.literal("variant_option"),
+      variantId: z.string().min(1),
+      optionId: z.string().min(1),
+    }).strict(),
   ]);
 
 export type CommercialPolicyTarget =
@@ -807,6 +850,73 @@ export const universalOfferingSchema = z.object({
   const choicesById = new Map(
     offering.choices.map((choice) => [choice.id, choice]),
   );
+  const preparationIds = new Set(
+    offering.preparations.map((preparation) => preparation.id),
+  );
+
+  for (const [choiceIndex, choice] of offering.choices.entries()) {
+    for (const [optionIndex, option] of choice.options.entries()) {
+      if (
+        option.preparationSchemeId !== null &&
+        !preparationIds.has(option.preparationSchemeId)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [
+            "choices",
+            choiceIndex,
+            "options",
+            optionIndex,
+            "preparationSchemeId",
+          ],
+          message: "choice preparationSchemeId must reference an available preparation scheme",
+        });
+      }
+
+      if (option.target.kind === "preparation") {
+        const preparationTarget = option.target;
+
+        const scheme = offering.preparations.find(
+          (candidate) =>
+            candidate.id === preparationTarget.preparationSchemeId,
+        );
+
+        if (!scheme) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["choices", choiceIndex, "options", optionIndex, "target"],
+            message: "preparation choice target must reference an available preparation scheme",
+          });
+        } else if (
+          !scheme.options.some(
+            (candidate) =>
+              candidate.id === preparationTarget.preparationOptionId,
+          )
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["choices", choiceIndex, "options", optionIndex, "target"],
+            message: "preparation choice target must reference an option on its preparation scheme",
+          });
+        }
+      }
+
+      if (
+        option.target.kind === "configuration" &&
+        !offering.choiceConstraints.some(
+          (constraint) =>
+            constraint.when.choiceSlotId === choice.id &&
+            constraint.when.optionId === option.id,
+        )
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["choices", choiceIndex, "options", optionIndex, "target"],
+          message: "configuration choice option must activate a conditional choice constraint",
+        });
+      }
+    }
+  }
 
   for (
     const [constraintIndex, constraint]

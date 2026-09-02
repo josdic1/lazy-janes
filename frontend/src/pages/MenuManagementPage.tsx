@@ -240,6 +240,7 @@ export function MenuManagementPage() {
     itemIngredients: [],
     replacements: [],
     choiceGroups: [],
+    choiceConstraints: [],
   });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");

@@ -18,7 +18,15 @@ import {
   CARRIER_SOURCE_GROUP_IDS,
   COMPONENT_RELATIONSHIP_OVERRIDES,
   COMPONENT_ROLE_OVERRIDES,
+  CONFIRMED_MENU_INGREDIENTS,
   HOUSE_CARRIER_SUBSTITUTION_RULES,
+  RITZ_VEGETABLE_CHOICE_POLICIES,
+  RITZ_VEGETABLE_INGREDIENT_IDS,
+  SOURCE_CHOICE_COMPONENT_ALIASES,
+  SOURCE_CHOICE_COMPONENT_BLOCKLIST,
+  SOURCE_DERIVED_CHOICE_INGREDIENTS,
+  SOURCE_PREPARATION_CHOICE_POLICIES,
+  SOURCE_VARIANT_POLICIES,
   UNCONFIGURED_REPLACEMENT_SOURCE_GROUP_IDS,
 } from "./menuPolicies.js";
 
@@ -81,6 +89,8 @@ export interface SourceChoiceSlotOption {
   isNoneOption: boolean;
   isDefault: boolean;
   preparationSourceKey: string | null;
+  targetPreparationSourceKey: string | null;
+  targetPreparationOptionLabel: string | null;
   sortOrder: number;
 }
 
@@ -94,6 +104,17 @@ export interface SourceChoiceSlot {
   maxSelections: number | null;
   sortOrder: number;
   options: SourceChoiceSlotOption[];
+}
+
+export interface SourceConditionalChoiceConstraint {
+  itemId: string;
+  sourceChoiceGroupId: string;
+  sourceChoiceOptionLabel: string;
+  targetChoiceGroupId: string;
+  minSelections: number | null;
+  maxSelections: number | null;
+  label: string | null;
+  sortOrder: number;
 }
 
 const CHEESES = new Set([
@@ -320,9 +341,20 @@ export function buildMenuOntology(): {
   componentRules: SourceComponentRule[];
   replacementRules: SourceReplacementRule[];
   choiceSlots: SourceChoiceSlot[];
+  conditionalChoiceConstraints: SourceConditionalChoiceConstraint[];
 } {
-  const ingredientById = new Map(ingredients.map((ingredient) => [ingredient.id, ingredient]));
-  const ingredientByName = new Map(ingredients.map((ingredient) => [lower(ingredient.name), ingredient]));
+  const allIngredients = [
+    ...ingredients,
+    ...CONFIRMED_MENU_INGREDIENTS,
+    ...SOURCE_DERIVED_CHOICE_INGREDIENTS,
+  ];
+
+  const ingredientById = new Map(
+    allIngredients.map((ingredient) => [ingredient.id, ingredient]),
+  );
+  const ingredientByName = new Map(
+    allIngredients.map((ingredient) => [lower(ingredient.name), ingredient]),
+  );
   const itemById = new Map(items.map((item) => [item.id, item]));
   const groupById = new Map(modifierGroups.map((group) => [group.id, group]));
   const optionsByGroup = new Map<string, typeof modifiers>();
@@ -356,6 +388,13 @@ export function buildMenuOntology(): {
   const resolveOptionIngredientId = (option: (typeof modifiers)[number]): string | null => {
     if (option.ingredientId) return option.ingredientId;
     if (isNoneLabel(option.name) || isServiceActionLabel(option.name)) return null;
+
+    const sourceKey = `${option.modifierGroupId}|${lower(option.name)}`;
+    if (SOURCE_CHOICE_COMPONENT_BLOCKLIST.has(sourceKey)) return null;
+
+    const sourceAlias = SOURCE_CHOICE_COMPONENT_ALIASES.get(sourceKey);
+    if (sourceAlias) return sourceAlias;
+
     return ingredientByName.get(lower(option.name))?.id ?? null;
   };
 
@@ -389,6 +428,25 @@ export function buildMenuOntology(): {
       preparationSchemesBySignature.set(signature, scheme);
     }
     sourceGroupToPreparationKey.set(group.id, scheme.sourceKey);
+  }
+
+  for (const policy of SOURCE_PREPARATION_CHOICE_POLICIES) {
+    const signature = `other|${policy.options
+      .map((option) => lower(option.label))
+      .join("|")}`;
+
+    if (!preparationSchemesBySignature.has(signature)) {
+      preparationSchemesBySignature.set(signature, {
+        sourceKey: policy.preparationSourceKey,
+        label: policy.preparationLabel,
+        kind: "other",
+        options: policy.options.map((option) => ({
+          label: option.label,
+          sortOrder: option.sortOrder,
+          isDefault: false,
+        })),
+      });
+    }
   }
 
   const explicitRoleByItemIngredient = new Map<string, ComponentRole>();
@@ -507,6 +565,7 @@ export function buildMenuOntology(): {
   );
 
   const choiceSlots: SourceChoiceSlot[] = [];
+  const conditionalChoiceConstraints: SourceConditionalChoiceConstraint[] = [];
   const choiceSlotIndexByKey = new Map<string, number>();
 
   for (const [itemId, links] of linksByItem) {
@@ -668,14 +727,47 @@ export function buildMenuOntology(): {
 
       const slotOptions: SourceChoiceSlotOption[] = options.map((option) => {
         const ingredientId = resolveOptionIngredientId(option);
+        const confirmedVegetablePolicy =
+          RITZ_VEGETABLE_CHOICE_POLICIES.find(
+            (policy) =>
+              policy.sourceChoiceGroupId === group.id &&
+              lower(policy.sourceChoiceOptionLabel) === lower(option.name),
+          );
+        const preparationChoicePolicy =
+          SOURCE_PREPARATION_CHOICE_POLICIES.find(
+            (policy) =>
+              policy.itemSourceKey === itemId &&
+              policy.sourceChoiceGroupId === group.id,
+          );
+        const preparationTargetOption = preparationChoicePolicy?.options.find(
+          (candidate) => lower(candidate.label) === lower(option.name),
+        );
+
+        const variantOptionPolicy = SOURCE_VARIANT_POLICIES
+          .find(
+            (policy) =>
+              policy.itemSourceKey === itemId &&
+              policy.sourceChoiceGroupId === group.id,
+          )
+          ?.options.find(
+            (candidate) => lower(candidate.label) === lower(option.name),
+          );
+
         return {
           label: isNoneLabel(option.name) ? "None" : option.name,
           ingredientId,
-          priceAdjustment: option.priceAdjustment,
+          priceAdjustment:
+            variantOptionPolicy?.priceAdjustment ??
+            preparationTargetOption?.priceAdjustment ??
+            confirmedVegetablePolicy?.priceAdjustment ??
+            option.priceAdjustment,
           priceConfigured:
-            option.priceConfigured ||
-            isNoneLabel(option.name) ||
-            (ingredientId !== null && standards.has(ingredientId)),
+            variantOptionPolicy?.priceConfigured ??
+            preparationTargetOption?.priceConfigured ??
+            confirmedVegetablePolicy?.priceConfigured ??
+            (option.priceConfigured ||
+              isNoneLabel(option.name) ||
+              (ingredientId !== null && standards.has(ingredientId))),
           isNoneOption: option.isNoneOption || isNoneLabel(option.name),
           // A single standard recipe component is the default for a typed slot.
           // If multiple alternatives were historically marked standard, the
@@ -696,6 +788,12 @@ export function buildMenuOntology(): {
               ? sourceKey
               : null;
           })(),
+          targetPreparationSourceKey:
+            preparationTargetOption && preparationChoicePolicy
+              ? preparationChoicePolicy.preparationSourceKey
+              : null,
+          targetPreparationOptionLabel:
+            preparationTargetOption?.label ?? null,
           sortOrder: option.sortOrder,
         };
       });
@@ -741,6 +839,66 @@ export function buildMenuOntology(): {
             : Math.min(group.maxSelections, slotOptions.length),
         sortOrder: link.sortOrder,
         options: slotOptions,
+      });
+    }
+  }
+
+  const confirmedVegetableSlotItems = new Set<string>();
+
+  for (const link of itemModifierGroups) {
+    const policies = RITZ_VEGETABLE_CHOICE_POLICIES.filter(
+      (policy) => policy.sourceChoiceGroupId === link.modifierGroupId,
+    );
+
+    for (const policy of policies) {
+      if (!confirmedVegetableSlotItems.has(link.itemId)) {
+        const vegetableOptions: SourceChoiceSlotOption[] =
+          RITZ_VEGETABLE_INGREDIENT_IDS.map((ingredientId, index) => {
+            const ingredient = ingredientById.get(ingredientId);
+            if (!ingredient) {
+              throw new Error(
+                `Confirmed Ritz vegetable ingredient not found: ${ingredientId}`,
+              );
+            }
+
+            return {
+              label: ingredient.name,
+              ingredientId,
+              priceAdjustment: 0,
+              priceConfigured: true,
+              isNoneOption: false,
+              isDefault: false,
+              preparationSourceKey: null,
+              targetPreparationSourceKey: null,
+              targetPreparationOptionLabel: null,
+              sortOrder: (index + 1) * 10,
+            };
+          });
+
+        choiceSlots.push({
+          itemId: link.itemId,
+          sourceGroupId: policy.targetChoiceGroupId,
+          label: "Vegetables",
+          role: "veggie",
+          relationship: "comes_with",
+          minSelections: 0,
+          maxSelections: 2,
+          sortOrder: link.sortOrder + 1,
+          options: vegetableOptions,
+        });
+
+        confirmedVegetableSlotItems.add(link.itemId);
+      }
+
+      conditionalChoiceConstraints.push({
+        itemId: link.itemId,
+        sourceChoiceGroupId: policy.sourceChoiceGroupId,
+        sourceChoiceOptionLabel: policy.sourceChoiceOptionLabel,
+        targetChoiceGroupId: policy.targetChoiceGroupId,
+        minSelections: policy.minSelections,
+        maxSelections: policy.maxSelections,
+        label: `${policy.sourceChoiceOptionLabel} activates Vegetables`,
+        sortOrder: 10,
       });
     }
   }
@@ -861,5 +1019,6 @@ export function buildMenuOntology(): {
     componentRules: fixedComponentRules,
     replacementRules,
     choiceSlots,
+    conditionalChoiceConstraints,
   };
 }

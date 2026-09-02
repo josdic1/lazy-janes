@@ -767,6 +767,184 @@ describe("POST /api/orders", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+
+  it("validates direct preparation choice targets", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const groupId = randomUUID();
+    const activeChoiceOptionId = randomUUID();
+    const inactiveChoiceOptionId = randomUUID();
+    const schemeId = randomUUID();
+    const activePreparationOptionId = randomUUID();
+    const inactivePreparationOptionId = randomUUID();
+    let orderId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Direct Preparation Choice Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Direct Preparation Choice Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO preparation_schemes (
+            id,
+            source_key,
+            label,
+            kind
+          )
+          VALUES ($1, $2, 'Preparation', 'other')
+        `,
+        [schemeId, `test_direct_preparation_${schemeId}`],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO preparation_options (
+            id,
+            preparation_scheme_id,
+            label,
+            sort_order,
+            is_active
+          )
+          VALUES
+            ($1, $3, 'Broiled', 10, true),
+            ($2, $3, 'Fried', 20, false)
+        `,
+        [
+          activePreparationOptionId,
+          inactivePreparationOptionId,
+          schemeId,
+        ],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_groups (
+            id,
+            menu_item_id,
+            label,
+            min_selections,
+            max_selections
+          )
+          VALUES ($1, $2, 'Preparation', 1, 1)
+        `,
+        [groupId, menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_options (
+            id,
+            choice_group_id,
+            label,
+            target_preparation_option_id,
+            sort_order
+          )
+          VALUES
+            ($1, $5, 'Broiled', $3, 10),
+            ($2, $5, 'Fried', $4, 20)
+        `,
+        [
+          activeChoiceOptionId,
+          inactiveChoiceOptionId,
+          activePreparationOptionId,
+          inactivePreparationOptionId,
+          groupId,
+        ],
+      );
+
+      const unavailable = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              choiceOptionIds: [inactiveChoiceOptionId],
+            },
+          ],
+        });
+
+      expect(unavailable.status).toBe(409);
+      expect(unavailable.body.error).toBe(
+        "That preparation choice is unavailable for Direct Preparation Choice Item",
+      );
+
+      const accepted = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              choiceOptionIds: [activeChoiceOptionId],
+            },
+          ],
+        });
+
+      expect(accepted.status).toBe(201);
+      const acceptedOrder = orderSchema.parse(accepted.body);
+      orderId = acceptedOrder.id;
+
+      expect(acceptedOrder.items[0]?.choiceSelections).toEqual([
+        expect.objectContaining({
+          choiceGroupId: groupId,
+          choiceOptionId: activeChoiceOptionId,
+          groupLabel: "Preparation",
+          optionLabel: "Broiled",
+        }),
+      ]);
+    } finally {
+      if (orderId) {
+        await pool.query(
+          `
+            DELETE FROM order_item_choice_selections
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query(
+          `
+            DELETE FROM order_item_events
+            WHERE order_item_id IN (
+              SELECT id FROM order_items WHERE order_id = $1
+            )
+          `,
+          [orderId],
+        );
+        await pool.query("DELETE FROM order_items WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM order_events WHERE order_id = $1", [orderId]);
+        await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
+      }
+
+      await pool.query("DELETE FROM menu_choice_groups WHERE id = $1", [groupId]);
+      await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
+      await pool.query("DELETE FROM preparation_schemes WHERE id = $1", [schemeId]);
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
 });
 
 describe("POST /api/orders/:orderId/fire", () => {
