@@ -6,7 +6,8 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run build --workspace @lazy-janes/shared && npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run build --workspace @lazy-janes/shared && npm run typecheck --workspaces --if-present",
+    "dev": "concurrently -n shared,backend,frontend \"npm run build --workspace @lazy-janes/shared -- --watch --preserveWatchOutput\" \"npm run dev --workspace @lazy-janes/backend\" \"npm run dev --workspace @lazy-janes/frontend\""
   },
   "keywords": [],
   "author": "",
@@ -20,6 +21,7 @@
   ],
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "concurrently": "^10.0.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
