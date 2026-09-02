@@ -750,4 +750,276 @@ describe("automatic party completion", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+  it("does not complete a paid party while ordered food remains unallocated", async () => {
+    const userId = randomUUID();
+    const partyId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const checkedItemId = randomUUID();
+    const unallocatedItemId = randomUUID();
+    const checkId = randomUUID();
+    let paymentId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Unallocated Item Completion Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO parties (
+            id,
+            guest_count,
+            status,
+            created_by_user_id
+          )
+          VALUES ($1, 2, 'in_service', $2)
+        `,
+        [partyId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Unallocated Completion Test Meal',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            party_id,
+            fulfillment_type,
+            created_by_user_id
+          )
+          VALUES ($1, $2, 'dine_in', $3)
+        `,
+        [orderId, partyId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_user_id,
+            item_name,
+            unit_price
+          )
+          VALUES
+            (
+              $1,
+              $3,
+              $4,
+              $5,
+              'Checked Meal',
+              10
+            ),
+            (
+              $2,
+              $3,
+              $4,
+              $5,
+              'Still Unallocated Meal',
+              10
+            )
+        `,
+        [
+          checkedItemId,
+          unallocatedItemId,
+          orderId,
+          menuItemId,
+          userId,
+        ],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO checks (
+            id,
+            party_id,
+            label,
+            status,
+            opened_by_user_id,
+            subtotal_amount,
+            tax_amount,
+            total_amount,
+            presented_at
+          )
+          VALUES (
+            $1,
+            $2,
+            'Paid But Incomplete Party',
+            'presented',
+            $3,
+            10.00,
+            0.66,
+            10.66,
+            now()
+          )
+        `,
+        [checkId, partyId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO check_items (
+            check_id,
+            order_item_id,
+            item_name,
+            allocated_quantity,
+            allocated_amount
+          )
+          VALUES (
+            $1,
+            $2,
+            'Checked Meal',
+            1,
+            10.00
+          )
+        `,
+        [checkId, checkedItemId],
+      );
+
+      const paymentResponse = await agent
+        .post("/api/payments")
+        .send({
+          method: "card",
+          allocations: [
+            {
+              checkId,
+              allocatedAmount: 10.66,
+            },
+          ],
+          processorReference: `terminal-${randomUUID()}`,
+        });
+
+      expect(paymentResponse.status).toBe(201);
+      paymentId = paymentSchema.parse(
+        paymentResponse.body,
+      ).id;
+
+      const check = await pool.query<{
+        status: string;
+      }>(
+        `
+          SELECT status
+          FROM checks
+          WHERE id = $1
+        `,
+        [checkId],
+      );
+
+      expect(check.rows[0]?.status).toBe("closed");
+
+      const party = await pool.query<{
+        status: string;
+        completed_at: Date | null;
+      }>(
+        `
+          SELECT status, completed_at
+          FROM parties
+          WHERE id = $1
+        `,
+        [partyId],
+      );
+
+      expect(party.rows[0]).toEqual({
+        status: "in_service",
+        completed_at: null,
+      });
+
+      const completionEvents = await pool.query<{
+        event_type: string;
+      }>(
+        `
+          SELECT event_type
+          FROM party_events
+          WHERE party_id = $1
+            AND event_type = 'completed'
+        `,
+        [partyId],
+      );
+
+      expect(completionEvents.rows).toHaveLength(0);
+    } finally {
+      if (paymentId) {
+        await pool.query(
+          "DELETE FROM payment_events WHERE payment_id = $1",
+          [paymentId],
+        );
+
+        await pool.query(
+          `
+            DELETE FROM payment_check_allocations
+            WHERE payment_id = $1
+          `,
+          [paymentId],
+        );
+
+        await pool.query(
+          "DELETE FROM payments WHERE id = $1",
+          [paymentId],
+        );
+      }
+
+      await pool.query(
+        "DELETE FROM check_events WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM check_items WHERE check_id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM checks WHERE id = $1",
+        [checkId],
+      );
+
+      await pool.query(
+        "DELETE FROM party_events WHERE party_id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM parties WHERE id = $1",
+        [partyId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
 });
