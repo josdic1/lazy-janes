@@ -107,6 +107,25 @@ describe("POST /api/payments", () => {
       expect(check.rows[0]?.status).toBe("closed");
       expect(check.rows[0]?.closed_at).not.toBeNull();
 
+      const paidAgain = await agent
+        .post("/api/payments")
+        .send({
+          method: "cash",
+          allocations: [
+            {
+              checkId,
+              allocatedAmount: 10.66,
+            },
+          ],
+          tipAmount: 0,
+          cashReceivedAmount: 10.66,
+        });
+
+      expect(paidAgain.status).toBe(409);
+      expect(paidAgain.body.error).toBe(
+        "Only presented checks can be paid",
+      );
+
       const drawerEvent = await pool.query<{
         event_type: string;
         amount: string;
@@ -264,6 +283,42 @@ describe("POST /api/payments", () => {
       );
 
       expect(check.rows[0]?.status).toBe("presented");
+
+      const overpayment = await agent
+        .post("/api/payments")
+        .send({
+          method: "card",
+          allocations: [
+            {
+              checkId,
+              allocatedAmount: 17,
+            },
+          ],
+          tipAmount: 0,
+          processorReference: `terminal-${randomUUID()}`,
+        });
+
+      expect(overpayment.status).toBe(409);
+      expect(overpayment.body.error).toBe(
+        "Payment exceeds a check balance",
+      );
+
+      const checkAfterOverpayment = await pool.query<{
+        status: string;
+        closed_at: Date | null;
+      }>(
+        `
+          SELECT status, closed_at
+          FROM checks
+          WHERE id = $1
+        `,
+        [checkId],
+      );
+
+      expect(checkAfterOverpayment.rows[0]).toEqual({
+        status: "presented",
+        closed_at: null,
+      });
 
       const repeated = await agent
         .post("/api/payments")
