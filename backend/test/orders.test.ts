@@ -1134,7 +1134,7 @@ describe("POST /api/orders/:orderId/ready", () => {
         await createAuthenticatedTestUser({
           userId,
           displayName: "Kitchen Ready Test Chef",
-          roles: ["chef"],
+          roles: ["chef", "server"],
         });
 
       await pool.query(
@@ -1188,6 +1188,17 @@ describe("POST /api/orders/:orderId/ready", () => {
         [orderItemId, orderId, menuItemId, userId],
       );
 
+      const badDelivery = await agent
+        .post(`/api/orders/${orderId}/deliver`)
+        .send({
+          orderItemIds: [orderItemId],
+        });
+
+      expect(badDelivery.status).toBe(409);
+      expect(badDelivery.body.error).toBe(
+        "Only ready items can be delivered",
+      );
+
       const response = await agent
         .post(`/api/orders/${orderId}/ready`)
         .send({
@@ -1195,6 +1206,17 @@ describe("POST /api/orders/:orderId/ready", () => {
         });
 
       expect(response.status).toBe(204);
+
+      const duplicateReady = await agent
+        .post(`/api/orders/${orderId}/ready`)
+        .send({
+          orderItemIds: [orderItemId],
+        });
+
+      expect(duplicateReady.status).toBe(409);
+      expect(duplicateReady.body.error).toBe(
+        "Only fired items can be marked ready",
+      );
 
       const item = await pool.query<{
         status: string;
@@ -1332,6 +1354,17 @@ describe("POST /api/orders/:orderId/deliver", () => {
         });
 
       expect(response.status).toBe(204);
+
+      const duplicateDelivery = await agent
+        .post(`/api/orders/${orderId}/deliver`)
+        .send({
+          orderItemIds: [orderItemId],
+        });
+
+      expect(duplicateDelivery.status).toBe(409);
+      expect(duplicateDelivery.body.error).toBe(
+        "Only ready items can be delivered",
+      );
 
       const item = await pool.query<{
         status: string;

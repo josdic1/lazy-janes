@@ -175,6 +175,51 @@ describe("POST /api/checks", () => {
       expect(overAllocated.body.error).toBe(
         "Test Omelette is over-allocated",
       );
+
+      const fullyAllocated = await agent
+        .post("/api/checks")
+        .send({
+          label: "Remaining half",
+          items: [
+            {
+              orderItemId,
+              allocatedQuantity: 1.5,
+            },
+          ],
+        });
+
+      expect(fullyAllocated.status).toBe(201);
+
+      const billedAgain = await agent
+        .post("/api/checks")
+        .send({
+          label: "Duplicate billing attempt",
+          items: [
+            {
+              orderItemId,
+              allocatedQuantity: 0.001,
+            },
+          ],
+        });
+
+      expect(billedAgain.status).toBe(409);
+      expect(billedAgain.body.error).toBe(
+        "Test Omelette is over-allocated",
+      );
+
+      const extraCheckId = fullyAllocated.body.id as string;
+      await pool.query(
+        "DELETE FROM check_events WHERE check_id = $1",
+        [extraCheckId],
+      );
+      await pool.query(
+        "DELETE FROM check_items WHERE check_id = $1",
+        [extraCheckId],
+      );
+      await pool.query(
+        "DELETE FROM checks WHERE id = $1",
+        [extraCheckId],
+      );
     } finally {
       if (checkId) {
         await pool.query(
