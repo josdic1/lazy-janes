@@ -295,4 +295,208 @@ describe("order correction APIs", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+  it("removes a fired void from active kitchen state and prevents billing it", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const orderId = randomUUID();
+    const orderItemId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Fired Void Test Lead Server",
+        roles: ["lead_server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Fired Void Test Item',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            14
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO orders (
+            id,
+            fulfillment_type,
+            created_by_user_id
+          )
+          VALUES ($1, 'takeout', $2)
+        `,
+        [orderId, userId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO order_items (
+            id,
+            order_id,
+            menu_item_id,
+            created_by_user_id,
+            item_name,
+            unit_price
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            'Fired Void Test Item',
+            14
+          )
+        `,
+        [orderItemId, orderId, menuItemId, userId],
+      );
+
+      const fired = await agent
+        .post(`/api/orders/${orderId}/fire`)
+        .send({
+          orderItemIds: [orderItemId],
+          note: null,
+        });
+
+      expect(fired.status).toBe(201);
+
+      const voided = await agent
+        .post(`/api/orders/${orderId}/void`)
+        .send({
+          orderItemIds: [orderItemId],
+          reason: "Customer changed order",
+        });
+
+      expect(voided.status).toBe(204);
+
+      const item = await pool.query<{
+        status: string;
+        void_reason: string | null;
+      }>(
+        `
+          SELECT status, void_reason
+          FROM order_items
+          WHERE id = $1
+        `,
+        [orderItemId],
+      );
+
+      expect(item.rows[0]).toEqual({
+        status: "voided",
+        void_reason: "Customer changed order",
+      });
+
+      const stack = await agent.get("/api/stack");
+      expect(stack.status).toBe(200);
+
+      const stackItem = stack.body.standaloneOrders
+        .flatMap((order: { items: Array<{ id: string; status: string }> }) => order.items)
+        .find((candidate: { id: string }) => candidate.id === orderItemId);
+
+      expect(stackItem).toEqual(
+        expect.objectContaining({
+          id: orderItemId,
+          status: "voided",
+        }),
+      );
+
+      const checked = await agent
+        .post("/api/checks")
+        .send({
+          label: "Should fail",
+          items: [
+            {
+              orderItemId,
+              allocatedQuantity: 1,
+            },
+          ],
+        });
+
+      expect(checked.status).toBe(409);
+      expect(checked.body.error).toBe(
+        "Voided order items cannot be checked",
+      );
+
+      const events = await pool.query<{
+        event_type: string;
+        reason: string | null;
+      }>(
+        `
+          SELECT event_type, reason
+          FROM order_item_events
+          WHERE order_item_id = $1
+          ORDER BY occurred_at, id
+        `,
+        [orderItemId],
+      );
+
+      expect(events.rows.map((event) => event.event_type)).toEqual([
+        "fired",
+        "voided",
+      ]);
+
+      expect(events.rows[1]?.reason).toBe(
+        "Customer changed order",
+      );
+    } finally {
+      await pool.query(
+        `
+          DELETE FROM kitchen_chit_events
+          WHERE kitchen_chit_id IN (
+            SELECT kitchen_chit_id
+            FROM kitchen_chit_items
+            WHERE order_item_id = $1
+          )
+        `,
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM kitchen_chit_items WHERE order_item_id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM kitchen_chits WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_item_events WHERE order_item_id = $1",
+        [orderItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_events WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM order_items WHERE order_id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM orders WHERE id = $1",
+        [orderId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
 });
