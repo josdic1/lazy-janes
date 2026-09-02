@@ -23,20 +23,27 @@ describe("party contract", () => {
 
   it("requires at least one guest", () => {
     expect(
-      createPartyInputSchema.parse({ guestCount: 7 }),
+      createPartyInputSchema.parse({
+        name: "Dicker",
+        guestCount: 7,
+      }),
     ).toEqual({
+      name: "Dicker",
       guestCount: 7,
     });
 
     expect(
-      createPartyInputSchema.safeParse({ guestCount: 0 })
-        .success,
+      createPartyInputSchema.safeParse({
+        name: "Dicker",
+        guestCount: 0,
+      }).success,
     ).toBe(false);
   });
 
   it("accepts a complete party record", () => {
     const party = {
       id: "12b88f3f-7ce6-4e31-9a58-dfd849754f57",
+      name: "Dicker",
       guestCount: 7,
       status: "waiting",
       createdByUserId:

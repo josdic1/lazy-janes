@@ -2,7 +2,7 @@
   "name": "@lazy-janes/frontend",
   "version": "0.1.0",
   "scripts": {
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit"

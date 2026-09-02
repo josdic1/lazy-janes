@@ -81,7 +81,7 @@ describe("user administration operations", () => {
 
     expect(
       resetUserPinInputSchema.safeParse({
-        pin: "12345",
+        pin: "x".repeat(73),
       }).success,
     ).toBe(false);
   });

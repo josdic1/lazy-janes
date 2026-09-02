@@ -138,10 +138,17 @@ describe("manual menu item draft publishing", () => {
 
       const normalizedResponse = await agent.get("/api/menu/normalized");
       expect(normalizedResponse.status).toBe(200);
-      const offering = (normalizedResponse.body as Array<{
-        id: string;
-        components: Array<{ role: string | null; relationship: string | null }>;
-      }>).find((candidate) => candidate.id === menuItemId);
+      const offering = (normalizedResponse.body as {
+        offerings: Array<{
+          id: string;
+          components: Array<{
+            role: string | null;
+            relationship: string | null;
+          }>;
+        }>;
+      }).offerings.find(
+        (candidate) => candidate.id === menuItemId,
+      );
 
       expect(offering).toBeDefined();
       expect(offering?.components[0]).toEqual(

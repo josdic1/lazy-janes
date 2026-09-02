@@ -8,6 +8,7 @@ describe("Stack read contract", () => {
       parties: [
         {
           id: "4ad02662-f67a-4c60-b7af-00d726bb87ea",
+          name: "Table 12",
           guestCount: 2,
           status: "in_service" as const,
           arrivedAt: "2026-08-12T18:00:00.000Z",
@@ -35,6 +36,8 @@ describe("Stack read contract", () => {
                   seatNumber: 1,
                   quantity: 1,
                   status: "ready" as const,
+                  kitchenDetails: [],
+                  kitchenNote: null,
                   allocatedQuantity: 0,
                   remainingQuantity: 1,
                 },
