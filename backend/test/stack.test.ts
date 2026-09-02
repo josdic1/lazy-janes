@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { stackSnapshotSchema } from "@lazy-janes/shared";
+import { checkSchema, orderSchema, stackSnapshotSchema } from "@lazy-janes/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { pool } from "../src/db/pool.js";
 import {
@@ -390,6 +390,338 @@ describe("GET /api/stack", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
+  it("carries customized order truth through kitchen and check", async () => {
+    const userId = randomUUID();
+    const menuItemId = randomUUID();
+    const choiceGroupId = randomUUID();
+    const choiceOptionId = randomUUID();
+    const preparationSchemeId = randomUUID();
+    const preparationOptionId = randomUUID();
+
+    let orderId: string | undefined;
+    let orderItemId: string | undefined;
+    let checkId: string | undefined;
+
+    try {
+      const agent = await createAuthenticatedTestUser({
+        userId,
+        displayName: "Lifecycle Truth Test Server",
+        roles: ["server"],
+      });
+
+      await pool.query(
+        `
+          INSERT INTO menu_items (
+            id,
+            name,
+            category_id,
+            price
+          )
+          VALUES (
+            $1,
+            'Lifecycle Test Burger',
+            (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
+            10
+          )
+        `,
+        [menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO preparation_schemes (
+            id,
+            source_key,
+            label,
+            kind,
+            is_active,
+            sort_order
+          )
+          VALUES (
+            $1,
+            $2,
+            'Temperature',
+            'other',
+            true,
+            1
+          )
+        `,
+        [
+          preparationSchemeId,
+          `lifecycle_temperature_${preparationSchemeId}`,
+        ],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO preparation_options (
+            id,
+            preparation_scheme_id,
+            label,
+            sort_order,
+            is_default,
+            is_active
+          )
+          VALUES (
+            $1,
+            $2,
+            'Well Done',
+            1,
+            false,
+            true
+          )
+        `,
+        [preparationOptionId, preparationSchemeId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_groups (
+            id,
+            menu_item_id,
+            label,
+            min_selections,
+            max_selections,
+            sort_order,
+            is_active
+          )
+          VALUES (
+            $1,
+            $2,
+            'Burger Style',
+            1,
+            1,
+            1,
+            true
+          )
+        `,
+        [choiceGroupId, menuItemId],
+      );
+
+      await pool.query(
+        `
+          INSERT INTO menu_choice_options (
+            id,
+            choice_group_id,
+            label,
+            preparation_scheme_id,
+            price_adjustment,
+            price_adjustment_configured,
+            sort_order,
+            is_active
+          )
+          VALUES (
+            $1,
+            $2,
+            'Deluxe',
+            $3,
+            2.50,
+            true,
+            1,
+            true
+          )
+        `,
+        [
+          choiceOptionId,
+          choiceGroupId,
+          preparationSchemeId,
+        ],
+      );
+
+      const created = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              kitchenNote: "CUT IN HALF",
+              choiceOptionIds: [choiceOptionId],
+              preparationSelections: [
+                {
+                  choiceOptionId,
+                  preparationOptionId,
+                },
+              ],
+            },
+          ],
+        });
+
+      expect(created.status).toBe(201);
+
+      const order = orderSchema.parse(created.body);
+      orderId = order.id;
+      orderItemId = order.items[0]?.id;
+
+      expect(orderItemId).toBeDefined();
+
+      expect(order.items[0]?.choiceSelections).toEqual([
+        expect.objectContaining({
+          choiceGroupId,
+          choiceOptionId,
+          groupLabel: "Burger Style",
+          optionLabel: "Deluxe",
+          priceAdjustment: 2.5,
+        }),
+      ]);
+
+      expect(order.items[0]?.preparationSelections).toEqual([
+        expect.objectContaining({
+          choiceOptionId,
+          preparationSchemeId,
+          preparationOptionId,
+          targetLabel: "Deluxe",
+          schemeLabel: "Temperature",
+          optionLabel: "Well Done",
+        }),
+      ]);
+
+      const fired = await agent
+        .post(`/api/orders/${orderId}/fire`)
+        .send({
+          orderItemIds: [orderItemId],
+          note: null,
+        });
+
+      expect(fired.status).toBe(201);
+
+      const stackResponse = await agent.get("/api/stack");
+      expect(stackResponse.status).toBe(200);
+
+      const snapshot = stackSnapshotSchema.parse(
+        stackResponse.body,
+      );
+      const serialized = JSON.stringify(snapshot);
+
+      expect(serialized).toContain(
+        "Burger Style: Deluxe",
+      );
+      expect(serialized).toContain(
+        "Deluxe: Well Done",
+      );
+      expect(serialized).toContain(
+        "CUT IN HALF",
+      );
+
+      const createdCheck = await agent
+        .post("/api/checks")
+        .send({
+          label: "Lifecycle check",
+          items: [
+            {
+              orderItemId,
+              allocatedQuantity: 1,
+            },
+          ],
+        });
+
+      expect(createdCheck.status).toBe(201);
+
+      const check = checkSchema.parse(
+        createdCheck.body,
+      );
+      checkId = check.id;
+
+      expect(check.subtotalAmount).toBe(12.5);
+      expect(check.items).toEqual([
+        expect.objectContaining({
+          orderItemId,
+          itemName: "Lifecycle Test Burger",
+          allocatedQuantity: 1,
+          allocatedAmount: 12.5,
+        }),
+      ]);
+    } finally {
+      if (checkId) {
+        await pool.query(
+          "DELETE FROM check_events WHERE check_id = $1",
+          [checkId],
+        );
+        await pool.query(
+          "DELETE FROM check_items WHERE check_id = $1",
+          [checkId],
+        );
+        await pool.query(
+          "DELETE FROM checks WHERE id = $1",
+          [checkId],
+        );
+      }
+
+      if (orderItemId) {
+        await pool.query(
+          `
+            DELETE FROM kitchen_chit_events
+            WHERE kitchen_chit_id IN (
+              SELECT kitchen_chit_id
+              FROM kitchen_chit_items
+              WHERE order_item_id = $1
+            )
+          `,
+          [orderItemId],
+        );
+
+        await pool.query(
+          "DELETE FROM kitchen_chit_items WHERE order_item_id = $1",
+          [orderItemId],
+        );
+
+        await pool.query(
+          "DELETE FROM order_item_preparation_selections WHERE order_item_id = $1",
+          [orderItemId],
+        );
+
+        await pool.query(
+          "DELETE FROM order_item_choice_selections WHERE order_item_id = $1",
+          [orderItemId],
+        );
+
+        await pool.query(
+          "DELETE FROM order_item_events WHERE order_item_id = $1",
+          [orderItemId],
+        );
+      }
+
+      if (orderId) {
+        await pool.query(
+          "DELETE FROM kitchen_chits WHERE order_id = $1",
+          [orderId],
+        );
+
+        await pool.query(
+          "DELETE FROM order_items WHERE order_id = $1",
+          [orderId],
+        );
+
+        await pool.query(
+          "DELETE FROM order_events WHERE order_id = $1",
+          [orderId],
+        );
+
+        await pool.query(
+          "DELETE FROM orders WHERE id = $1",
+          [orderId],
+        );
+      }
+
+      await pool.query(
+        "DELETE FROM menu_choice_groups WHERE id = $1",
+        [choiceGroupId],
+      );
+
+      await pool.query(
+        "DELETE FROM menu_items WHERE id = $1",
+        [menuItemId],
+      );
+
+      await pool.query(
+        "DELETE FROM preparation_schemes WHERE id = $1",
+        [preparationSchemeId],
+      );
+
+      await deleteAuthenticatedTestUser(userId);
+    }
+  });
+
   it("includes active takeout and delivery orders without a party", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();
