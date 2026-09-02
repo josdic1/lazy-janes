@@ -376,7 +376,7 @@ describe("automatic party completion", () => {
     const orderId = randomUUID();
     const orderItemId = randomUUID();
     const checkId = randomUUID();
-    let paymentId: string | undefined;
+    const paymentIds: string[] = [];
 
     try {
       const agent =
@@ -540,21 +540,79 @@ describe("automatic party completion", () => {
         [checkId, orderItemId],
       );
 
-      const response = await agent
+      const partialPayment = await agent
         .post("/api/payments")
         .send({
           method: "card",
           allocations: [
             {
               checkId,
-              allocatedAmount: 10.66,
+              allocatedAmount: 5,
             },
           ],
           processorReference: `terminal-${randomUUID()}`,
         });
 
-      expect(response.status).toBe(201);
-      paymentId = paymentSchema.parse(response.body).id;
+      expect(partialPayment.status).toBe(201);
+      paymentIds.push(
+        paymentSchema.parse(partialPayment.body).id,
+      );
+
+      const partyAfterPartial = await pool.query<{
+        status: string;
+        completed_at: Date | null;
+      }>(
+        `
+          SELECT status, completed_at
+          FROM parties
+          WHERE id = $1
+        `,
+        [partyId],
+      );
+
+      expect(partyAfterPartial.rows[0]).toEqual({
+        status: "in_service",
+        completed_at: null,
+      });
+
+      const seatingAfterPartial = await pool.query<{
+        ended_at: Date | null;
+        released_at: Date | null;
+      }>(
+        `
+          SELECT
+            seatings.ended_at,
+            seating_tables.released_at
+          FROM seatings
+          JOIN seating_tables
+            ON seating_tables.seating_id = seatings.id
+          WHERE seatings.id = $1
+        `,
+        [seatingId],
+      );
+
+      expect(seatingAfterPartial.rows[0]).toEqual({
+        ended_at: null,
+        released_at: null,
+      });
+
+      const finalPayment = await agent
+        .post("/api/payments")
+        .send({
+          method: "card",
+          allocations: [
+            {
+              checkId,
+              allocatedAmount: 5.66,
+            },
+          ],
+          processorReference: `terminal-${randomUUID()}`,
+        });
+
+      expect(finalPayment.status).toBe(201);
+      paymentIds.push(
+        paymentSchema.parse(finalPayment.body).id,
+      );
 
       const party = await pool.query<{
         status: string;
@@ -609,7 +667,7 @@ describe("automatic party completion", () => {
         },
       ]);
     } finally {
-      if (paymentId) {
+      for (const paymentId of paymentIds) {
         await pool.query(
           "DELETE FROM payment_events WHERE payment_id = $1",
           [paymentId],
