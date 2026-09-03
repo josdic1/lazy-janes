@@ -823,7 +823,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   inset: 0;
   z-index: 10;
   overflow-y: auto;
-  padding: 0 0 74px;
+  padding: 0;
   background: #f7f4ee;
 }
 .service-customizer-header {
@@ -867,10 +867,56 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .service-ingredient-actions button[data-selected="true"], .service-preparation-options button[data-selected="true"], .service-choice-options button[data-selected="true"] { border-color: var(--accent); background: var(--accent); color: #fff; }
 .service-ingredient-actions button:disabled { display: none; }
 .service-replacement-control { margin-top: 7px; display: flex; gap: 7px; align-items: center; }
-.service-preparation-node, .service-choice-option-node { padding: 9px; border: 1px solid var(--line); border-radius: 5px; background: #fbfaf7; }
+.service-preparation-node,
+.service-choice-option-node {
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #fbfaf7;
+}
+
+.service-choice-option-node > button {
+  min-width: 128px;
+  display: grid;
+  gap: 3px;
+  justify-items: start;
+  text-align: left;
+}
+
+.service-choice-option-node > button > span {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.service-choice-option-node > button > small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.1;
+}
 .service-preparation-node + .service-preparation-node, .service-choice-option-node + .service-choice-option-node { margin-top: 6px; }
 .service-preparation-options, .service-choice-options { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 5px; }
 .service-choice-group { background: var(--surface); }
+
+.service-choice-group .service-customizer-section-heading > div {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.service-choice-group .service-customizer-section-heading > div > span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.service-choice-group .service-customizer-section-heading > div > small {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
 .service-additions { background: transparent; }
 .service-additions-summary { min-height: 46px; padding: 0 11px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px dashed #bbb5aa; border-radius: 6px; background: var(--surface); cursor: pointer; list-style: none; }
 .service-additions-summary::-webkit-details-marker { display: none; }
@@ -881,13 +927,42 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .service-add-search input { width: 100%; }
 .service-add-subsection { margin-top: 12px; }
 .service-add-subheading { margin-bottom: 6px; display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; font-weight: 700; }
-.service-add-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 6px; }
-.service-add-grid label { min-height: 42px; padding: 7px 8px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); cursor: pointer; }
+.service-add-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 5px;
+}
+.service-add-grid label {
+  min-height: 38px;
+  padding: 6px 7px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  cursor: pointer;
+}
 .service-add-grid label[data-selected="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .service-add-grid input { accent-color: var(--accent); }
 .service-add-grid span { font-size: 10px; font-weight: 700; }
 .service-add-grid small { color: var(--muted); font-family: var(--font-mono); font-size: 8px; }
-.service-customizer-footer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; padding: 11px 13px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .97); backdrop-filter: blur(12px); }
+.service-customizer-footer {
+  position: sticky;
+  left: auto;
+  right: auto;
+  bottom: 0;
+  z-index: 8;
+  margin-top: 8px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, .97);
+  backdrop-filter: blur(12px);
+}
 .service-customizer-footer input { width: 100%; }
 .service-customizer-footer .button { min-width: 145px; }
 
@@ -1566,6 +1641,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
    Deliberately thorough underneath; boring, obvious, and approachable on top.
    -------------------------------------------------------------------------- */
 .composition-drawer {
+  overflow-x: hidden;
   width: min(1120px, 100vw);
   background: #f6f3ed;
 }
@@ -1575,6 +1651,8 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .composition-editor--guided {
+  min-width: 0;
+  overflow-x: hidden;
   padding: 18px 22px 110px;
   gap: 16px;
 }
@@ -2109,9 +2187,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .composition-view-switch {
   display: inline-flex;
   padding: 3px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--paper-muted);
+  background: var(--surface-2);
 }
 
 .composition-view-switch button {
@@ -2120,7 +2198,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: var(--ink-muted);
+  color: var(--muted);
   font: inherit;
   font-size: 12px;
   font-weight: 800;
@@ -2129,33 +2207,34 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 
 .composition-view-switch button[data-active="true"] {
   background: var(--ink);
-  color: var(--paper-bright);
+  color: #fff;
 }
 
 .easy-composition {
+  min-width: 0;
   display: grid;
-  gap: 18px;
+  gap: 10px;
 }
 
 .easy-build-section,
 .easy-choice-section,
 .easy-review-section {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  background: var(--paper-bright);
+  background: var(--surface);
 }
 
 .easy-build-section,
 .easy-choice-section {
-  padding: 18px;
+  padding: 14px;
 }
 
 .easy-section-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 14px;
+  gap: 14px;
+  margin-bottom: 10px;
 }
 
 .easy-section-heading h3 {
@@ -2165,35 +2244,48 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-section-heading > span {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 12px;
   font-weight: 800;
 }
 
+.easy-section-copy {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .easy-ingredient-search {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+}
+
+.easy-search-hint {
+  margin: -1px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .easy-picker-results {
   display: grid;
-  gap: 6px;
-  max-height: 280px;
-  margin-bottom: 14px;
-  padding: 6px;
-  overflow: auto;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--paper-muted);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin-bottom: 10px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
 }
 
 .easy-picker-row {
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--paper-bright);
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
 }
 
 .easy-picker-row > span {
@@ -2203,7 +2295,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 
 .easy-picker-row small,
 .easy-food-card small {
-  color: var(--ink-muted);
+  color: var(--muted);
   text-transform: capitalize;
 }
 
@@ -2217,9 +2309,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .easy-card-foot button,
 .easy-unplaced button,
 .easy-add-option {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 7px;
-  background: var(--paper-bright);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: 12px;
@@ -2233,9 +2325,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-picker-row button:first-child {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--paper-bright);
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 .easy-food-zones {
@@ -2245,16 +2337,16 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-food-zone {
-  min-height: 240px;
-  padding: 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  background: var(--paper-muted);
+  min-height: 108px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
 }
 
 .easy-food-zone[data-zone="contains"] {
-  border-color: color-mix(in srgb, var(--teal) 35%, var(--line-soft));
-  background: color-mix(in srgb, var(--teal) 4%, var(--paper-bright));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
 }
 
 .easy-food-zone > header {
@@ -2276,7 +2368,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-food-zone > header span {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -2286,7 +2378,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   min-width: 25px;
   height: 25px;
   border-radius: 999px;
-  background: var(--paper-bright);
+  background: var(--surface);
   font-size: 11px;
 }
 
@@ -2297,12 +2389,12 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 
 .easy-zone-empty {
   display: grid;
-  min-height: 160px;
+  min-height: 54px;
   place-items: center;
-  padding: 20px;
-  border: 1px dashed var(--line-soft);
+  padding: 10px;
+  border: 1px dashed var(--line);
   border-radius: 9px;
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 13px;
   text-align: center;
 }
@@ -2311,9 +2403,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--paper-bright);
+  background: var(--surface);
   cursor: grab;
 }
 
@@ -2343,7 +2435,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .easy-role-field > span,
 .easy-extra-price label > span,
 .easy-choice-top label > span {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -2360,11 +2452,11 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   align-items: center;
   gap: 8px 14px;
   padding-top: 8px;
-  border-top: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line);
 }
 
 .easy-customer-options > span:first-child {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -2382,7 +2474,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-normal-side-note {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2393,7 +2485,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   gap: 12px;
   padding: 9px;
   border-radius: 8px;
-  background: var(--paper-muted);
+  background: var(--surface-2);
 }
 
 .easy-extra-price input[type="number"] {
@@ -2414,7 +2506,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-card-foot span {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
 }
 
@@ -2442,10 +2534,10 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-choice-empty {
-  padding: 20px;
-  border: 1px dashed var(--line-soft);
-  border-radius: 9px;
-  color: var(--ink-muted);
+  padding: 9px 2px 2px;
+  border: 0;
+  border-radius: 0;
+  color: var(--muted);
   font-size: 13px;
   text-align: center;
 }
@@ -2459,7 +2551,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
 }
 
@@ -2479,7 +2571,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 
 .easy-choice-rules > span {
   margin-left: 8px;
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
@@ -2493,7 +2585,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 .easy-choice-rules button[data-selected="true"] {
   border-color: var(--ink);
   background: var(--ink);
-  color: var(--paper-bright);
+  color: var(--surface);
 }
 
 .easy-choice-options {
@@ -2508,11 +2600,11 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   gap: 7px;
   padding: 7px;
   border-radius: 8px;
-  background: var(--paper-muted);
+  background: var(--surface-2);
 }
 
 .easy-choice-options > div > span:first-child {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   text-align: center;
@@ -2551,18 +2643,18 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .easy-review-section small {
-  color: var(--ink-muted);
+  color: var(--muted);
 }
 
 .easy-review-section[data-ready="true"] {
-  border-color: color-mix(in srgb, var(--teal) 45%, var(--line-soft));
-  background: color-mix(in srgb, var(--teal) 5%, var(--paper-bright));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
 }
 
 .easy-review-section ul {
   margin: 10px 0 0 34px;
   padding: 0;
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -2631,8 +2723,8 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   display: grid;
   gap: 4px;
   padding: 14px 16px;
-  border-left: 4px solid var(--teal);
-  background: color-mix(in srgb, var(--teal) 6%, var(--paper-bright));
+  border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
 }
 
 .menu-item-start-note strong {
@@ -2640,7 +2732,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .menu-item-start-note span {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -2652,7 +2744,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .menu-item-basics-form label > span small {
-  color: var(--ink-muted);
+  color: var(--muted);
   font-size: 10px;
   font-weight: 700;
   text-transform: none;
@@ -2664,17 +2756,17 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   grid-template-columns: 32px 1fr;
   align-items: center;
   overflow: hidden;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--paper-bright);
+  background: var(--surface);
 }
 
 .menu-item-price-input > span {
   display: grid;
   min-height: 42px;
   place-items: center;
-  border-right: 1px solid var(--line-soft);
-  color: var(--ink-muted);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
   font-weight: 800;
 }
 
@@ -2684,60 +2776,15 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   box-shadow: none !important;
 }
 
-.easy-how-it-works {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--paper-bright);
-}
-
-.easy-how-it-works span {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 46px;
-  padding: 0 12px;
-  color: var(--ink-muted);
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.easy-how-it-works span + span {
-  border-left: 1px solid var(--line-soft);
-}
-
-.easy-how-it-works b {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper-bright);
-  font-size: 11px;
-}
-
-.easy-food-zones {
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.easy-food-zone {
-  min-height: 300px;
-  padding: 14px;
-  border-width: 2px;
-}
 
 .easy-food-zone[data-zone="contains"] {
-  border-color: color-mix(in srgb, var(--teal) 60%, var(--line-soft));
-  background: color-mix(in srgb, var(--teal) 7%, var(--paper-bright));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
 }
 
 .easy-food-zone[data-zone="comes_with"] {
-  border-color: color-mix(in srgb, var(--ink-muted) 28%, var(--line-soft));
-  background: var(--paper-muted);
+  border-color: color-mix(in srgb, var(--muted) 28%, var(--line));
+  background: var(--surface-2);
 }
 
 .easy-food-zone > header strong {
@@ -2761,23 +2808,15 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   letter-spacing: 0;
 }
 
-.easy-section-number {
-  margin: 2px 2px -10px;
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: .06em;
-}
-
 .composition-price-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
   padding: 14px 16px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: var(--paper-bright);
+  background: var(--surface);
 }
 
 .composition-price-strip > div {
@@ -2786,7 +2825,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 .composition-price-strip small {
-  color: var(--ink-muted);
+  color: var(--muted);
 }
 
 .composition-price-strip label {
@@ -2813,7 +2852,7 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   }
 
   .easy-how-it-works span + span {
-    border-top: 1px solid var(--line-soft);
+    border-top: 1px solid var(--line);
     border-left: 0;
   }
 
@@ -3092,3 +3131,167 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 /* === UI TIGHTEN PASS END === */
+
+/* === OPERATIONS DESKTOP VIEWPORT FIX === */
+@media (min-width: 981px) {
+  .operations-live-page {
+    height: calc(100vh - var(--header-h));
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 10px;
+  }
+
+  .operations-live-heading,
+  .operations-metrics {
+    flex: 0 0 auto;
+  }
+
+  .operations-live-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .operations-main-column {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-content: stretch;
+  }
+
+  .operations-floor-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .operations-floor-map-shell {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .operations-floor-map-rooms {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-auto-rows: minmax(220px, 1fr);
+  }
+
+  .operations-floor-room {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .operations-floor-room-canvas {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 220px;
+  }
+
+  .operations-kitchen-panel {
+    flex: 0 0 auto;
+    max-height: 190px;
+  }
+
+  .operations-order-list {
+    max-height: 140px;
+    overflow-y: auto;
+  }
+}
+/* === OPERATIONS DESKTOP VIEWPORT FIX END === */
+
+
+
+/* === ORDER ENTRY TOPPINGS FINAL === */
+
+.service-additions.service-customizer-section {
+  margin: 8px 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.service-additions-summary {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.service-additions-summary strong {
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.service-additions[open] .service-additions-summary {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.service-additions-body {
+  padding-top: 7px;
+}
+
+.service-add-search {
+  width: 100%;
+  margin: 0;
+}
+
+.service-add-selected {
+  margin-bottom: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.service-add-selected button {
+  min-height: 29px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #a8cec9;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.service-add-selected button b {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.service-add-hint,
+.service-add-empty {
+  min-height: 0;
+  padding: 7px 2px 0;
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: left;
+}
+
+.service-add-subsection {
+  margin-top: 6px;
+}
+
+.service-add-grid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 5px;
+}
+
+.service-customizer-footer {
+  position: static;
+  margin-top: 8px;
+}
+
+/* === ORDER ENTRY TOPPINGS FINAL END === */

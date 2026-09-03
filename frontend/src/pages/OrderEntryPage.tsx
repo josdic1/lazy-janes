@@ -2283,35 +2283,66 @@ export function OrderEntryPage() {
                 );
               })}
 
-              <details className="service-customizer-section service-additions">
+              <details
+                className="service-customizer-section service-additions"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) {
+                    window.setTimeout(() => addSearchInputRef.current?.focus(), 0);
+                  }
+                }}
+              >
                 <summary className="service-additions-summary">
-                  <span>
-                    {addedIngredientIds.length > 0
-                      ? `Add toppings · ${addedIngredientIds.length} selected`
-                      : "+ Add topping"}
-                  </span>
-                  <small>Search all available additions</small>
+                  <strong>
+                    Toppings{addedIngredientIds.length > 0
+                      ? ` · ${addedIngredientIds.length}`
+                      : ""}
+                  </strong>
                 </summary>
 
-                <input
-                  ref={addSearchInputRef}
-                  className="service-add-search"
-                  type="search"
-                  placeholder="Search bacon, avocado, cheese…"
-                  value={addSearch}
-                  onChange={(event) => setAddSearch(event.target.value)}
-                />
+                <div className="service-additions-body">
+                  {addedIngredientIds.length > 0 ? (
+                    <div className="service-add-selected">
+                      {addedIngredientIds.map((ingredientId) => {
+                        const ingredient = ingredientsById.get(ingredientId);
+                        if (!ingredient) return null;
 
-                {availableAddIngredients.length === 0 ? (
-                  <div className="service-add-empty">No matching available toppings.</div>
-                ) : (
-                  <>
-                    {popularAddIngredients.length > 0 ? (
+                        return (
+                          <button
+                            type="button"
+                            key={ingredientId}
+                            onClick={() => toggleAdd(ingredientId)}
+                            title={`Remove ${ingredient.name}`}
+                          >
+                            <span>{ingredient.name}</span>
+                            <b aria-hidden="true">×</b>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  <input
+                    ref={addSearchInputRef}
+                    className="service-add-search"
+                    type="search"
+                    placeholder="Search toppings…"
+                    value={addSearch}
+                    onChange={(event) => setAddSearch(event.target.value)}
+                  />
+
+                  {addSearch.trim().length === 1 ? (
+                    <div className="service-add-hint">Type one more letter.</div>
+                  ) : null}
+
+                  {addSearch.trim().length >= 2 ? (
+                    availableAddIngredients.length === 0 ? (
+                      <div className="service-add-empty">No matching toppings.</div>
+                    ) : (
                       <div className="service-add-subsection">
-                        <div className="service-add-subheading">Popular for this kind of order</div>
                         <div className="service-add-grid">
-                          {popularAddIngredients.map((ingredient) => {
+                          {alphabeticalAddIngredients.slice(0, 10).map((ingredient) => {
                             const selected = addedIngredientIds.includes(ingredient.id);
+
                             return (
                               <label
                                 data-selected={selected}
@@ -2336,43 +2367,9 @@ export function OrderEntryPage() {
                           })}
                         </div>
                       </div>
-                    ) : null}
-
-                    {alphabeticalAddIngredients.length > 0 ? (
-                      <div className="service-add-subsection">
-                        {addSearch.trim() === "" ? (
-                          <div className="service-add-subheading">All available · A–Z</div>
-                        ) : null}
-                        <div className="service-add-grid">
-                          {alphabeticalAddIngredients.map((ingredient) => {
-                            const selected = addedIngredientIds.includes(ingredient.id);
-                            return (
-                              <label
-                                data-selected={selected}
-                                data-configured={ingredient.addPriceConfigured}
-                                key={ingredient.id}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selected}
-                                  onChange={() => toggleAdd(ingredient.id)}
-                                />
-                                <span>{ingredient.name}</span>
-                                <small>
-                                  {ingredient.addPriceConfigured
-                                    ? ingredient.defaultAddPrice > 0
-                                      ? `+${money(ingredient.defaultAddPrice)}`
-                                      : "NO CHARGE"
-                                    : "PRICE TBD"}
-                                </small>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                  </>
-                )}
+                    )
+                  ) : null}
+                </div>
               </details>
 
 

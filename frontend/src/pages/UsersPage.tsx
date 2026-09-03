@@ -14,6 +14,7 @@ import {
   resetUserPin,
   updateUser,
 } from "../api/users";
+import { Drawer } from "../components/ui/Drawer";
 
 const ROLE_LABELS: Record<UserRoleCode, string> = {
   host: "Host",
@@ -390,50 +391,38 @@ export function UsersPage() {
       )}
 
       {drawerMode ? (
-        <>
-          <button
-            type="button"
-            className="drawer-backdrop"
-            aria-label="Close"
-            onClick={closeDrawer}
-          />
-
-          <aside
-            className="drawer"
-            aria-label={
-              drawerMode === "create"
-                ? "Add user"
-                : drawerMode === "edit"
-                  ? "Edit user"
-                  : "Reset Password"
-            }
-          >
-            <header className="drawer-heading">
-              <div>
-                <p className="eyebrow">
-                  {drawerMode === "create"
-                    ? "New User"
-                    : selectedUser?.displayName}
-                </p>
-
-                <h2>
-                  {drawerMode === "create"
-                    ? "Add User"
-                    : drawerMode === "edit"
-                      ? "Edit User"
-                      : "Reset Password"}
-                </h2>
-              </div>
-
-              <button
-                type="button"
-                className="button"
-                data-variant="quiet"
-                onClick={closeDrawer}
-              >
-                Close
-              </button>
-            </header>
+        <Drawer
+          ariaLabel={
+            drawerMode === "create"
+              ? "Add user"
+              : drawerMode === "edit"
+                ? "Edit user"
+                : "Reset Password"
+          }
+          eyebrow={
+            drawerMode === "create"
+              ? "New User"
+              : selectedUser?.displayName
+          }
+          title={
+            drawerMode === "create"
+              ? "Add User"
+              : drawerMode === "edit"
+                ? "Edit User"
+                : "Reset Password"
+          }
+          onClose={closeDrawer}
+          headerAction={
+            <button
+              type="button"
+              className="button"
+              data-variant="quiet"
+              onClick={closeDrawer}
+            >
+              Close
+            </button>
+          }
+        >
 
             {error ? (
               <p
@@ -568,8 +557,7 @@ export function UsersPage() {
                 </div>
               </form>
             )}
-          </aside>
-        </>
+        </Drawer>
       ) : null}
     </main>
   );

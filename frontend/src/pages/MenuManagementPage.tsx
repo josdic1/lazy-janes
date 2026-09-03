@@ -45,6 +45,7 @@ import {
   updateMenuItem,
 } from "../api/menu.js";
 import { useAuth } from "../hooks/useAuth";
+import { Drawer } from "../components/ui/Drawer";
 
 const emptyForm: CreateMenuItemInput = {
   parentItemId: null,
@@ -1170,17 +1171,22 @@ export function MenuManagementPage() {
       </div>
 
       {drawerOpen ? (
-        <div className="drawer-backdrop" role="presentation">
-          <section className="drawer" role="dialog" aria-modal="true" aria-label={editingItem ? "Edit item" : "Add item"}>
-            <header className="drawer-header">
-              <div>
-                <p className="eyebrow">Menu item</p>
-                <h2>{editingItem ? editingItem.name : "Add item"}</h2>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setDrawerOpen(false)}>
-                <X aria-hidden="true" />
-              </button>
-            </header>
+        <Drawer
+          ariaLabel={editingItem ? "Edit item" : "Add item"}
+          eyebrow="Menu item"
+          title={editingItem ? editingItem.name : "Add item"}
+          onClose={() => setDrawerOpen(false)}
+          headerAction={
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close"
+              onClick={() => setDrawerOpen(false)}
+            >
+              <X aria-hidden="true" />
+            </button>
+          }
+        >
 
             <form className="drawer-form menu-item-basics-form" onSubmit={saveItem}>
               <div className="menu-item-start-note">
@@ -1499,61 +1505,58 @@ export function MenuManagementPage() {
                 <button className="button" data-variant="quiet" disabled={saving} type="button" onClick={() => setDrawerOpen(false)}>Cancel</button>
               </footer>
             </form>
-          </section>
-        </div>
+        </Drawer>
       ) : null}
 
       {compositionItem ? (
-        <div className="drawer-backdrop" role="presentation">
-          <section className="drawer drawer--wide composition-drawer" role="dialog" aria-modal="true" aria-label={`Configure ${compositionItem.name}`}>
-            <header className="drawer-header composition-drawer-header">
-              <div>
-                <p className="eyebrow">Step 2 of 2 · Item setup</p>
-                <h2>{compositionItem.name}</h2>
-                <p>Tell us what comes with this item and what customers can change.</p>
-              </div>
-              <div className="composition-header-actions">
-                <div className="composition-view-switch" aria-label="Item setup view">
-                  <button
-                    type="button"
-                    data-active={compositionView === "easy"}
-                    onClick={() => setCompositionView("easy")}
-                  >
-                    Easy View
-                  </button>
-                  <button
-                    type="button"
-                    data-active={compositionView === "advanced"}
-                    onClick={() => setCompositionView("advanced")}
-                  >
-                    Advanced View
-                  </button>
-                </div>
-                <button className="icon-button" type="button" onClick={() => setCompositionItem(null)}>
-                  <X aria-hidden="true" />
+        <Drawer
+          wide
+          className="composition-drawer"
+          headerClassName="composition-drawer-header"
+          ariaLabel={`Configure ${compositionItem.name}`}
+          eyebrow="Item setup"
+          title={compositionItem.name}
+          description="Tell us what comes with this item and what customers can change."
+          onClose={() => setCompositionItem(null)}
+          headerAction={
+            <div className="composition-header-actions">
+              <div className="composition-view-switch" aria-label="Item setup view">
+                <button
+                  type="button"
+                  data-active={compositionView === "easy"}
+                  onClick={() => setCompositionView("easy")}
+                >
+                  Easy View
+                </button>
+                <button
+                  type="button"
+                  data-active={compositionView === "advanced"}
+                  onClick={() => setCompositionView("advanced")}
+                >
+                  Advanced View
                 </button>
               </div>
-            </header>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close"
+                onClick={() => setCompositionItem(null)}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          }
+        >
 
             <div className="composition-editor composition-editor--guided">
-              <div className="composition-progress" aria-label="Item setup progress">
-                <div data-done="true"><CheckCircle aria-hidden="true" /><span><strong>1. Basics</strong><small>Name, category, details</small></span></div>
-                <div data-current="true"><span className="composition-progress-number">2</span><span><strong>Item setup</strong><small>Ingredients, choices, changes</small></span></div>
-                <div data-done={compositionReadinessIssues.length === 0}><span className="composition-progress-number">3</span><span><strong>Publish</strong><small>{compositionReadinessIssues.length === 0 ? "Ready" : "Finish setup first"}</small></span></div>
-              </div>
-
               {compositionView === "easy" ? (
                 <div className="easy-composition">
-                  <div className="easy-how-it-works" aria-label="Easy view steps">
-                    <span><b>1</b>Add the food</span>
-                    <span><b>2</b>Put it in the right box</span>
-                    <span><b>3</b>Add customer choices</span>
-                  </div>
                   <section className="easy-build-section">
                     <header className="easy-section-heading">
                       <div>
-                        <p className="composition-step-label">1 · ADD THE FOOD</p>
-                        <h3>Add each thing once. Put it where it is normally served.</h3>
+                        <p className="composition-step-label">BUILD THE PLATE</p>
+                        <h3>What does the customer get?</h3>
+                        <p className="easy-section-copy">Search for food, then choose where it normally comes.</p>
                       </div>
                       <span>{ingredientLinks.length} ingredients</span>
                     </header>
@@ -1562,25 +1565,29 @@ export function MenuManagementPage() {
                       <MagnifyingGlass aria-hidden="true" />
                       <input
                         type="search"
-                        placeholder="Search food — turkey, scallions, fries…"
+                        placeholder="Type 2+ letters — chicken, bread, fries…"
                         value={ingredientSearch}
                         onChange={(event) => setIngredientSearch(event.target.value)}
                       />
                     </div>
 
-                    {ingredientSearch.trim() !== "" ? (
+                    {ingredientSearch.trim().length === 1 ? (
+                      <div className="easy-search-hint">Type one more letter to search.</div>
+                    ) : null}
+
+                    {ingredientSearch.trim().length >= 2 ? (
                       <div className="easy-picker-results">
                         {addableRecipeIngredients.length === 0 ? (
                           <p className="composition-empty-inline">Not found. Add it to Ingredients first.</p>
-                        ) : addableRecipeIngredients.map((ingredient) => (
+                        ) : addableRecipeIngredients.slice(0, 8).map((ingredient) => (
                           <div className="easy-picker-row" key={ingredient.id}>
                             <span>
                               <strong>{ingredient.name}</strong>
                               <small>{ingredient.kind.replace(/_/g, " ")}</small>
                             </span>
                             <div>
-                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "contains")}>Add to item</button>
-                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "comes_with")}>Serve with it</button>
+                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "contains")}>On item</button>
+                              <button type="button" onClick={() => addRecipeIngredient(ingredient, "comes_with")}>With item</button>
                             </div>
                           </div>
                         ))}
@@ -1605,7 +1612,7 @@ export function MenuManagementPage() {
                           >
                             <header>
                               <div>
-                                <strong>{isInside ? "IN / ON THE ITEM" : "SERVED WITH IT"}</strong>
+                                <strong>{isInside ? "ON / IN THE ITEM" : "WITH THE ITEM"}</strong>
                                 <span>{isInside ? "Bread, filling, toppings, sauce" : "Fries, pickle, side salad"}</span>
                               </div>
                               <b>{links.length}</b>
@@ -1613,7 +1620,7 @@ export function MenuManagementPage() {
 
                             <div className="easy-food-zone-list">
                               {links.length === 0 ? (
-                                <div className="easy-zone-empty">Add ingredients above or drag them here.</div>
+                                <div className="easy-zone-empty">Nothing here yet.</div>
                               ) : links.map((link) => {
                                 const ingredient = ingredientById.get(link.ingredientId);
                                 if (!ingredient) return null;
@@ -1721,14 +1728,14 @@ export function MenuManagementPage() {
                   <section className="easy-choice-section">
                     <header className="easy-section-heading">
                       <div>
-                        <p className="composition-step-label">2 · CUSTOMER CHOICES</p>
-                        <h3>Does the customer choose anything?</h3>
+                        <p className="composition-step-label">CUSTOMER CHOICES</p>
+                        <h3>Does the customer make a choice?</h3>
                       </div>
                       <button className="button" data-variant="quiet" type="button" onClick={addChoiceGroup}><Plus aria-hidden="true" /> Add choice</button>
                     </header>
 
                     {choiceGroups.length === 0 ? (
-                      <div className="easy-choice-empty">No choices needed? Leave this empty.</div>
+                      <div className="easy-choice-empty">No customer choices for this item.</div>
                     ) : (
                       <div className="easy-choice-list">
                         {choiceGroups.map((group) => (
@@ -1783,19 +1790,6 @@ export function MenuManagementPage() {
                     )}
                   </section>
 
-                  <div className="easy-section-number">3 · READY CHECK</div>
-                  <section className="easy-review-section" data-ready={compositionReadinessIssues.length === 0}>
-                    <div>
-                      {compositionReadinessIssues.length === 0 ? <CheckCircle aria-hidden="true" /> : <Warning aria-hidden="true" />}
-                      <span>
-                        <strong>{compositionReadinessIssues.length === 0 ? "Ready to publish" : `${compositionReadinessIssues.length} thing${compositionReadinessIssues.length === 1 ? "" : "s"} to finish`}</strong>
-                        <small>{compositionReadinessIssues.length === 0 ? "This item is complete." : "Open Advanced View if you need cooking, replacements, or custom choice rules."}</small>
-                      </span>
-                    </div>
-                    {compositionReadinessIssues.length > 0 ? (
-                      <ul>{compositionReadinessIssues.slice(0, 4).map((issue) => <li key={issue}>{issue}</li>)}</ul>
-                    ) : null}
-                  </section>
                 </div>
               ) : (
                 <>
@@ -2245,21 +2239,29 @@ export function MenuManagementPage() {
               )}
               <button className="button" data-variant="quiet" disabled={compositionSaving} type="button" onClick={() => setCompositionItem(null)}>Close</button>
             </footer>
-          </section>
-        </div>
+        </Drawer>
       ) : null}
 
       {ingredientLibraryOpen ? (
-        <div className="drawer-backdrop" role="presentation">
-          <section className="drawer drawer--wide ingredient-library-drawer" role="dialog" aria-modal="true" aria-label="Ingredient library">
-            <header className="drawer-header">
-              <div>
-                <p className="eyebrow">Reusable data</p>
-                <h2>Ingredient Library</h2>
-                <p>Each ingredient exists once and can be linked to any menu item.</p>
-              </div>
-              <button className="icon-button" type="button" onClick={() => setIngredientLibraryOpen(false)}><X aria-hidden="true" /></button>
-            </header>
+        <Drawer
+          wide
+          className="ingredient-library-drawer"
+          ariaLabel="Ingredient library"
+          eyebrow="Reusable data"
+          title="Ingredient Library"
+          description="Each ingredient exists once and can be linked to any menu item."
+          onClose={() => setIngredientLibraryOpen(false)}
+          headerAction={
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Close"
+              onClick={() => setIngredientLibraryOpen(false)}
+            >
+              <X aria-hidden="true" />
+            </button>
+          }
+        >
 
             <div className="ingredient-library-layout">
               <section className="ingredient-library-list">
@@ -2384,8 +2386,7 @@ export function MenuManagementPage() {
                 </div>
               </form>
             </div>
-          </section>
-        </div>
+        </Drawer>
       ) : null}
     </main>
   );
