@@ -742,42 +742,60 @@ export function OrderEntryPage() {
     return ids;
   }, [selectedChoiceGroups, selectedChoiceOptionIds]);
 
-  const availableAddIngredients = useMemo(() => {
-    const query = addSearch.trim().toLowerCase();
+  const selectedItemAdditions = useMemo(
+    () =>
+      (customization.itemAdditions ?? [])
+        .filter(
+          (addition) =>
+            addition.menuItemId === selectedItem?.id &&
+            addition.isActive,
+        )
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [customization.itemAdditions, selectedItem?.id],
+  );
 
-    const offering = selectedItem
-      ? normalizedMenu?.offerings.find(
-          (candidate) => candidate.id === selectedItem.id,
-        ) ?? null
-      : null;
+  const itemAdditionByIngredientId = useMemo(
+    () =>
+      new Map(
+        selectedItemAdditions.map((addition) => [
+          addition.ingredientId,
+          addition,
+        ]),
+      ),
+    [selectedItemAdditions],
+  );
 
+  const configuredAddIngredients = useMemo(() => {
     const allowedAddIngredientIds = new Set(
-      offering?.addCatalogs.flatMap((catalog) =>
-        catalog.options.map((option) => option.component.componentId),
-      ) ?? [],
+      selectedItemAdditions.map((addition) => addition.ingredientId),
     );
 
     return customization.ingredients
       .filter(
         (ingredient) =>
           ingredient.isActive &&
-          ingredient.isAddable &&
           allowedAddIngredientIds.has(ingredient.id) &&
           !includedIngredientIds.has(ingredient.id) &&
           !choiceIngredientIds.has(ingredient.id) &&
-          !selectedReplacementIngredientIds.has(ingredient.id) &&
-          (query === "" || ingredient.name.toLowerCase().includes(query)),
+          !selectedReplacementIngredientIds.has(ingredient.id),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [
-    addSearch,
     choiceIngredientIds,
     customization.ingredients,
     includedIngredientIds,
-    normalizedMenu,
-    selectedItem?.id,
+    selectedItemAdditions,
     selectedReplacementIngredientIds,
   ]);
+
+  const availableAddIngredients = useMemo(() => {
+    const query = addSearch.trim().toLowerCase();
+
+    return configuredAddIngredients.filter(
+      (ingredient) =>
+        query === "" || ingredient.name.toLowerCase().includes(query),
+    );
+  }, [addSearch, configuredAddIngredients]);
 
   const currentIngredientPopularity = selectedItem
     ? ingredientPopularityByItem[selectedItem.id] ?? []
@@ -2206,6 +2224,8 @@ export function OrderEntryPage() {
                 );
               })}
 
+              {configuredAddIngredients.length > 0 ||
+              addedIngredientIds.length > 0 ? (
               <details
                 className="service-customizer-section service-additions"
                 onToggle={(event) => {
@@ -2269,7 +2289,7 @@ export function OrderEntryPage() {
                             return (
                               <label
                                 data-selected={selected}
-                                data-configured={ingredient.addPriceConfigured}
+                                data-configured={itemAdditionByIngredientId.get(ingredient.id)?.priceConfigured ?? false}
                                 key={ingredient.id}
                               >
                                 <input
@@ -2279,9 +2299,14 @@ export function OrderEntryPage() {
                                 />
                                 <span>{ingredient.name}</span>
                                 <small>
-                                  {ingredient.addPriceConfigured
-                                    ? ingredient.defaultAddPrice > 0
-                                      ? `+${money(ingredient.defaultAddPrice)}`
+                                  {itemAdditionByIngredientId.get(ingredient.id)
+                                    ?.priceConfigured
+                                    ? (itemAdditionByIngredientId.get(ingredient.id)
+                                        ?.priceAdjustment ?? 0) > 0
+                                      ? `+${money(
+                                          itemAdditionByIngredientId.get(ingredient.id)
+                                            ?.priceAdjustment ?? 0,
+                                        )}`
                                       : "NO CHARGE"
                                     : "PRICE TBD"}
                                 </small>
@@ -2294,6 +2319,7 @@ export function OrderEntryPage() {
                   ) : null}
                 </div>
               </details>
+              ) : null}
 
 
               <div className="service-customizer-footer">

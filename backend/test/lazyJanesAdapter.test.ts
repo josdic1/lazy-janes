@@ -260,6 +260,8 @@ describe("Lazy Jane's UMO adapter", () => {
           ingredientId: "bacon",
           sortOrder: 10,
           isActive: true,
+          priceAdjustment: 2,
+          priceConfigured: true,
         },
       ],
       replacements: [],

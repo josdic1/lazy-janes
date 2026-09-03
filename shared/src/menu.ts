@@ -507,6 +507,8 @@ export const menuItemAdditionSchema = z.object({
   ingredientId: idSchema,
   sortOrder: sortOrderSchema,
   isActive: z.boolean(),
+  priceAdjustment: z.number().nonnegative().multipleOf(0.01),
+  priceConfigured: z.boolean(),
 });
 export type MenuItemAddition = z.infer<
   typeof menuItemAdditionSchema

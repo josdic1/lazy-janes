@@ -509,8 +509,8 @@ ordersRouter.post(
                   false AS can_extra,
                   0::numeric AS extra_price,
                   false AS extra_price_configured,
-                  ingredient.default_add_price,
-                  ingredient.add_price_configured,
+                  addition.price_adjustment AS default_add_price,
+                  addition.price_configured AS add_price_configured,
                   NULL::uuid AS preparation_scheme_id
                 FROM menu_item_additions addition
                 JOIN ingredients ingredient
@@ -518,7 +518,6 @@ ordersRouter.post(
                 WHERE addition.menu_item_id = $1
                   AND addition.is_active = true
                   AND ingredient.is_active = true
-                  AND ingredient.is_addable = true
                 ORDER BY
                   addition.sort_order,
                   lower(ingredient.name),

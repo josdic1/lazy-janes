@@ -52,6 +52,8 @@ type ItemAdditionRow = {
   ingredient_id: string;
   sort_order: number;
   is_active: boolean;
+  price_adjustment: string;
+  price_configured: boolean;
 };
 
 type ItemIngredientReplacementRow = {
@@ -298,7 +300,9 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
         menu_item_id,
         ingredient_id,
         sort_order,
-        is_active
+        is_active,
+        price_adjustment,
+        price_configured
       FROM menu_item_additions
       ORDER BY menu_item_id, sort_order, ingredient_id
     `),
@@ -421,6 +425,8 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
       ingredientId: row.ingredient_id,
       sortOrder: row.sort_order,
       isActive: row.is_active,
+      priceAdjustment: Number(row.price_adjustment),
+      priceConfigured: row.price_configured,
     })),
     replacements: replacementResult.rows.map(toItemIngredientReplacement),
     choiceGroups: toChoiceGroups(choiceResult.rows),

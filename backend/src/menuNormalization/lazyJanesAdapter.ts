@@ -45,7 +45,7 @@ export function normalizeLazyJanesOffering({
     )
     .filter((addition) => {
       const ingredient = ingredientsById.get(addition.ingredientId);
-      return ingredient?.isActive === true && ingredient.isAddable;
+      return ingredient?.isActive === true;
     })
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
