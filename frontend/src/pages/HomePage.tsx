@@ -1,4 +1,6 @@
 import {
+  type CheckPriceOverride,
+  type CheckPriceRequirement,
   type DiningTableRecord,
   type DrawerSession,
   type StackCheck,
@@ -16,7 +18,12 @@ import {
   useState,
 } from "react";
 import { Link } from "react-router-dom";
-import { createCheck, presentCheck, takePayment } from "../api/billing";
+import {
+  CheckPricingRequiredError,
+  createCheck,
+  presentCheck,
+  takePayment,
+} from "../api/billing";
 import {
   cancelParty,
   createDiningRoomSection,
@@ -26,6 +33,7 @@ import {
   getManagedDiningRoomSections,
   getManagedDiningTables,
   seatParty,
+  unseatParty,
   updateDiningTable,
 } from "../api/parties";
 import {
@@ -134,6 +142,15 @@ function statusLabel(value: string): string {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function localCardReference(checkId: string): string {
+  const now = new Date();
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const stamp = `${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const checkCode = checkId.replace(/-/g, "").slice(0, 4).toUpperCase();
+  const randomCode = crypto.randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase();
+  return `LJ-${stamp}-${checkCode}-${randomCode}`;
+}
+
 type OperationalOrder = {
   order: StackOrder;
   partyId: string | null;
@@ -153,6 +170,18 @@ const EMPTY_PAYMENT: PaymentDraft = {
   cashReceived: "",
   processorReference: "",
 };
+
+type CheckPricingDraft = {
+  partyId: string;
+  requirements: CheckPriceRequirement[];
+  values: Record<string, string>;
+};
+
+function checkPricingKey(
+  requirement: CheckPriceRequirement,
+): string {
+  return `${requirement.source}:${requirement.recordId}`;
+}
 
 function nextTableLabelForSection(
   sectionId: string,
@@ -269,6 +298,10 @@ export function HomePage() {
   const [managedTables, setManagedTables] = useState<DiningTableRecord[]>([]);
   const [managedSections, setManagedSections] = useState<Awaited<ReturnType<typeof getManagedDiningRoomSections>>>([]);
   const [drawer, setDrawer] = useState<DrawerSession | null>(null);
+  const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null);
+  const [operationsDisplay, setOperationsDisplay] =
+    useState<"service" | "full">("service");
+  const [selectedCheckId, setSelectedCheckId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -288,6 +321,8 @@ export function HomePage() {
   const [openingCash, setOpeningCash] = useState("200");
   const [closingCash, setClosingCash] = useState("");
   const [paymentByCheck, setPaymentByCheck] = useState<Record<string, PaymentDraft>>({});
+  const [checkPricing, setCheckPricing] =
+    useState<CheckPricingDraft | null>(null);
 
   const roleSet = useMemo(() => new Set(user?.roles ?? []), [user]);
   const can = useCallback(
@@ -690,15 +725,28 @@ export function HomePage() {
     );
   }
 
+  async function unseatActiveParty(party: StackParty) {
+    const reason = window.prompt("Reason for unseating this party?")?.trim();
+    if (!reason) return;
+
+    const unseated = await runAction(
+      `unseat-party-${party.id}`,
+      () => unseatParty(party.id, { reason }),
+      "Party returned to waiting. Table released.",
+    );
+    if (unseated) setSelectedPartyId(null);
+  }
+
   async function cancelWaitingParty(party: StackParty) {
     const reason = window.prompt("Reason for cancelling this party?")?.trim();
     if (!reason) return;
 
-    await runAction(
+    const cancelled = await runAction(
       `cancel-party-${party.id}`,
       () => cancelParty(party.id, { reason }),
       "Party cancelled.",
     );
+    if (cancelled) setSelectedPartyId(null);
   }
 
   async function cancelActiveOrder(entry: OperationalOrder) {
@@ -735,7 +783,11 @@ export function HomePage() {
     const items = party.orders
       .filter((order) => order.cancelledAt === null)
       .flatMap((order) => order.items)
-      .filter((item) => item.status !== "voided" && item.remainingQuantity > 0)
+      .filter(
+        (item) =>
+          item.status !== "voided" &&
+          item.remainingQuantity > 0,
+      )
       .map((item) => ({
         orderItemId: item.id,
         allocatedQuantity: item.remainingQuantity,
@@ -746,16 +798,91 @@ export function HomePage() {
       return;
     }
 
-    await runAction(
-      `check-party-${party.id}`,
-      () =>
-        createCheck({
+    const activePricing =
+      checkPricing?.partyId === party.id
+        ? checkPricing
+        : null;
+
+    const priceOverrides: CheckPriceOverride[] = [];
+
+    if (activePricing) {
+      for (const requirement of activePricing.requirements) {
+        const raw =
+          activePricing.values[
+            checkPricingKey(requirement)
+          ]?.trim() ?? "";
+
+        if (raw === "") {
+          setError(
+            `Enter a price or choose Free for ${requirement.label}.`,
+          );
+          return;
+        }
+
+        if (!/^\d+(?:\.\d{1,2})?$/.test(raw)) {
+          setError(
+            `Enter a valid dollar amount for ${requirement.label}.`,
+          );
+          return;
+        }
+
+        priceOverrides.push({
+          source: requirement.source,
+          recordId: requirement.recordId,
+          amount: Number(raw),
+        });
+      }
+    }
+
+    setBusyKey(`check-party-${party.id}`);
+    setError(null);
+    setNotice(null);
+
+    try {
+      await createCheck({
+        partyId: party.id,
+        label: partyLabel(party),
+        items,
+        priceOverrides,
+      });
+
+      setCheckPricing(null);
+      setNotice("Check created.");
+      await loadOperations();
+    } catch (checkError: unknown) {
+      if (
+        checkError instanceof CheckPricingRequiredError
+      ) {
+        setSelectedPartyId(party.id);
+
+        setCheckPricing((current) => ({
           partyId: party.id,
-          label: partyLabel(party),
-          items,
-        }),
-      "Check created.",
-    );
+          requirements: checkError.requirements,
+          values: Object.fromEntries(
+            checkError.requirements.map(
+              (requirement) => {
+                const key =
+                  checkPricingKey(requirement);
+
+                return [
+                  key,
+                  current?.partyId === party.id
+                    ? current.values[key] ?? ""
+                    : "",
+                ];
+              },
+            ),
+          ),
+        }));
+
+        setError(null);
+        return;
+      }
+
+      setError(errorMessage(checkError));
+    } finally {
+      setBusyKey(null);
+    }
   }
 
   async function createStandaloneCheck(entry: OperationalOrder) {
@@ -837,9 +964,11 @@ export function HomePage() {
       return;
     }
 
+    const processorReference =
+      draft.processorReference.trim() || localCardReference(check.id);
+
     if (!draft.processorReference.trim()) {
-      setError("Enter the card terminal reference.");
-      return;
+      updatePaymentDraft(check.id, { processorReference });
     }
 
     await runAction(
@@ -854,7 +983,7 @@ export function HomePage() {
             },
           ],
           tipAmount,
-          processorReference: draft.processorReference.trim(),
+          processorReference,
         }),
       "Card payment recorded.",
     );
@@ -896,10 +1025,649 @@ export function HomePage() {
     }));
   }
 
+  const selectedParty =
+    selectedPartyId
+      ? activeParties.find((party) => party.id === selectedPartyId) ?? null
+      : null;
+
+  const openTableCount = tables.filter((table) => !table.occupied).length;
+  const openChecks = allChecks.filter((check) => check.status !== "closed");
+  const presentedChecks = openChecks.filter(
+    (check) => check.status === "presented" && check.balanceAmount > 0,
+  );
+  const readyOrders = operationalOrders
+    .map((entry) => ({
+      ...entry,
+      readyItems: entry.order.items.filter((item) => item.status === "ready"),
+    }))
+    .filter((entry) => entry.readyItems.length > 0);
+  const selectedCheck = selectedCheckId
+    ? openChecks.find((check) => check.id === selectedCheckId) ?? null
+    : null;
+  const attentionCount =
+    waitingParties.length +
+    readyOrders.length +
+    standaloneCheckoutOrders.length +
+    openChecks.length;
+
   if (loading) {
     return (
       <main className="page operations-live-page">
         <p className="loading-state">Loading operations…</p>
+      </main>
+    );
+  }
+
+  if (operationsDisplay === "service") {
+    return (
+      <main className="page operations-focus-page">
+        <header className="operations-focus-heading">
+          <div>
+            <p className="eyebrow">Lazy Jane’s / Service Board</p>
+            <h1>Operations</h1>
+          </div>
+
+          <div className="operations-focus-heading-actions">
+            {snapshot ? <small>Updated {clockTime(snapshot.generatedAt)}</small> : null}
+            <button
+              type="button"
+              className="button"
+              data-variant="quiet"
+              onClick={() => setOperationsDisplay("full")}
+            >
+              Full View
+            </button>
+            <button
+              type="button"
+              className="button"
+              data-variant="quiet"
+              disabled={refreshing}
+              onClick={() => void loadOperations(true)}
+            >
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+            {canServe ? (
+              <Link className="button" data-variant="primary" to="/orders/new">
+                New Order
+              </Link>
+            ) : null}
+          </div>
+        </header>
+
+        {error ? <div className="notice notice--error">{error}</div> : null}
+        {notice ? <div className="notice notice--success">{notice}</div> : null}
+
+        <section className="operations-focus-metrics" aria-label="What needs attention">
+          <div data-attention={waitingParties.length > 0}>
+            <span>Waiting</span>
+            <strong>{waitingParties.length}</strong>
+          </div>
+          <div data-attention={readyItemCount > 0}>
+            <span>Ready now</span>
+            <strong>{readyItemCount}</strong>
+          </div>
+          <div data-attention={openChecks.length > 0}>
+            <span>Unpaid</span>
+            <strong>{money(openBalance)}</strong>
+          </div>
+          <div>
+            <span>Open tables</span>
+            <strong>{openTableCount}</strong>
+          </div>
+        </section>
+
+        <div className="operations-focus-layout">
+          <section className="operations-focus-floor" aria-label="Dining room floor">
+            <header className="operations-focus-section-heading">
+              <div>
+                <p className="eyebrow">Floor</p>
+                <h2>Dining Room</h2>
+              </div>
+              <div>
+                <span>{seatedParties.length} occupied</span>
+                {canManage ? (
+                  <button
+                    type="button"
+                    className="operations-text-button"
+                    data-active={arrangeFloor}
+                    onClick={() => {
+                      setArrangeFloor((current) => !current);
+                      setSeatingPartyId(null);
+                      setSelectedFloorTableIds([]);
+                    }}
+                  >
+                    {arrangeFloor ? "Done" : "Arrange"}
+                  </button>
+                ) : null}
+              </div>
+            </header>
+
+            {seatingParty ? (
+              <div className="operations-floor-seat-bar">
+                <span>
+                  <strong>{seatingParty.name ?? `${seatingParty.guestCount} guests`}</strong>
+                  <small>
+                    {selectedFloorTableIds.length || "No"} table{selectedFloorTableIds.length === 1 ? "" : "s"} selected · {selectedFloorCapacity} seats
+                  </small>
+                </span>
+                <div>
+                  <button type="button" className="operations-text-button" onClick={cancelFloorSeating}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    data-variant="primary"
+                    disabled={selectedFloorTableIds.length === 0 || busyKey === `seat-${seatingParty.id}`}
+                    onClick={() => void confirmFloorSeating()}
+                  >
+                    Seat Party
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="operations-focus-rooms">
+              {floorSections.length === 0 ? (
+                <div className="operations-empty">No tables configured.</div>
+              ) : floorSections.map((section) => (
+                <section className="operations-focus-room" key={section.sectionId}>
+                  <header>{section.sectionName}</header>
+                  <div
+                    className="operations-focus-room-canvas"
+                    data-arrange={arrangeFloor}
+                    onDragOver={(event) => {
+                      if (arrangeFloor) event.preventDefault();
+                    }}
+                    onDrop={(event) => void dropTableOnFloor(section.sectionId, event)}
+                  >
+                    {section.tables.map((table) => {
+                      const selected = selectedFloorTableIds.includes(table.id);
+                      const occupyingParty = partyByTableId.get(table.id) ?? null;
+
+                      return (
+                        <button
+                          type="button"
+                          key={table.id}
+                          className="operations-focus-table"
+                          data-occupied={table.occupied}
+                          data-selected={selected}
+                          data-ready={Boolean(
+                            occupyingParty?.orders.some((order) =>
+                              order.items.some((item) => item.status === "ready"),
+                            ),
+                          )}
+                          disabled={Boolean(seatingParty) && table.occupied}
+                          draggable={canManage && arrangeFloor}
+                          style={{ left: `${table.floorX}%`, top: `${table.floorY}%` }}
+                          onDragStart={() => setDraggingTableId(table.id)}
+                          onDragEnd={() => setDraggingTableId(null)}
+                          onClick={() => {
+                            if (arrangeFloor) return;
+                            if (table.occupied && occupyingParty && !seatingParty) {
+                              setSelectedPartyId(occupyingParty.id);
+                              return;
+                            }
+                            toggleFloorTable(table.id);
+                          }}
+                          aria-label={`Table ${table.label}, ${table.capacity} seats${table.occupied ? ", occupied" : ", available"}`}
+                        >
+                          <strong>{table.label}</strong>
+                          <span>
+                            {table.occupied && occupyingParty?.name
+                              ? occupyingParty.name
+                              : `${table.capacity} seats`}
+                          </span>
+                          <small>
+                            {table.occupied
+                              ? occupyingParty
+                                ? `${occupyingParty.guestCount} guests`
+                                : "Occupied"
+                              : selected
+                                ? "Selected"
+                                : "Open"}
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </section>
+
+          <aside className="operations-focus-rail">
+            {selectedParty ? (() => {
+              const partyOpenChecks = selectedParty.checks.filter(
+                (check) => check.status !== "closed",
+              );
+              const hasUncheckedItems = selectedParty.orders
+                .filter((order) => order.cancelledAt === null)
+                .flatMap((order) => order.items)
+                .some((item) => item.status !== "voided" && item.remainingQuantity > 0);
+
+              return (
+                <section className="operations-focus-table-control">
+                  <header className="operations-focus-section-heading">
+                    <div>
+                      <p className="eyebrow">Table</p>
+                      <h2>{partyLabel(selectedParty)}</h2>
+                      <span>{selectedParty.guestCount} guests · {statusLabel(selectedParty.status)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="operations-text-button"
+                      onClick={() => setSelectedPartyId(null)}
+                    >
+                      Close
+                    </button>
+                  </header>
+
+                  <div className="operations-focus-table-items">
+                    {selectedParty.orders
+                      .filter((order) => order.cancelledAt === null)
+                      .flatMap((order) => order.items)
+                      .filter((item) => item.status !== "voided")
+                      .map((item) => (
+                        <div key={item.id}>
+                          <span>{item.quantity > 1 ? `${item.quantity}× ` : ""}{item.itemName}</span>
+                          <small>{statusLabel(item.status)}</small>
+                        </div>
+                      ))}
+                  </div>
+
+                  {checkPricing?.partyId === selectedParty.id ? (
+                    <div className="operations-price-editor">
+                      <strong>Price extras</strong>
+                      <small>Enter the charge or mark it Free.</small>
+                      {checkPricing.requirements.map((requirement) => {
+                        const key = checkPricingKey(requirement);
+                        return (
+                          <label key={key}>
+                            <span>{requirement.label}</span>
+                            <div>
+                              <span>$</span>
+                              <input
+                                inputMode="decimal"
+                                placeholder="0.00"
+                                value={checkPricing.values[key] ?? ""}
+                                onChange={(event) =>
+                                  setCheckPricing((current) =>
+                                    current && current.partyId === selectedParty.id
+                                      ? {
+                                          ...current,
+                                          values: {
+                                            ...current.values,
+                                            [key]: event.target.value,
+                                          },
+                                        }
+                                      : current,
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCheckPricing((current) =>
+                                    current && current.partyId === selectedParty.id
+                                      ? {
+                                          ...current,
+                                          values: { ...current.values, [key]: "0" },
+                                        }
+                                      : current,
+                                  )
+                                }
+                              >
+                                Free
+                              </button>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+
+                  <div className="operations-focus-table-checks">
+                    {partyOpenChecks.length === 0 ? (
+                      <span>No open check</span>
+                    ) : partyOpenChecks.map((check) => (
+                      <button
+                        type="button"
+                        key={check.id}
+                        className="operations-focus-check-row"
+                        onClick={() => setSelectedCheckId(check.id)}
+                      >
+                        <span>{statusLabel(check.status)}</span>
+                        <strong>{money(check.balanceAmount)}</strong>
+                      </button>
+                    ))}
+                  </div>
+
+                  <footer className="operations-focus-table-actions">
+                    {canServe ? (
+                      <Link className="button" data-variant="primary" to={`/orders/new?partyId=${selectedParty.id}`}>
+                        Add Order
+                      </Link>
+                    ) : null}
+                    {canServe && hasUncheckedItems ? (
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={busyKey === `check-party-${selectedParty.id}`}
+                        onClick={() => void createPartyCheck(selectedParty)}
+                      >
+                        {checkPricing?.partyId === selectedParty.id
+                          ? "Save Prices & Create Check"
+                          : partyOpenChecks.length > 0
+                            ? "Add to Check"
+                            : "Create Check"}
+                      </button>
+                    ) : null}
+                    {selectedParty.status === "seated" && canManageParties ? (
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={busyKey === `unseat-party-${selectedParty.id}`}
+                        onClick={() => void unseatActiveParty(selectedParty)}
+                      >
+                        Unseat
+                      </button>
+                    ) : null}
+                  </footer>
+                </section>
+              );
+            })() : selectedCheck ? (() => {
+              const draft = paymentByCheck[selectedCheck.id] ?? EMPTY_PAYMENT;
+              return (
+                <section className="operations-focus-payment">
+                  <header className="operations-focus-section-heading">
+                    <div>
+                      <p className="eyebrow">Checkout</p>
+                      <h2>{selectedCheck.label}</h2>
+                      <span>{statusLabel(selectedCheck.status)} · {money(selectedCheck.balanceAmount)}</span>
+                    </div>
+                    <button type="button" className="operations-text-button" onClick={() => setSelectedCheckId(null)}>
+                      Close
+                    </button>
+                  </header>
+
+                  {selectedCheck.status === "open" ? (
+                    <button
+                      type="button"
+                      className="button"
+                      data-variant="primary"
+                      disabled={busyKey === `present-${selectedCheck.id}`}
+                      onClick={() =>
+                        void runAction(
+                          `present-${selectedCheck.id}`,
+                          () => presentCheck(selectedCheck.id),
+                          "Check presented.",
+                        )
+                      }
+                    >
+                      Present Check
+                    </button>
+                  ) : null}
+
+                  {selectedCheck.status === "presented" && selectedCheck.balanceAmount > 0 ? (
+                    <div className="operations-focus-pay-form">
+                      <div className="operations-payment-methods">
+                        <button
+                          type="button"
+                          data-selected={draft.method === "card"}
+                          onClick={() => updatePaymentDraft(selectedCheck.id, { method: "card" })}
+                        >
+                          Card
+                        </button>
+                        <button
+                          type="button"
+                          data-selected={draft.method === "cash"}
+                          onClick={() => updatePaymentDraft(selectedCheck.id, { method: "cash" })}
+                        >
+                          Cash
+                        </button>
+                      </div>
+
+                      <label>
+                        <span>Tip</span>
+                        <input
+                          inputMode="decimal"
+                          value={draft.tip}
+                          onChange={(event) => updatePaymentDraft(selectedCheck.id, { tip: event.target.value })}
+                        />
+                      </label>
+
+                      {draft.method === "card" ? (
+                        <label>
+                          <span>Transaction ID</span>
+                          <input
+                            value={draft.processorReference}
+                            placeholder="Generated automatically"
+                            onChange={(event) =>
+                              updatePaymentDraft(selectedCheck.id, {
+                                processorReference: event.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      ) : (
+                        <label>
+                          <span>Cash received</span>
+                          <input
+                            inputMode="decimal"
+                            value={draft.cashReceived}
+                            placeholder={money(selectedCheck.balanceAmount + Number(draft.tip || 0))}
+                            onChange={(event) =>
+                              updatePaymentDraft(selectedCheck.id, { cashReceived: event.target.value })
+                            }
+                          />
+                        </label>
+                      )}
+
+                      <button
+                        type="button"
+                        className="button"
+                        data-variant="primary"
+                        disabled={busyKey === `pay-${selectedCheck.id}`}
+                        onClick={() => void payCheck(selectedCheck)}
+                      >
+                        Pay {money(selectedCheck.balanceAmount)}
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })() : (
+              <section className="operations-focus-attention">
+                <header className="operations-focus-section-heading">
+                  <div>
+                    <p className="eyebrow">Now</p>
+                    <h2>Needs Attention</h2>
+                  </div>
+                  <span>{attentionCount}</span>
+                </header>
+
+                {canManageParties ? (
+                  <form className="operations-focus-new-party" onSubmit={(event) => void submitNewParty(event)}>
+                    <input
+                      aria-label="Party name"
+                      type="text"
+                      maxLength={80}
+                      placeholder="Party name"
+                      required
+                      value={newPartyName}
+                      onChange={(event) => setNewPartyName(event.target.value)}
+                    />
+                    <input
+                      aria-label="Guests"
+                      type="number"
+                      min="1"
+                      max="99"
+                      value={newPartyGuests}
+                      onChange={(event) => setNewPartyGuests(event.target.value)}
+                    />
+                    <button
+                      type="submit"
+                      className="button"
+                      data-variant="primary"
+                      disabled={busyKey === "new-party"}
+                    >
+                      Add Wait
+                    </button>
+                  </form>
+                ) : null}
+
+                {readyOrders.length > 0 ? (
+                  <section className="operations-focus-queue-section" data-kind="ready">
+                    <header><strong>Ready to deliver</strong><span>{readyItemCount}</span></header>
+                    {readyOrders.map((entry) => (
+                      <article key={entry.order.id}>
+                        <div>
+                          <strong>{entry.context}</strong>
+                          <small>{entry.readyItems.map((item) => item.itemName).join(" · ")}</small>
+                        </div>
+                        {canServe ? (
+                          <button
+                            type="button"
+                            className="button"
+                            data-variant="primary"
+                            disabled={busyKey === `deliver-${entry.order.id}`}
+                            onClick={() =>
+                              void runAction(
+                                `deliver-${entry.order.id}`,
+                                () => deliverOrderItems(entry.order.id, {
+                                  orderItemIds: entry.readyItems.map((item) => item.id),
+                                }),
+                                entry.order.fulfillmentType === "dine_in"
+                                  ? "Items delivered."
+                                  : "Order completed.",
+                              )
+                            }
+                          >
+                            {entry.order.fulfillmentType === "dine_in" ? "Deliver" : "Complete"}
+                          </button>
+                        ) : null}
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
+
+                {waitingParties.length > 0 ? (
+                  <section className="operations-focus-queue-section">
+                    <header><strong>Waiting to seat</strong><span>{waitingParties.length}</span></header>
+                    {waitingParties.map((party) => (
+                      <article key={party.id}>
+                        <div>
+                          <strong>{party.name ?? `${party.guestCount} guests`}</strong>
+                          <small>{party.guestCount} guests · {elapsed(party.arrivedAt)}</small>
+                        </div>
+                        {canManageParties ? (
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busyKey === `seat-${party.id}`}
+                            onClick={() => beginFloorSeating(party)}
+                          >
+                            Seat
+                          </button>
+                        ) : null}
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
+
+                {(standaloneCheckoutOrders.length > 0 || openChecks.length > 0) ? (
+                  <section className="operations-focus-queue-section">
+                    <header>
+                      <strong>Checkout</strong>
+                      <span>{standaloneCheckoutOrders.length + openChecks.length}</span>
+                    </header>
+
+                    {standaloneCheckoutOrders.map((entry) => (
+                      <article key={entry.order.id}>
+                        <div>
+                          <strong>{entry.context}</strong>
+                          <small>{orderTypeLabel(entry.order)} · needs check</small>
+                        </div>
+                        <button
+                          type="button"
+                          className="button"
+                          disabled={busyKey === `check-order-${entry.order.id}`}
+                          onClick={() => void createStandaloneCheck(entry)}
+                        >
+                          Create Check
+                        </button>
+                      </article>
+                    ))}
+
+                    {openChecks.map((check) => (
+                      <article key={check.id}>
+                        <div>
+                          <strong>{check.label}</strong>
+                          <small>{statusLabel(check.status)} · {money(check.balanceAmount)}</small>
+                        </div>
+                        {check.status === "open" ? (
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busyKey === `present-${check.id}`}
+                            onClick={() =>
+                              void runAction(
+                                `present-${check.id}`,
+                                () => presentCheck(check.id),
+                                "Check presented.",
+                              )
+                            }
+                          >
+                            Present
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="button"
+                            data-variant="primary"
+                            onClick={() => setSelectedCheckId(check.id)}
+                          >
+                            Pay
+                          </button>
+                        )}
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
+
+                {attentionCount === 0 ? (
+                  <div className="operations-focus-clear">
+                    <strong>All clear</strong>
+                    <span>No service action needs attention right now.</span>
+                  </div>
+                ) : null}
+
+                <footer className="operations-focus-utility">
+                  <span>
+                    Register <strong>{drawer ? "Open" : "Closed"}</strong>
+                    {drawer ? ` · ${money(drawer.openingCashAmount)} start` : ""}
+                  </span>
+                  {canManage && !drawer ? (
+                    <button
+                      type="button"
+                      className="operations-text-button"
+                      onClick={() =>
+                        void runAction(
+                          "open-drawer",
+                          () => openDrawer({ openingCashAmount: Number(openingCash) || 200 }),
+                          "Drawer opened.",
+                        )
+                      }
+                    >
+                      Open Register
+                    </button>
+                  ) : null}
+                </footer>
+              </section>
+            )}
+          </aside>
+        </div>
       </main>
     );
   }
@@ -912,6 +1680,14 @@ export function HomePage() {
           <h1>Operations</h1>
         </div>
         <div className="operations-heading-actions">
+          <button
+            type="button"
+            className="button"
+            data-variant="quiet"
+            onClick={() => setOperationsDisplay("service")}
+          >
+            Service Board
+          </button>
           {snapshot ? (
             <small>Updated {clockTime(snapshot.generatedAt)}</small>
           ) : null}
@@ -961,6 +1737,7 @@ export function HomePage() {
       <div
         className="operations-live-grid"
         data-sidebar={canServe || canManage}
+        data-table-control={selectedParty ? "true" : "false"}
       >
         <div className="operations-main-column">
         <section className="operations-panel operations-floor-panel">
@@ -1090,7 +1867,12 @@ export function HomePage() {
                             onDragStart={() => setDraggingTableId(table.id)}
                             onDragEnd={() => setDraggingTableId(null)}
                             onClick={() => {
-                              if (!arrangeFloor) toggleFloorTable(table.id);
+                              if (arrangeFloor) return;
+                              if (table.occupied && occupyingParty && !seatingParty) {
+                                setSelectedPartyId(occupyingParty.id);
+                                return;
+                              }
+                              toggleFloorTable(table.id);
                             }}
                             aria-label={`Table ${table.label}, ${table.capacity} seats${table.occupied ? ", occupied" : ", available"}`}
                           >
@@ -1124,10 +1906,338 @@ export function HomePage() {
           ) : null}
 
           <div className="operations-party-list">
-            {activeParties.length === 0 ? (
-              <div className="operations-empty">No active parties.</div>
+            {!selectedParty ? (
+              <header className="operations-waitlist-heading">
+                <div>
+                  <p className="eyebrow">Front Desk</p>
+                  <strong>Waitlist</strong>
+                </div>
+                <span>{waitingParties.length}</span>
+              </header>
+            ) : null}
+            {selectedParty ? (() => {
+              const openChecks = selectedParty.checks.filter(
+                (check) => check.status !== "closed",
+              );
+              const hasUncheckedItems = selectedParty.orders
+                .filter((order) => order.cancelledAt === null)
+                .flatMap((order) => order.items)
+                .some(
+                  (item) =>
+                    item.status !== "voided" &&
+                    item.remainingQuantity > 0,
+                );
+
+              return (
+                <section className="operations-table-control">
+                  <header>
+                    <div>
+                      <p className="eyebrow">Table Control</p>
+                      <strong>{partyLabel(selectedParty)}</strong>
+                      <small>
+                        {selectedParty.guestCount} guests · {statusLabel(selectedParty.status)}
+                      </small>
+                    </div>
+                    <button
+                      type="button"
+                      className="operations-text-button"
+                      onClick={() => setSelectedPartyId(null)}
+                    >
+                      All Parties
+                    </button>
+                  </header>
+
+                  <div className="operations-table-control-orders">
+                    <span className="operations-status" data-status={selectedParty.status}>
+                      {statusLabel(selectedParty.status)}
+                    </span>
+
+                    {selectedParty.orders.filter((order) => order.cancelledAt === null).length === 0 ? (
+                      <p className="operations-table-control-empty">No active orders.</p>
+                    ) : (
+                      selectedParty.orders
+                        .filter((order) => order.cancelledAt === null)
+                        .map((order) => (
+                          <article key={order.id}>
+                            <small>{orderTypeLabel(order)} · {elapsed(order.submittedAt)}</small>
+                            {order.items
+                              .filter((item) => item.status !== "voided")
+                              .map((item) => (
+                                <div key={item.id}>
+                                  <span>
+                                    {item.quantity > 1 ? `${item.quantity}× ` : ""}
+                                    {item.itemName}
+                                  </span>
+                                  <span className="operations-status" data-status={item.status}>
+                                    {statusLabel(item.status)}
+                                  </span>
+                                </div>
+                              ))}
+                          </article>
+                        ))
+                    )}
+                  </div>
+
+                  {checkPricing?.partyId ===
+                  selectedParty.id ? (
+                    <div className="operations-price-editor">
+                      <strong>Price extras</strong>
+                      <small>
+                        Enter the charge for this order,
+                        or mark it Free.
+                      </small>
+
+                      {checkPricing.requirements.map(
+                        (requirement) => {
+                          const key =
+                            checkPricingKey(requirement);
+
+                          return (
+                            <label key={key}>
+                              <span>
+                                {requirement.label}
+                              </span>
+
+                              <div>
+                                <span>$</span>
+
+                                <input
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={
+                                    checkPricing.values[
+                                      key
+                                    ] ?? ""
+                                  }
+                                  onChange={(event) =>
+                                    setCheckPricing(
+                                      (current) =>
+                                        current &&
+                                        current.partyId ===
+                                          selectedParty.id
+                                          ? {
+                                              ...current,
+                                              values: {
+                                                ...current.values,
+                                                [key]:
+                                                  event
+                                                    .target
+                                                    .value,
+                                              },
+                                            }
+                                          : current,
+                                    )
+                                  }
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCheckPricing(
+                                      (current) =>
+                                        current &&
+                                        current.partyId ===
+                                          selectedParty.id
+                                          ? {
+                                              ...current,
+                                              values: {
+                                                ...current.values,
+                                                [key]: "0",
+                                              },
+                                            }
+                                          : current,
+                                    )
+                                  }
+                                >
+                                  Free
+                                </button>
+                              </div>
+                            </label>
+                          );
+                        },
+                      )}
+                    </div>
+                  ) : null}
+
+                  <div className="operations-table-control-checks">
+                    <strong>Check</strong>
+
+                    {openChecks.length === 0 ? (
+                      <span>No check yet</span>
+                    ) : (
+                      openChecks.map((check) => (
+                        <div key={check.id}>
+                          <span>{statusLabel(check.status)}</span>
+                          <strong>{money(check.balanceAmount)}</strong>
+
+                          {check.status === "open" && canServe ? (
+                            <button
+                              type="button"
+                              className="button"
+                              disabled={busyKey === `present-${check.id}`}
+                              onClick={() =>
+                                void runAction(
+                                  `present-${check.id}`,
+                                  () => presentCheck(check.id),
+                                  "Check presented.",
+                                )
+                              }
+                            >
+                              Present
+                            </button>
+                          ) : null}
+
+                          {check.status === "presented" &&
+                          check.balanceAmount > 0 &&
+                          canServe ? (() => {
+                            const draft =
+                              paymentByCheck[check.id] ?? EMPTY_PAYMENT;
+
+                            return (
+                              <div className="operations-payment-form">
+                                <div className="operations-payment-methods">
+                                  <button
+                                    type="button"
+                                    data-selected={draft.method === "card"}
+                                    onClick={() =>
+                                      updatePaymentDraft(check.id, {
+                                        method: "card",
+                                      })
+                                    }
+                                  >
+                                    Card
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-selected={draft.method === "cash"}
+                                    onClick={() =>
+                                      updatePaymentDraft(check.id, {
+                                        method: "cash",
+                                      })
+                                    }
+                                  >
+                                    Cash
+                                  </button>
+                                </div>
+
+                                <label>
+                                  <span>Tip</span>
+                                  <input
+                                    inputMode="decimal"
+                                    value={draft.tip}
+                                    onChange={(event) =>
+                                      updatePaymentDraft(check.id, {
+                                        tip: event.target.value,
+                                      })
+                                    }
+                                  />
+                                </label>
+
+                                {draft.method === "card" ? (
+                                  <label>
+                                    <span>Terminal ref</span>
+                                    <input
+                                      value={draft.processorReference}
+                                      placeholder="Required"
+                                      onChange={(event) =>
+                                        updatePaymentDraft(check.id, {
+                                          processorReference:
+                                            event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                ) : (
+                                  <label>
+                                    <span>Cash received</span>
+                                    <input
+                                      inputMode="decimal"
+                                      value={draft.cashReceived}
+                                      placeholder={money(
+                                        check.balanceAmount +
+                                          Number(draft.tip || 0),
+                                      )}
+                                      onChange={(event) =>
+                                        updatePaymentDraft(check.id, {
+                                          cashReceived: event.target.value,
+                                        })
+                                      }
+                                    />
+                                  </label>
+                                )}
+
+                                <button
+                                  type="button"
+                                  className="button"
+                                  data-variant="primary"
+                                  disabled={busyKey === `pay-${check.id}`}
+                                  onClick={() => void payCheck(check)}
+                                >
+                                  Pay {money(check.balanceAmount)}
+                                </button>
+                              </div>
+                            );
+                          })() : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="operations-table-control-actions">
+                    {canServe ? (
+                      <Link
+                        className="button"
+                        data-variant="primary"
+                        to={`/orders/new?partyId=${selectedParty.id}`}
+                      >
+                        Add Order
+                      </Link>
+                    ) : null}
+
+                    {canServe && hasUncheckedItems ? (
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={busyKey === `check-party-${selectedParty.id}`}
+                        onClick={() => void createPartyCheck(selectedParty)}
+                      >
+                        {checkPricing?.partyId === selectedParty.id
+                          ? "Save Prices & Create Check"
+                          : openChecks.length > 0
+                            ? "Add to Check"
+                            : "Create Check"}
+                      </button>
+                    ) : null}
+
+                    {selectedParty.status === "seated" && canManageParties ? (
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={busyKey === `unseat-party-${selectedParty.id}`}
+                        onClick={() => void unseatActiveParty(selectedParty)}
+                      >
+                        Unseat
+                      </button>
+                    ) : null}
+
+                    {canManageParties &&
+                    selectedParty.orders.every((order) => order.cancelledAt !== null) ? (
+                      <button
+                        type="button"
+                        className="button"
+                        disabled={busyKey === `cancel-party-${selectedParty.id}`}
+                        onClick={() => void cancelWaitingParty(selectedParty)}
+                      >
+                        Cancel Party
+                      </button>
+                    ) : null}
+                  </div>
+                </section>
+              );
+            })() : waitingParties.length === 0 ? (
+              <div className="operations-empty">No parties waiting.</div>
             ) : (
-              activeParties.map((party) => {
+              waitingParties.map((party) => {
                 const activeItems = party.orders.flatMap((order) => order.items).filter(
                   (item) => item.status !== "fulfilled" && item.status !== "voided",
                 );
@@ -1188,6 +2298,15 @@ export function HomePage() {
 
                     {(party.status === "seated" || party.status === "in_service") ? (
                       <div className="operations-party-actions">
+                        {party.status === "seated" && canManageParties ? (
+                          <button
+                            type="button"
+                            className="button"
+                            onClick={() => void unseatActiveParty(party)}
+                          >
+                            Unseat
+                          </button>
+                        ) : null}
                         {canServe ? (
                           <Link className="button" to={`/orders/new?partyId=${party.id}`}>
                             Add Order
@@ -1217,7 +2336,6 @@ export function HomePage() {
           </div>
         </section>
 
-        {activeKitchenOrders.length > 0 ? (
         <section className="operations-panel operations-kitchen-panel">
           <header className="operations-panel-heading">
             <div>
@@ -1357,7 +2475,6 @@ export function HomePage() {
             )}
           </div>
         </section>
-        ) : null}
         </div>
 
         <aside className="operations-sidebar">
@@ -1541,7 +2658,7 @@ export function HomePage() {
                       }}
                     >
                       <label>
-                        <span>Counted cash</span>
+                        <span>End-of-shift cash count</span>
                         <input
                           inputMode="decimal"
                           value={closingCash}
@@ -1577,7 +2694,7 @@ export function HomePage() {
                   }}
                 >
                   <label>
-                    <span>Opening cash</span>
+                    <span>Starting cash count</span>
                     <input
                       inputMode="decimal"
                       value={openingCash}
@@ -1714,6 +2831,8 @@ export function HomePage() {
           ) : null}
         </aside>
       </div>
+
+
     </main>
   );
 }

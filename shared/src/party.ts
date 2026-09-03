@@ -36,6 +36,12 @@ export type SeatPartyInput = z.infer<
   typeof seatPartyInputSchema
 >;
 
+export const unseatPartyInputSchema = z.object({
+  reason: z.string().trim().min(1, "A reason is required").max(500),
+});
+
+export type UnseatPartyInput = z.infer<typeof unseatPartyInputSchema>;
+
 export const partySchema = z.object({
   id: z.string().uuid(),
   name: z.string().nullable(),

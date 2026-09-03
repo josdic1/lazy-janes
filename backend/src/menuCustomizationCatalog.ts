@@ -47,6 +47,13 @@ type ItemIngredientRow = {
   sort_order: number;
 };
 
+type ItemAdditionRow = {
+  menu_item_id: string;
+  ingredient_id: string;
+  sort_order: number;
+  is_active: boolean;
+};
+
 type ItemIngredientReplacementRow = {
   menu_item_id: string;
   source_ingredient_id: string;
@@ -238,6 +245,7 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
   const [
     ingredientResult,
     itemIngredientResult,
+    itemAdditionResult,
     replacementResult,
     choiceResult,
     choiceConstraintResult,
@@ -284,6 +292,15 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
         link.menu_item_id,
         link.sort_order,
         lower(ingredient.name)
+    `),
+    pool.query<ItemAdditionRow>(`
+      SELECT
+        menu_item_id,
+        ingredient_id,
+        sort_order,
+        is_active
+      FROM menu_item_additions
+      ORDER BY menu_item_id, sort_order, ingredient_id
     `),
     pool.query<ItemIngredientReplacementRow>(`
       SELECT
@@ -399,6 +416,12 @@ export async function getCustomizationCatalog(): Promise<MenuCustomizationCatalo
     ingredients: ingredientResult.rows.map(toIngredient),
     preparationSchemes,
     itemIngredients: itemIngredientResult.rows.map(toItemIngredient),
+    itemAdditions: itemAdditionResult.rows.map((row) => ({
+      menuItemId: row.menu_item_id,
+      ingredientId: row.ingredient_id,
+      sortOrder: row.sort_order,
+      isActive: row.is_active,
+    })),
     replacements: replacementResult.rows.map(toItemIngredientReplacement),
     choiceGroups: toChoiceGroups(choiceResult.rows),
     choiceConstraints: choiceConstraintResult.rows.map(toMenuChoiceConstraint),

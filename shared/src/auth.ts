@@ -1,5 +1,36 @@
 import { z } from "zod";
 
+export function formatUserDisplayName(value: string): string {
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(
+      /(^|[\s'’\-])([A-Za-z])/g,
+      (_match, prefix: string, letter: string) =>
+        `${prefix}${letter.toUpperCase()}`,
+    );
+}
+
+export function normalizeUserLoginName(value: string): string {
+  return value.replace(/\s+/g, "").toLowerCase();
+}
+
+export const userDisplayNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .transform(formatUserDisplayName);
+
+export const userLoginNameSchema = z
+  .string()
+  .trim()
+  .min(1, "Username is required")
+  .max(200)
+  .transform(normalizeUserLoginName);
+
+
 export const userPinSchema = z
   .string()
   .min(1, "Password is required")
@@ -7,17 +38,23 @@ export const userPinSchema = z
 
 export const userLoginOptionSchema = z.object({
   id: z.string().uuid(),
-  displayName: z.string().trim().min(1),
+  displayName: userDisplayNameSchema,
 });
 
 export type UserLoginOption = z.infer<
   typeof userLoginOptionSchema
 >;
 
-export const userLoginInputSchema = z.object({
-  userId: z.string().uuid(),
-  pin: userPinSchema,
-});
+export const userLoginInputSchema = z.union([
+  z.object({
+    username: userLoginNameSchema,
+    pin: userPinSchema,
+  }),
+  z.object({
+    userId: z.string().uuid(),
+    pin: userPinSchema,
+  }),
+]);
 
 export type UserLoginInput = z.infer<
   typeof userLoginInputSchema
@@ -25,7 +62,7 @@ export type UserLoginInput = z.infer<
 
 export const userIdentitySchema = z.object({
   id: z.string().uuid(),
-  displayName: z.string().trim().min(1),
+  displayName: userDisplayNameSchema,
   roles: z.array(z.string().trim().min(1)),
 });
 
@@ -50,7 +87,7 @@ export type AuthSetupStatus = z.infer<
 >;
 
 export const createInitialAdminInputSchema = z.object({
-  displayName: z.string().trim().min(1).max(200),
+  displayName: userDisplayNameSchema,
   pin: userPinSchema,
 });
 

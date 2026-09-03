@@ -9,6 +9,7 @@ import type {
   Party,
   PartyListItem,
   SeatPartyInput,
+  UnseatPartyInput,
   UpdateDiningTableInput,
 } from "@lazy-janes/shared";
 
@@ -88,6 +89,16 @@ export async function seatParty(
   return response.json() as Promise<Party>;
 }
 
+
+export async function unseatParty(partyId: string, input: UnseatPartyInput): Promise<Party> {
+  const response = await fetch(`/api/parties/${partyId}/unseat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json() as Promise<Party>;
+}
 
 export async function cancelParty(
   partyId: string,

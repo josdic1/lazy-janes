@@ -211,6 +211,18 @@ authRouter.post("/login", async (request, response) => {
   try {
     await client.query("BEGIN");
 
+    const loginLookup =
+      "username" in input.data
+        ? {
+            where:
+              "replace(lower(u.display_name), ' ', '') = $1",
+            value: input.data.username,
+          }
+        : {
+            where: "u.id = $1",
+            value: input.data.userId,
+          };
+
     const userResult = await client.query<LoginUserRow>(
       `
         SELECT
@@ -223,10 +235,10 @@ authRouter.post("/login", async (request, response) => {
         FROM users u
         JOIN user_credentials c
           ON c.user_id = u.id
-        WHERE u.id = $1
+        WHERE ${loginLookup.where}
         FOR UPDATE OF c
       `,
-      [input.data.userId],
+      [loginLookup.value],
     );
 
     const user = userResult.rows[0];

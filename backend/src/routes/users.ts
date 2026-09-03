@@ -2,6 +2,7 @@ import {
   createUserInputSchema,
   resetUserPinInputSchema,
   updateUserInputSchema,
+  normalizeUserLoginName,
   type UserRecord,
   type UserRoleCode,
 } from "@lazy-janes/shared";
@@ -14,6 +15,18 @@ import { hashUserPin } from "../auth/security.js";
 import { pool } from "../db/pool.js";
 
 export const usersRouter = Router();
+
+function isLoginIdentityConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505" &&
+    "constraint" in error &&
+    error.constraint === "users_login_identity_unique"
+  );
+}
+
 
 usersRouter.use(
   requireAuthenticatedUser,
@@ -94,6 +107,28 @@ usersRouter.post("/", async (request, response) => {
   try {
     await client.query("BEGIN");
 
+    const loginKey = normalizeUserLoginName(
+      input.data.displayName,
+    );
+
+    const existingIdentity = await client.query<{ id: string }>(
+      `
+        SELECT id
+        FROM users
+        WHERE replace(lower(display_name), ' ', '') = $1
+        LIMIT 1
+      `,
+      [loginKey],
+    );
+
+    if (existingIdentity.rows[0]) {
+      await client.query("ROLLBACK");
+      response.status(409).json({
+        error: "A user with that name already exists",
+      });
+      return;
+    }
+
     const userResult = await client.query<{
       id: string;
       display_name: string;
@@ -162,6 +197,14 @@ usersRouter.post("/", async (request, response) => {
     response.status(201).json(created);
   } catch (error) {
     await client.query("ROLLBACK");
+
+    if (isLoginIdentityConflict(error)) {
+      response.status(409).json({
+        error: "A user with that name already exists",
+      });
+      return;
+    }
+
     throw error;
   } finally {
     client.release();
@@ -286,6 +329,32 @@ usersRouter.patch(
             "Cannot remove the last active administrator",
         });
         return;
+      }
+
+      if (input.data.displayName) {
+        const loginKey = normalizeUserLoginName(
+          input.data.displayName,
+        );
+
+        const existingIdentity =
+          await client.query<{ id: string }>(
+            `
+              SELECT id
+              FROM users
+              WHERE id <> $1
+                AND replace(lower(display_name), ' ', '') = $2
+              LIMIT 1
+            `,
+            [currentUser.id, loginKey],
+          );
+
+        if (existingIdentity.rows[0]) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "A user with that name already exists",
+          });
+          return;
+        }
       }
 
       const updatedResult = await client.query<{

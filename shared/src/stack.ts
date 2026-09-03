@@ -59,6 +59,7 @@ export const STACK_PARTY_EVENT_TYPES = [
   "arrived",
   "waiting_started",
   "seated",
+  "unseated",
   "service_started",
   "completed",
   "cancelled",

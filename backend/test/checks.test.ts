@@ -269,7 +269,7 @@ describe("POST /api/checks", () => {
       await deleteAuthenticatedTestUser(userId);
     }
   });
-  it("blocks unknown ADD/EXTRA pricing and resolves it from current menu truth", async () => {
+  it("collects an explicit order price when ADD/EXTRA pricing is unknown", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();
     const ingredientId = randomUUID();
@@ -375,26 +375,42 @@ describe("POST /api/checks", () => {
         });
 
       expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toBe(
-        "Price required before check: EXTRA Pending Price Bacon",
-      );
+      expect(blocked.body.pricingRequired).toHaveLength(1);
 
-      await pool.query(
-        `
-          UPDATE menu_item_ingredients
-          SET extra_price = 1.5,
-              extra_price_configured = true
-          WHERE menu_item_id = $1
-            AND ingredient_id = $2
-        `,
-        [menuItemId, ingredientId],
-      );
+      const requirement =
+        blocked.body.pricingRequired[0] as {
+          source: "ingredient_change";
+          recordId: string;
+          orderItemId: string;
+          changeKind: "extra";
+          label: string;
+        };
+
+      expect(requirement).toMatchObject({
+        source: "ingredient_change",
+        orderItemId,
+        changeKind: "extra",
+        label:
+          "Pending Price Burger · EXTRA Pending Price Bacon",
+      });
 
       const created = await agent
         .post("/api/checks")
         .send({
           label: "Priced",
-          items: [{ orderItemId, allocatedQuantity: 1 }],
+          items: [
+            {
+              orderItemId,
+              allocatedQuantity: 1,
+            },
+          ],
+          priceOverrides: [
+            {
+              source: requirement.source,
+              recordId: requirement.recordId,
+              amount: 1.5,
+            },
+          ],
         });
 
       expect(created.status).toBe(201);
@@ -419,6 +435,29 @@ describe("POST /api/checks", () => {
         price_adjustment: "1.50",
         price_configured: true,
       });
+
+      const event = await pool.query<{
+        details: {
+          priceOverrides?: unknown[];
+        };
+      }>(
+        `
+          SELECT details
+          FROM check_events
+          WHERE check_id = $1
+            AND event_type = 'created'
+        `,
+        [checkId],
+      );
+
+      expect(
+        event.rows[0]?.details.priceOverrides,
+      ).toEqual([
+        {
+          ...requirement,
+          amount: 1.5,
+        },
+      ]);
     } finally {
       if (checkId) {
         await pool.query("DELETE FROM check_events WHERE check_id = $1", [checkId]);

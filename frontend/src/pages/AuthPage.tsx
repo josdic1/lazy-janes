@@ -3,15 +3,16 @@ import {
   useEffect,
   useState,
 } from "react";
-import type {
-  UserLoginOption,
-} from "@lazy-janes/shared";
 import {
   createInitialAdmin,
-  getLoginOptions,
   getSetupStatus,
   login,
 } from "../api/auth";
+import {
+  devLogin,
+  getDevUsers,
+  type DevUser,
+} from "../api/dev";
 
 type AuthPageProps = {
   onAuthenticated: (
@@ -25,11 +26,7 @@ export function AuthPage({
   const [loading, setLoading] = useState(true);
   const [requiresSetup, setRequiresSetup] =
     useState(false);
-  const [options, setOptions] = useState<
-    UserLoginOption[]
-  >([]);
-  const [selectedUserId, setSelectedUserId] =
-    useState("");
+  const [username, setUsername] = useState("");
   const [displayName, setDisplayName] =
     useState("");
   const [pin, setPin] = useState("");
@@ -38,6 +35,8 @@ export function AuthPage({
   );
   const [submitting, setSubmitting] =
     useState(false);
+  const [devUsers, setDevUsers] = useState<DevUser[]>([]);
+  const [devBusyUserId, setDevBusyUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,17 +51,13 @@ export function AuthPage({
 
         setRequiresSetup(setup.requiresSetup);
 
-        if (!setup.requiresSetup) {
-          const loginOptions = await getLoginOptions();
-
-          if (cancelled) {
-            return;
+        if (import.meta.env.DEV && !setup.requiresSetup) {
+          try {
+            const users = await getDevUsers();
+            if (!cancelled) setDevUsers(users);
+          } catch {
+            if (!cancelled) setDevUsers([]);
           }
-
-          setOptions(loginOptions);
-          setSelectedUserId(
-            loginOptions[0]?.id ?? "",
-          );
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -100,7 +95,7 @@ export function AuthPage({
       });
 
       const authenticated = await login({
-        userId: admin.id,
+        username: admin.displayName,
         pin,
       });
 
@@ -125,7 +120,7 @@ export function AuthPage({
 
     try {
       const authenticated = await login({
-        userId: selectedUserId,
+        username,
         pin,
       });
 
@@ -140,6 +135,53 @@ export function AuthPage({
       setSubmitting(false);
     }
   }
+
+  async function handleDevLogin(userId: string) {
+    setError(null);
+    setDevBusyUserId(userId);
+
+    try {
+      const authenticated = await devLogin(userId);
+      onAuthenticated(authenticated);
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : "Unable to use development login.",
+      );
+    } finally {
+      setDevBusyUserId(null);
+    }
+  }
+
+  const devGroups = import.meta.env.DEV
+    ? [
+        {
+          label: "Admins",
+          users: devUsers.filter((user) => user.roles.includes("admin")),
+        },
+        {
+          label: "Management",
+          users: devUsers.filter(
+            (user) =>
+              !user.roles.includes("admin") &&
+              user.roles.some((role) =>
+                ["manager", "lead_server", "head_chef"].includes(role),
+              ),
+          ),
+        },
+        {
+          label: "Staff",
+          users: devUsers.filter(
+            (user) =>
+              !user.roles.includes("admin") &&
+              !user.roles.some((role) =>
+                ["manager", "lead_server", "head_chef"].includes(role),
+              ),
+          ),
+        },
+      ].filter((group) => group.users.length > 0)
+    : [];
 
   if (loading) {
     return (
@@ -190,6 +232,7 @@ export function AuthPage({
             <span>Password</span>
             <input
               required
+              type="password"
               autoComplete="new-password"
               maxLength={72}
               value={pin}
@@ -217,31 +260,23 @@ export function AuthPage({
         >
           <label>
             <span>Username</span>
-            <select
+            <input
+              autoFocus
               required
-              value={selectedUserId}
+              autoComplete="username"
+              maxLength={200}
+              value={username}
               onChange={(event) =>
-                setSelectedUserId(
-                  event.target.value,
-                )
+                setUsername(event.target.value)
               }
-            >
-              {options.map((option) => (
-                <option
-                  key={option.id}
-                  value={option.id}
-                >
-                  {option.displayName}
-                </option>
-              ))}
-            </select>
+            />
           </label>
 
           <label>
             <span>Password</span>
             <input
-              autoFocus
               required
+              type="password"
               autoComplete="current-password"
               maxLength={72}
               value={pin}
@@ -256,7 +291,7 @@ export function AuthPage({
             data-variant="primary"
             type="submit"
             disabled={
-              submitting || !selectedUserId
+              submitting || !username.trim()
             }
           >
             {submitting
@@ -265,6 +300,33 @@ export function AuthPage({
           </button>
         </form>
       )}
+
+      {import.meta.env.DEV && !requiresSetup && devGroups.length > 0 ? (
+        <aside className="dev-login-switcher" aria-label="Development login">
+          <header>
+            <strong>DEV LOGIN</strong>
+            <small>Live database users · development only</small>
+          </header>
+
+          {devGroups.map((group) => (
+            <section key={group.label}>
+              <span>{group.label}</span>
+              <div>
+                {group.users.map((user) => (
+                  <button
+                    type="button"
+                    key={user.id}
+                    disabled={devBusyUserId !== null}
+                    onClick={() => void handleDevLogin(user.id)}
+                  >
+                    {devBusyUserId === user.id ? "Signing in…" : user.displayName}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </aside>
+      ) : null}
     </main>
   );
 }

@@ -237,4 +237,63 @@ describe("Lazy Jane's UMO adapter", () => {
     });
   });
 
+  it("maps explicit item additions to a UMO AddCatalog", () => {
+    const catalog: MenuCustomizationCatalog = {
+      ingredients: [
+        {
+          id: "bacon",
+          name: "Bacon",
+          kind: "protein",
+          isActive: true,
+          isAddable: true,
+          defaultAddPrice: 0,
+          addPriceConfigured: false,
+          allergenFlags: [],
+          sortOrder: 10,
+        },
+      ],
+      preparationSchemes: [],
+      itemIngredients: [],
+      itemAdditions: [
+        {
+          menuItemId: "item-1",
+          ingredientId: "bacon",
+          sortOrder: 10,
+          isActive: true,
+        },
+      ],
+      replacements: [],
+      choiceConstraints: [],
+      choiceGroups: [],
+    };
+
+    const offering = normalizeLazyJanesOffering({ item, catalog });
+
+    expect(offering.addCatalogs).toEqual([
+      {
+        id: "item-1:allowed-additions",
+        label: "Allowed additions",
+        options: [
+          {
+            id: "item-1:add:bacon",
+            component: {
+              componentId: "bacon",
+              label: "Bacon",
+            },
+          },
+        ],
+      },
+    ]);
+
+    const withoutPermission = normalizeLazyJanesOffering({
+      item,
+      catalog: {
+        ...catalog,
+        itemAdditions: [],
+      },
+    });
+
+    expect(withoutPermission.addCatalogs).toEqual([]);
+  });
+
 });

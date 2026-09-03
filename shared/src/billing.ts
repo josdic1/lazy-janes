@@ -39,11 +39,34 @@ export type CreateCheckItemInput = z.infer<
   typeof createCheckItemInputSchema
 >;
 
+export const checkPriceRequirementSchema = z.object({
+  source: z.enum(["ingredient_change", "ingredient_replacement"]),
+  recordId: z.string().uuid(),
+  orderItemId: z.string().uuid(),
+  changeKind: z.enum(["extra", "add", "replace"]),
+  label: z.string().min(1),
+});
+
+export type CheckPriceRequirement = z.infer<
+  typeof checkPriceRequirementSchema
+>;
+
+export const checkPriceOverrideSchema = z.object({
+  source: z.enum(["ingredient_change", "ingredient_replacement"]),
+  recordId: z.string().uuid(),
+  amount: z.number().nonnegative().multipleOf(0.01),
+});
+
+export type CheckPriceOverride = z.infer<
+  typeof checkPriceOverrideSchema
+>;
+
 export const createCheckInputSchema = z
   .object({
     partyId: z.string().uuid().nullable().default(null),
     label: z.string().trim().min(1).max(100),
     items: z.array(createCheckItemInputSchema).min(1),
+    priceOverrides: z.array(checkPriceOverrideSchema).optional(),
   })
   .refine(
     (check) =>
@@ -51,6 +74,19 @@ export const createCheckInputSchema = z
         check.items.map((item) => item.orderItemId),
       ).size === check.items.length,
     "An order item cannot appear twice on one check",
+  )
+  .refine(
+    (check) => {
+      const overrides = check.priceOverrides ?? [];
+      return (
+        new Set(
+          overrides.map(
+            (override) => `${override.source}:${override.recordId}`,
+          ),
+        ).size === overrides.length
+      );
+    },
+    "A price override cannot appear twice on one check",
   );
 
 export type CreateCheckInput = z.infer<

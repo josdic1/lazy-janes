@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { userPinSchema } from "./auth.js";
+import { userDisplayNameSchema, userPinSchema } from "./auth.js";
 
 export const USER_ROLE_CODES = [
   "host",
@@ -28,7 +28,7 @@ export type UserRole = z.infer<
 
 export const userRecordSchema = z.object({
   id: z.string().uuid(),
-  displayName: z.string().trim().min(1).max(200),
+  displayName: userDisplayNameSchema,
   isActive: z.boolean(),
   roles: z.array(userRoleCodeSchema),
   hasPin: z.boolean(),
@@ -40,7 +40,7 @@ export type UserRecord = z.infer<
 >;
 
 export const createUserInputSchema = z.object({
-  displayName: z.string().trim().min(1).max(200),
+  displayName: userDisplayNameSchema,
   roleCodes: z
     .array(userRoleCodeSchema)
     .min(1, "At least one role is required"),
@@ -53,12 +53,7 @@ export type CreateUserInput = z.infer<
 
 export const updateUserInputSchema = z
   .object({
-    displayName: z
-      .string()
-      .trim()
-      .min(1)
-      .max(200)
-      .optional(),
+    displayName: userDisplayNameSchema.optional(),
     isActive: z.boolean().optional(),
     roleCodes: z
       .array(userRoleCodeSchema)

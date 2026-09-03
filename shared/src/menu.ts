@@ -502,10 +502,21 @@ export type IngredientPopularity = z.infer<
   typeof ingredientPopularitySchema
 >;
 
+export const menuItemAdditionSchema = z.object({
+  menuItemId: idSchema,
+  ingredientId: idSchema,
+  sortOrder: sortOrderSchema,
+  isActive: z.boolean(),
+});
+export type MenuItemAddition = z.infer<
+  typeof menuItemAdditionSchema
+>;
+
 export const menuCustomizationCatalogSchema = z.object({
   ingredients: z.array(ingredientSchema),
   preparationSchemes: z.array(preparationSchemeSchema),
   itemIngredients: z.array(menuItemIngredientSchema),
+  itemAdditions: z.array(menuItemAdditionSchema).optional(),
   replacements: z.array(menuItemIngredientReplacementSchema),
   choiceGroups: z.array(menuChoiceGroupSchema),
   choiceConstraints: z.array(menuChoiceConstraintSchema),

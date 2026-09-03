@@ -4,6 +4,7 @@ import {
   diningTableOptionSchema,
   diningTableRecordSchema,
   partySchema,
+  stackSnapshotSchema,
 } from "@lazy-janes/shared";
 import request from "supertest";
 import { afterAll, describe, expect, it } from "vitest";
@@ -401,6 +402,86 @@ describe("POST /api/parties/:partyId/seat", () => {
         [sectionId],
       );
 
+      await deleteAuthenticatedUser(userId);
+    }
+  });
+});
+
+
+describe("POST /api/parties/:partyId/unseat", () => {
+  it("returns the party to waiting, releases the table, and audits the reason", async () => {
+    const userId = randomUUID();
+    const sectionId = randomUUID();
+    const tableId = randomUUID();
+    const partyId = randomUUID();
+
+    try {
+      const agent = await createAuthenticatedHost(userId, "Unseat Test Host");
+
+      await pool.query(
+        `INSERT INTO sections (id, name) VALUES ($1, $2)`,
+        [sectionId, `Unseat Test ${sectionId}`],
+      );
+
+      await pool.query(
+        `INSERT INTO dining_tables (id, section_id, label, capacity)
+         VALUES ($1, $2, 'U1', 4)`,
+        [tableId, sectionId],
+      );
+
+      await pool.query(
+        `INSERT INTO parties (id, guest_count, status, created_by_user_id)
+         VALUES ($1, 4, 'waiting', $2)`,
+        [partyId, userId],
+      );
+
+      const seated = await agent
+        .post(`/api/parties/${partyId}/seat`)
+        .send({ tableIds: [tableId] });
+
+      expect(seated.status).toBe(200);
+
+      const unseated = await agent
+        .post(`/api/parties/${partyId}/unseat`)
+        .send({ reason: "Guest requested a different table" });
+
+      expect(unseated.status).toBe(200);
+      expect(unseated.body.status).toBe("waiting");
+
+      const floor = diningTableOptionSchema.array().parse(
+        (await agent.get("/api/parties/tables")).body,
+      );
+      expect(floor.find((table) => table.id === tableId)?.occupied).toBe(false);
+
+      const event = await pool.query<{ reason: string | null }>(
+        `SELECT reason FROM party_events
+         WHERE party_id = $1 AND event_type = 'unseated'`,
+        [partyId],
+      );
+
+      expect(event.rows[0]?.reason).toBe("Guest requested a different table");
+
+      const stackResponse = await agent.get("/api/stack");
+      expect(stackResponse.status).toBe(200);
+
+      const stack = stackSnapshotSchema.parse(stackResponse.body);
+      const stackParty = stack.parties.find((party) => party.id === partyId);
+
+      expect(stackParty?.tables).toEqual([]);
+      expect(
+        stackParty?.events.some((event) => event.eventType === "unseated"),
+      ).toBe(true);
+    } finally {
+      await pool.query(
+        `DELETE FROM seating_tables
+         WHERE seating_id IN (SELECT id FROM seatings WHERE party_id = $1)`,
+        [partyId],
+      );
+      await pool.query("DELETE FROM seatings WHERE party_id = $1", [partyId]);
+      await pool.query("DELETE FROM party_events WHERE party_id = $1", [partyId]);
+      await pool.query("DELETE FROM parties WHERE id = $1", [partyId]);
+      await pool.query("DELETE FROM dining_tables WHERE id = $1", [tableId]);
+      await pool.query("DELETE FROM sections WHERE id = $1", [sectionId]);
       await deleteAuthenticatedUser(userId);
     }
   });

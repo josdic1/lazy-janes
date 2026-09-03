@@ -2,6 +2,7 @@ import {
   createCheckInputSchema,
   type Check,
   type CheckItem,
+  type CheckPriceRequirement,
 } from "@lazy-janes/shared";
 import { Router } from "express";
 import { z } from "zod";
@@ -114,7 +115,7 @@ checksRouter.post("/", async (request, response) => {
   }
 
   const userId = getAuthenticatedUser(request).id;
-
+  const priceOverrides = input.data.priceOverrides ?? [];
 
   const client = await pool.connect();
 
@@ -372,43 +373,167 @@ checksRouter.post("/", async (request, response) => {
     );
 
     const unresolvedPrices = await client.query<{
+      source: "ingredient_change" | "ingredient_replacement";
+      record_id: string;
+      order_item_id: string;
       change_kind: "extra" | "add" | "replace";
+      item_name: string;
       ingredient_name: string;
     }>(
       `
-        SELECT DISTINCT change_kind, ingredient_name
+        SELECT
+          source,
+          record_id,
+          order_item_id,
+          change_kind,
+          item_name,
+          ingredient_name
         FROM (
           SELECT
-            change_kind,
-            ingredient_name
-          FROM order_item_ingredient_changes
-          WHERE order_item_id = ANY($1::uuid[])
-            AND change_kind IN ('extra', 'add')
-            AND price_configured = false
+            'ingredient_change'::text AS source,
+            change_record.id AS record_id,
+            change_record.order_item_id,
+            change_record.change_kind,
+            order_item.item_name,
+            change_record.ingredient_name
+          FROM order_item_ingredient_changes change_record
+          JOIN order_items order_item
+            ON order_item.id = change_record.order_item_id
+          WHERE change_record.order_item_id = ANY($1::uuid[])
+            AND change_record.change_kind IN ('extra', 'add')
+            AND change_record.price_configured = false
 
           UNION ALL
 
           SELECT
+            'ingredient_replacement'::text AS source,
+            replacement_record.id AS record_id,
+            replacement_record.order_item_id,
             'replace'::text AS change_kind,
-            replacement_ingredient_name AS ingredient_name
-          FROM order_item_ingredient_replacements
-          WHERE order_item_id = ANY($1::uuid[])
-            AND price_configured = false
+            order_item.item_name,
+            replacement_record.replacement_ingredient_name AS ingredient_name
+          FROM order_item_ingredient_replacements replacement_record
+          JOIN order_items order_item
+            ON order_item.id = replacement_record.order_item_id
+          WHERE replacement_record.order_item_id = ANY($1::uuid[])
+            AND replacement_record.price_configured = false
         ) unresolved
-        ORDER BY change_kind, ingredient_name
+        ORDER BY order_item_id, change_kind, ingredient_name, record_id
       `,
       [requestedItemIds],
     );
 
-    if (unresolvedPrices.rows.length > 0) {
+    const pricingRequired: CheckPriceRequirement[] =
+      unresolvedPrices.rows.map((change) => ({
+        source: change.source,
+        recordId: change.record_id,
+        orderItemId: change.order_item_id,
+        changeKind: change.change_kind,
+        label: `${change.item_name} · ${change.change_kind.toUpperCase()} ${change.ingredient_name}`,
+      }));
+
+    if (pricingRequired.length > 0) {
+      const requiredKeys = new Set(
+        pricingRequired.map(
+          (requirement) => `${requirement.source}:${requirement.recordId}`,
+        ),
+      );
+
+      const overrideByKey = new Map(
+        priceOverrides.map((override) => [
+          `${override.source}:${override.recordId}`,
+          override,
+        ]),
+      );
+
+      if (
+        priceOverrides.some(
+          (override) =>
+            !requiredKeys.has(`${override.source}:${override.recordId}`),
+        )
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: "Pricing changed. Review the current prices and try again.",
+          pricingRequired,
+        });
+        return;
+      }
+
+      if (
+        pricingRequired.some(
+          (requirement) =>
+            !overrideByKey.has(`${requirement.source}:${requirement.recordId}`),
+        )
+      ) {
+        await client.query("ROLLBACK");
+        response.status(409).json({
+          error: `Price required before check: ${pricingRequired
+            .map((requirement) => requirement.label)
+            .join(", ")}`,
+          pricingRequired,
+        });
+        return;
+      }
+
+      for (const requirement of pricingRequired) {
+        const override = overrideByKey.get(
+          `${requirement.source}:${requirement.recordId}`,
+        );
+
+        if (!override) {
+          throw new Error("Missing validated price override");
+        }
+
+        const updated =
+          requirement.source === "ingredient_change"
+            ? await client.query(
+                `
+                  UPDATE order_item_ingredient_changes
+                  SET
+                    price_adjustment = $1,
+                    price_configured = true
+                  WHERE id = $2
+                    AND order_item_id = $3
+                    AND price_configured = false
+                `,
+                [
+                  override.amount,
+                  requirement.recordId,
+                  requirement.orderItemId,
+                ],
+              )
+            : await client.query(
+                `
+                  UPDATE order_item_ingredient_replacements
+                  SET
+                    price_adjustment = $1,
+                    price_configured = true
+                  WHERE id = $2
+                    AND order_item_id = $3
+                    AND price_configured = false
+                `,
+                [
+                  override.amount,
+                  requirement.recordId,
+                  requirement.orderItemId,
+                ],
+              );
+
+        if (updated.rowCount !== 1) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error:
+              "Pricing changed while the check was being created. Try again.",
+          });
+          return;
+        }
+      }
+    } else if (priceOverrides.length > 0) {
       await client.query("ROLLBACK");
       response.status(409).json({
-        error: `Price required before check: ${unresolvedPrices.rows
-          .map(
-            (change) =>
-              `${change.change_kind.toUpperCase()} ${change.ingredient_name}`,
-          )
-          .join(", ")}`,
+        error:
+          "Those price entries are no longer required. Create the check again.",
       });
       return;
     }
@@ -604,11 +729,28 @@ checksRouter.post("/", async (request, response) => {
           $2,
           jsonb_build_object(
             'itemCount',
-            $3::integer
+            $3::integer,
+            'priceOverrides',
+            $4::jsonb
           )
         )
       `,
-      [check.id, userId, createdItems.length],
+      [
+        check.id,
+        userId,
+        createdItems.length,
+        JSON.stringify(
+          pricingRequired.map((requirement) => ({
+            ...requirement,
+            amount:
+              priceOverrides.find(
+                (override) =>
+                  override.source === requirement.source &&
+                  override.recordId === requirement.recordId,
+              )?.amount ?? null,
+          })),
+        ),
+      ],
     );
 
     await client.query("COMMIT");

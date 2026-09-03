@@ -1,11 +1,26 @@
 import {
+  checkPriceRequirementSchema,
   checkSchema,
   paymentSchema,
   type Check,
+  type CheckPriceRequirement,
   type CreateCheckInput,
   type Payment,
   type TakePaymentInput,
 } from "@lazy-janes/shared";
+
+export class CheckPricingRequiredError extends Error {
+  readonly requirements: CheckPriceRequirement[];
+
+  constructor(
+    message: string,
+    requirements: CheckPriceRequirement[],
+  ) {
+    super(message);
+    this.name = "CheckPricingRequiredError";
+    this.requirements = requirements;
+  }
+}
 
 async function readError(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => null);
@@ -32,7 +47,35 @@ export async function createCheck(
   });
 
   if (!response.ok) {
-    throw new Error(await readError(response));
+    const body: unknown = await response.json().catch(() => null);
+
+    const message =
+      typeof body === "object" &&
+      body !== null &&
+      "error" in body &&
+      typeof body.error === "string"
+        ? body.error
+        : `Request failed with status ${response.status}`;
+
+    if (
+      response.status === 409 &&
+      typeof body === "object" &&
+      body !== null &&
+      "pricingRequired" in body
+    ) {
+      const requirements = checkPriceRequirementSchema
+        .array()
+        .safeParse(body.pricingRequired);
+
+      if (requirements.success) {
+        throw new CheckPricingRequiredError(
+          message,
+          requirements.data,
+        );
+      }
+    }
+
+    throw new Error(message);
   }
 
   return checkSchema.parse(await response.json());

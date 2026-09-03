@@ -121,7 +121,7 @@ describe("PIN login", () => {
     const response = await request(createApp())
       .post("/api/auth/login")
       .send({
-        userId,
+        username: "A U T H T E S T J O S H",
         pin: "4826",
       });
 

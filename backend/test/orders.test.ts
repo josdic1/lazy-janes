@@ -313,7 +313,7 @@ describe("POST /api/orders", () => {
     }
   });
 
-  it("allows ADD before price is known and records pricing truth explicitly", async () => {
+  it("requires explicit item ADD permission and preserves unknown pricing", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();
     const ingredientId = randomUUID();
@@ -356,6 +356,34 @@ describe("POST /api/orders", () => {
           VALUES ($1, $2, true, 0, false)
         `,
         [ingredientId, `Global Add Ingredient ${ingredientId}`],
+      );
+
+      const blocked = await agent
+        .post("/api/orders")
+        .send({
+          fulfillmentType: "takeout",
+          items: [
+            {
+              menuItemId,
+              addedIngredientIds: [ingredientId],
+            },
+          ],
+        });
+
+      expect(blocked.status).toBe(409);
+      expect(blocked.body.error).toContain("not configured for ADD");
+
+      await pool.query(
+        `
+          INSERT INTO menu_item_additions (
+            menu_item_id,
+            ingredient_id,
+            sort_order,
+            is_active
+          )
+          VALUES ($1, $2, 10, true)
+        `,
+        [menuItemId, ingredientId],
       );
 
       const response = await agent
@@ -406,6 +434,10 @@ describe("POST /api/orders", () => {
         await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
       }
 
+      await pool.query(
+        "DELETE FROM menu_item_additions WHERE menu_item_id = $1",
+        [menuItemId],
+      );
       await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
       await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
       await deleteAuthenticatedTestUser(userId);

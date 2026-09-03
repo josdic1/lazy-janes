@@ -4,6 +4,7 @@ import {
   createDiningTableInputSchema,
   createPartyInputSchema,
   seatPartyInputSchema,
+  unseatPartyInputSchema,
   updateDiningTableInputSchema,
   type DiningRoomSection,
   type DiningTableOption,
@@ -866,6 +867,78 @@ partiesRouter.post(
         return;
       }
 
+      throw error;
+    } finally {
+      client.release();
+    }
+  },
+);
+
+
+partiesRouter.post(
+  "/:partyId/unseat",
+  async (request, response) => {
+    const partyId = z.string().uuid().safeParse(request.params.partyId);
+    const input = unseatPartyInputSchema.safeParse(request.body);
+    const userId = getAuthenticatedUser(request).id;
+
+    if (!partyId.success || !input.success) {
+      response.status(400).json({ error: "Invalid unseat request" });
+      return;
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const current = await client.query<{ status: PartyStatus }>(
+        `SELECT status FROM parties WHERE id = $1 FOR UPDATE`,
+        [partyId.data],
+      );
+
+      if (!current.rows[0]) {
+        await client.query("ROLLBACK");
+        response.status(404).json({ error: "Party not found" });
+        return;
+      }
+
+      if (current.rows[0].status !== "seated") {
+        await client.query("ROLLBACK");
+        response.status(409).json({ error: "Only a seated party can be unseated" });
+        return;
+      }
+
+      await client.query(`
+        UPDATE seating_tables SET released_at = now()
+        WHERE seating_id IN (
+          SELECT id FROM seatings
+          WHERE party_id = $1 AND ended_at IS NULL
+        ) AND released_at IS NULL
+      `, [partyId.data]);
+
+      await client.query(`
+        UPDATE seatings SET ended_at = now()
+        WHERE party_id = $1 AND ended_at IS NULL
+      `, [partyId.data]);
+
+      const updated = await client.query<PartyRow>(`
+        UPDATE parties
+        SET status = 'waiting', status_changed_at = now()
+        WHERE id = $1
+        RETURNING id, name, guest_count, status, created_by_user_id,
+          arrived_at, status_changed_at, completed_at, cancelled_at,
+          cancelled_by_user_id, cancellation_reason
+      `, [partyId.data]);
+
+      await client.query(`
+        INSERT INTO party_events (party_id, event_type, actor_user_id, reason)
+        VALUES ($1, 'unseated', $2, $3)
+      `, [partyId.data, userId, input.data.reason]);
+
+      await client.query("COMMIT");
+      response.json(toParty(updated.rows[0]!));
+    } catch (error) {
+      await client.query("ROLLBACK");
       throw error;
     } finally {
       client.release();

@@ -33,6 +33,22 @@ export function normalizeLazyJanesOffering({
     .filter((component) => component.menuItemId === item.id)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  const ingredientsById = new Map(
+    catalog.ingredients.map((ingredient) => [ingredient.id, ingredient]),
+  );
+
+  const itemAdditions = (catalog.itemAdditions ?? [])
+    .filter(
+      (addition) =>
+        addition.menuItemId === item.id &&
+        addition.isActive,
+    )
+    .filter((addition) => {
+      const ingredient = ingredientsById.get(addition.ingredientId);
+      return ingredient?.isActive === true && ingredient.isAddable;
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   const activeChoiceGroups = catalog.choiceGroups.filter(
     (group) =>
       group.menuItemId === item.id &&
@@ -376,6 +392,27 @@ export function normalizeLazyJanesOffering({
     };
   });
 
+  const addCatalogs =
+    itemAdditions.length === 0
+      ? []
+      : [
+          {
+            id: `${item.id}:allowed-additions`,
+            label: "Allowed additions",
+            options: itemAdditions.map((addition) => {
+              const ingredient = ingredientsById.get(addition.ingredientId)!;
+
+              return {
+                id: `${item.id}:add:${addition.ingredientId}`,
+                component: {
+                  componentId: addition.ingredientId,
+                  label: ingredient.name,
+                },
+              };
+            }),
+          },
+        ];
+
   return universalOfferingSchema.parse({
     id: item.id,
     name: item.name,
@@ -389,6 +426,7 @@ export function normalizeLazyJanesOffering({
     choices,
     choiceConstraints,
     variants,
+    addCatalogs,
     commercialPolicies,
   });
 }

@@ -203,6 +203,8 @@ stackRouter.get("/", async (request, response) => {
                 ON dining_tables.id =
                   seating_tables.dining_table_id
               WHERE seatings.party_id = ANY($1::uuid[])
+                AND seatings.ended_at IS NULL
+                AND seating_tables.released_at IS NULL
               ORDER BY seatings.party_id, dining_tables.label
             `,
             [partyIds],

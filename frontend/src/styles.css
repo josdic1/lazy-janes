@@ -199,23 +199,10 @@ a { color: inherit; }
 }
 
 /* --------------------------------------------------------------------------
-   CONTROLS
+   UNIVERSAL CONTROLS
    -------------------------------------------------------------------------- */
 
-.button,
-.icon-button,
-.operations-text-button,
-.service-order-type button,
-.service-group-tabs button,
-.service-category-tabs button,
-.service-context-button,
-.service-ingredient-actions button,
-.service-preparation-options button,
-.service-choice-options button,
-.operations-payment-methods button {
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 80ms ease;
-}
-
+button,
 .button {
   min-height: var(--control-h);
   padding: 8px 14px;
@@ -224,76 +211,105 @@ a { color: inherit; }
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
+  font: inherit;
   font-size: 12px;
   font-weight: 720;
-  letter-spacing: -.005em;
   text-decoration: none;
   cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.button:hover:not(:disabled) { border-color: #aaa49a; background: var(--surface-2); }
-.button:active:not(:disabled) { transform: translateY(1px); }
-.button:disabled { opacity: .42; cursor: not-allowed; }
-.button[data-variant="primary"] { border-color: var(--accent); background: var(--accent); color: #fff; }
-.button[data-variant="primary"]:hover:not(:disabled) { border-color: var(--accent-strong); background: var(--accent-strong); }
-.button[data-variant="quiet"] { border-color: transparent; background: transparent; color: var(--muted); }
-.button[data-variant="quiet"]:hover:not(:disabled) { border-color: var(--line); background: var(--surface-3); color: var(--ink); }
 
-.icon-button {
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  background: var(--surface);
-  color: var(--ink-soft);
-  cursor: pointer;
+button:hover:not(:disabled),
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-2);
 }
-.icon-button:hover { border-color: var(--line-strong); background: var(--surface-2); }
-.icon-button[data-variant="danger"] { color: var(--danger); }
-.icon-button[data-variant="danger"]:hover { border-color: #e7c0c4; background: var(--danger-soft); }
-.icon-button svg { width: 17px; height: 17px; }
+
+button:disabled,
+.button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+button[data-variant="primary"],
+.button[data-variant="primary"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+button[data-variant="quiet"],
+.button[data-variant="quiet"] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
 
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {
+  width: 100%;
   min-height: var(--control-h);
+  padding: 8px 11px;
   border: 1px solid var(--line-strong);
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
+  font: inherit;
   outline: 0;
-  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
-input:not([type="checkbox"]):not([type="radio"]), select { padding: 8px 11px; }
-textarea { min-height: 92px; padding: 10px 11px; resize: vertical; }
-input::placeholder, textarea::placeholder { color: #a4a8a3; }
-input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(15, 116, 111, .10); }
 
-.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.drawer-form label:not(.checkbox-field),
-.operations-register-body label,
-.operations-payment-form label,
-.service-customer-details label,
-.service-guest-count,
-.service-party-name,
-.operations-new-party label,
-.ingredient-library-form label:not(.checkbox-field),
-.composition-editor label:not(.checkbox-field) {
+textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+label {
   display: grid;
   gap: 6px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
 }
-.checkbox-field { display: flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 600; }
-.checkbox-field input { width: 17px; height: 17px; accent-color: var(--accent); }
-fieldset { border: 1px solid var(--line); border-radius: var(--radius); }
-legend { padding: 0 6px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.checkbox-field input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+legend {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 12px;
+}
 
 /* --------------------------------------------------------------------------
    FEEDBACK / BADGES
@@ -3295,3 +3311,1476 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
 }
 
 /* === ORDER ENTRY TOPPINGS FINAL END === */
+
+/* ==========================================================================
+   OPERATIONS — REFERENCE VISUAL SYSTEM
+   ========================================================================== */
+
+.operations-live-page {
+  padding: 12px 14px 10px;
+  background: var(--bg);
+}
+
+/* Page heading */
+.operations-live-heading {
+  min-height: 50px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.operations-live-heading > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.operations-live-heading h1 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 790;
+  letter-spacing: -.035em;
+}
+
+.operations-live-heading .eyebrow {
+  display: block;
+  margin: 0;
+  color: var(--accent);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.operations-heading-actions {
+  gap: 7px;
+}
+
+.operations-heading-actions > small {
+  margin-right: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-heading-actions .button {
+  min-height: 34px;
+  border-radius: 4px;
+}
+
+.operations-heading-actions .button[data-variant="primary"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Metrics — individual clean cards instead of one long strip */
+.operations-metrics {
+  margin-bottom: 9px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.operations-metrics > div {
+  position: relative;
+  min-height: 54px;
+  padding: 8px 10px 7px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.operations-metrics > div:first-child {
+  border-left: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+}
+
+.operations-metrics > div::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--accent);
+}
+
+.operations-metrics span {
+  padding-left: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 820;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.operations-metrics strong {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.operations-metrics > div[data-attention="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Main composition */
+.operations-live-grid {
+  grid-template-columns: minmax(0, 1fr) 306px;
+  gap: 7px;
+}
+
+.operations-main-column {
+  gap: 7px;
+}
+
+.operations-sidebar {
+  gap: 7px;
+}
+
+/* Shared Operations panel language */
+.operations-panel {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 4px;
+  background: var(--surface);
+  box-shadow: 0 1px 0 rgba(23, 26, 24, .03);
+}
+
+.operations-panel-heading {
+  min-height: 42px;
+  padding: 7px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  background: var(--surface);
+}
+
+.operations-panel-heading > div {
+  min-width: 0;
+}
+
+.operations-panel-heading .eyebrow {
+  margin: 0 0 1px;
+  color: var(--accent);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.operations-panel-heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 790;
+  letter-spacing: -.025em;
+}
+
+.operations-panel-heading > span {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+/* Floor gets visual priority */
+.operations-floor-panel {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.operations-floor-panel > .operations-panel-heading {
+  border-bottom-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+}
+
+.operations-floor-map-toolbar {
+  background: var(--surface-2);
+  border-bottom-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+}
+
+.operations-floor-map-toolbar strong {
+  color: var(--ink);
+  font-weight: 780;
+}
+
+.operations-floor-map-toolbar span {
+  color: var(--muted);
+}
+
+/* Right rail stays secondary */
+.operations-sidebar .operations-panel {
+  border-color: var(--line);
+}
+
+.operations-sidebar .operations-panel-heading {
+  min-height: 38px;
+  background: var(--surface-2);
+}
+
+.operations-sidebar .operations-panel-heading h2 {
+  font-size: 13px;
+}
+
+.operations-sidebar .operations-panel-heading .eyebrow {
+  font-size: 7px;
+}
+
+/* Collapsible admin panels should feel quiet */
+.operations-floor-setup-panel,
+.operations-management-panel {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.operations-floor-setup-panel > summary,
+.operations-management-panel > summary {
+  background: var(--surface-2);
+}
+
+/* Keep the desktop composition tight */
+@media (min-width: 981px) {
+  .operations-live-page {
+    padding-top: 10px;
+  }
+
+  .operations-live-grid {
+    min-height: 0;
+  }
+}
+
+/* ==========================================================================
+   OPERATIONS — REFERENCE VISUAL SYSTEM END
+   ========================================================================== */
+
+.drawer--compact .drawer-form { padding: 18px; }
+
+
+
+
+
+
+
+
+
+
+
+
+/* === OPERATIONS TABLE CONTROL === */
+.operations-table-control {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.operations-table-control > header {
+  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.operations-table-control > header strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.operations-table-control > header small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-table-control-orders {
+  padding: 9px 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.operations-table-control-orders article {
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+}
+
+.operations-table-control-orders article > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-table-control-orders article > div {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #ebe7df;
+  font-size: 10px;
+}
+
+.operations-table-control-checks {
+  padding: 9px 10px;
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+}
+
+.operations-table-control-checks > strong {
+  font-size: 10px;
+}
+
+.operations-table-control-checks > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.operations-table-control-checks > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.operations-table-control-checks > div .button {
+  grid-column: 1 / -1;
+}
+
+.operations-table-control-actions {
+  margin-top: auto;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.operations-table-control-actions .button {
+  width: 100%;
+  min-height: 34px;
+}
+
+.operations-table-control-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+/* === OPERATIONS TABLE CONTROL END === */
+
+/* === CHECK PRICING === */
+.operations-price-editor {
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--warning-soft);
+}
+
+.operations-price-editor > strong {
+  font-size: 11px;
+}
+
+.operations-price-editor > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-price-editor label {
+  padding-top: 7px;
+  border-top: 1px solid rgba(167, 103, 24, .18);
+}
+
+.operations-price-editor label > span {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.operations-price-editor label > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.operations-price-editor input {
+  min-height: 34px;
+}
+
+.operations-price-editor button {
+  min-height: 34px;
+}
+/* === CHECK PRICING END === */
+
+
+/* === TABLE CONTROL CLEANUP === */
+.operations-live-grid[data-table-control="true"] .operations-floor-panel {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.operations-table-control {
+  min-height: 0;
+  height: 100%;
+  background: var(--surface);
+}
+
+.operations-table-control > header {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.operations-table-control > header strong {
+  margin-top: 3px;
+  font-size: 14px;
+}
+
+.operations-table-control > header small {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.operations-table-control-orders {
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.operations-table-control-orders article {
+  padding: 8px 0 0;
+}
+
+.operations-table-control-orders article > div {
+  min-height: 34px;
+  font-size: 11px;
+}
+
+.operations-table-control-checks {
+  padding: 11px 12px;
+  gap: 9px;
+}
+
+.operations-table-control-checks > strong {
+  font-size: 11px;
+}
+
+.operations-table-control-checks > div {
+  padding: 9px;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.operations-table-control-checks > div > span {
+  font-size: 11px;
+}
+
+.operations-table-control-checks > div > strong {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.operations-table-control-checks .operations-payment-form {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.operations-table-control-actions {
+  padding: 10px 12px;
+  gap: 7px;
+  background: var(--surface);
+}
+
+.operations-table-control-actions .button {
+  min-height: 38px;
+}
+
+.operations-price-editor {
+  padding: 11px 12px;
+}
+/* === TABLE CONTROL CLEANUP END === */
+
+/* === DEVELOPMENT DEMO TOOLS === */
+.dev-login-switcher {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 20;
+  width: min(380px, calc(100vw - 36px));
+  max-height: 52vh;
+  overflow: auto;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-float);
+}
+
+.dev-login-switcher > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dev-login-switcher > header strong {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.dev-login-switcher > header small,
+.dev-login-switcher section > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.dev-login-switcher section {
+  display: grid;
+  gap: 5px;
+}
+
+.dev-login-switcher section > span {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.dev-login-switcher section > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.dev-login-switcher button {
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+.dev-demo-controls {
+  margin-bottom: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.dev-demo-controls > header {
+  padding: 11px 13px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.dev-demo-controls h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+}
+
+.dev-demo-controls > header > small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.dev-demo-grid {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.dev-demo-grid > button {
+  min-height: 92px;
+  padding: 11px;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 5px;
+  text-align: left;
+}
+
+.dev-demo-grid > button strong {
+  font-size: 11px;
+}
+
+.dev-demo-grid > button span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.dev-demo-controls > p {
+  margin: 0 10px 10px;
+}
+
+@media (max-width: 980px) {
+  .dev-demo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .dev-demo-grid { grid-template-columns: 1fr; }
+  .dev-login-switcher {
+    position: static;
+    width: 100%;
+    margin-top: 12px;
+  }
+}
+/* === DEVELOPMENT DEMO TOOLS END === */
+
+
+/* === OPERATIONS DESKTOP WORKSPACE FINAL ===
+   Three simultaneous work zones:
+   floor | parties + active orders | checkout + register.
+   The floor no longer consumes the service workspace. */
+@media (min-width: 981px) {
+  .operations-live-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns:
+      minmax(520px, 48fr)
+      minmax(340px, 30fr)
+      minmax(320px, 22fr);
+    grid-template-rows:
+      42px
+      auto
+      minmax(220px, 1fr)
+      minmax(200px, .62fr);
+    gap: 8px;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  /* Flatten the old two-column wrappers so the real work areas can share
+     one desktop grid without duplicating any behavior or data. */
+  .operations-main-column,
+  .operations-floor-panel {
+    display: contents;
+  }
+
+  .operations-floor-panel > .operations-panel-heading {
+    grid-column: 1 / 3;
+    grid-row: 1;
+    min-width: 0;
+    min-height: 42px;
+    border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line));
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  /* Floor: large enough to operate, no longer the entire application. */
+  .operations-floor-map-shell {
+    grid-column: 1;
+    grid-row: 2 / 5;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--line));
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  .operations-floor-map-rooms {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    overflow-y: auto;
+    grid-auto-rows: minmax(220px, 1fr);
+  }
+
+  .operations-floor-room {
+    min-height: 220px;
+  }
+
+  .operations-floor-room-canvas {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 220px;
+  }
+
+  /* Middle service rail: new party, live parties, then active orders. */
+  .operations-new-party {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface-2);
+  }
+
+  .operations-party-list {
+    grid-column: 2;
+    grid-row: 3;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  .operations-kitchen-panel {
+    grid-column: 2;
+    grid-row: 4;
+    min-width: 0;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .operations-kitchen-panel .operations-order-list {
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  /* Right rail: checkout is primary; register/admin remain available below. */
+  .operations-sidebar {
+    grid-column: 3;
+    grid-row: 1 / 5;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .operations-checkout-panel {
+    min-height: 0;
+  }
+
+  /* Selecting a table must not destroy the three-column workspace. */
+  .operations-live-grid[data-table-control="true"] {
+    grid-template-columns:
+      minmax(520px, 48fr)
+      minmax(340px, 30fr)
+      minmax(320px, 22fr);
+  }
+
+  .operations-live-grid[data-table-control="true"] > .operations-sidebar {
+    display: grid;
+  }
+
+  .operations-live-grid[data-table-control="true"] .operations-new-party {
+    display: none;
+  }
+
+  .operations-live-grid[data-table-control="true"] .operations-party-list {
+    grid-column: 2;
+    grid-row: 2 / 4;
+  }
+
+  .operations-live-grid[data-table-control="true"] .operations-kitchen-panel {
+    grid-column: 2;
+    grid-row: 4;
+  }
+}
+/* === OPERATIONS DESKTOP WORKSPACE FINAL END === */
+
+
+/* === OPERATIONS SERVICE RAIL FINAL ===
+   Middle rail = compact waitlist + the actual live service work.
+   Active Orders never gets trapped in a tiny nested scroller. */
+@media (min-width: 981px) {
+  .operations-live-grid {
+    grid-template-columns:
+      minmax(520px, 48fr)
+      minmax(380px, 30fr)
+      minmax(320px, 22fr);
+    grid-template-rows:
+      42px
+      auto
+      minmax(130px, .34fr)
+      minmax(300px, 1fr);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .operations-party-list {
+    grid-column: 2;
+    grid-row: 3;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .operations-waitlist-heading {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    min-height: 34px;
+    padding: 6px 9px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+
+  .operations-waitlist-heading > div {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+  }
+
+  .operations-waitlist-heading .eyebrow {
+    margin: 0;
+    font-size: 7px;
+  }
+
+  .operations-waitlist-heading strong {
+    font-size: 12px;
+  }
+
+  .operations-waitlist-heading > span {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 800;
+  }
+
+  .operations-party {
+    min-height: 0;
+    padding: 7px 9px;
+    gap: 4px;
+  }
+
+  .operations-party-main strong {
+    font-size: 11px;
+  }
+
+  .operations-party-main small {
+    font-size: 8px;
+  }
+
+  .operations-party-actions {
+    gap: 4px;
+  }
+
+  .operations-party-actions .button {
+    min-height: 27px;
+    padding: 3px 7px;
+    font-size: 8px;
+  }
+
+  .operations-kitchen-panel {
+    grid-column: 2;
+    grid-row: 4;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .operations-kitchen-panel .operations-order-list {
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* One order = one compact service row. The order stays readable without
+     forcing staff to hunt through a tiny internal scrollbar. */
+  .operations-kitchen-panel .operations-order {
+    min-width: 0;
+    padding: 7px 8px;
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .operations-kitchen-panel .operations-order > header {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+  }
+
+  .operations-kitchen-panel .operations-order > header > div {
+    min-width: 0;
+  }
+
+  .operations-kitchen-panel .operations-order > header strong {
+    display: block;
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .operations-kitchen-panel .operations-order > header small,
+  .operations-kitchen-panel .operations-order > header > span {
+    font-size: 7px;
+  }
+
+  .operations-kitchen-panel .operations-order-items {
+    min-width: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px 9px;
+    align-items: center;
+  }
+
+  .operations-kitchen-panel .operations-order-items > div {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    display: inline-flex;
+    justify-content: flex-start;
+    gap: 4px;
+    background: transparent;
+    font-size: 9px;
+  }
+
+  .operations-kitchen-panel .operations-order-items > div > span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .operations-kitchen-panel .operations-order-item-meta {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 7px;
+  }
+
+  .operations-kitchen-panel .operations-order-item-meta button {
+    min-height: 22px;
+    padding: 2px 5px;
+    font-size: 7px;
+  }
+
+  .operations-kitchen-panel .operations-order > footer {
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .operations-kitchen-panel .operations-order > footer .button {
+    min-height: 27px;
+    padding: 3px 7px;
+    font-size: 8px;
+    white-space: nowrap;
+  }
+
+  .operations-kitchen-panel .operations-order > footer .operations-text-button {
+    font-size: 8px;
+    white-space: nowrap;
+  }
+
+  /* Table click deliberately takes over the middle work rail. Checkout and
+     register remain untouched on the right. */
+  .operations-live-grid[data-table-control="true"] .operations-party-list {
+    grid-column: 2;
+    grid-row: 2 / 5;
+    max-height: none;
+    overflow-y: auto;
+  }
+
+  .operations-live-grid[data-table-control="true"] .operations-kitchen-panel {
+    display: none;
+  }
+}
+/* === OPERATIONS SERVICE RAIL FINAL END === */
+
+
+/* === OPERATIONS 99 SERVICE BOARD === */
+.operations-focus-page {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100vh - var(--header-h));
+  padding: 14px;
+  background: var(--bg);
+}
+
+.operations-focus-heading {
+  min-height: 48px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.operations-focus-heading > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.operations-focus-heading h1 {
+  margin: 0;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -.045em;
+}
+
+.operations-focus-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.operations-focus-heading-actions small {
+  margin-right: 3px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-focus-metrics {
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.operations-focus-metrics > div {
+  min-height: 58px;
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.operations-focus-metrics > div[data-attention="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: var(--accent-soft);
+}
+
+.operations-focus-metrics span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.operations-focus-metrics strong {
+  font-family: var(--font-mono);
+  font-size: 21px;
+}
+
+.operations-focus-layout {
+  height: calc(100vh - var(--header-h) - 150px);
+  min-height: 560px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 410px;
+  gap: 9px;
+}
+
+.operations-focus-floor,
+.operations-focus-rail {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.operations-focus-floor {
+  display: flex;
+  flex-direction: column;
+}
+
+.operations-focus-rail {
+  overflow-y: auto;
+}
+
+.operations-focus-section-heading {
+  min-height: 48px;
+  padding: 9px 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.operations-focus-section-heading > div:first-child {
+  min-width: 0;
+}
+
+.operations-focus-section-heading h2 {
+  margin: 1px 0 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 790;
+  letter-spacing: -.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-focus-section-heading span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-focus-section-heading > div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.operations-focus-rooms {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: grid;
+  grid-template-rows: repeat(auto-fit, minmax(240px, 1fr));
+  background: #f7f3eb;
+}
+
+.operations-focus-room {
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+.operations-focus-room:first-child { border-top: 0; }
+
+.operations-focus-room > header {
+  min-height: 28px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.operations-focus-room-canvas {
+  position: relative;
+  min-height: 210px;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background-color: #f7f3eb;
+  background-image:
+    linear-gradient(rgba(23, 26, 24, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 26, 24, .035) 1px, transparent 1px);
+  background-size: 5% 5%;
+}
+
+.operations-focus-room-canvas[data-arrange="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.operations-focus-table {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 88px;
+  min-height: 62px;
+  padding: 7px 9px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.operations-focus-table strong {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.operations-focus-table span {
+  max-width: 78px;
+  overflow: hidden;
+  font-size: 8px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-focus-table small {
+  color: var(--success);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.operations-focus-table[data-occupied="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.operations-focus-table[data-occupied="true"] small { color: #d8dfda; }
+.operations-focus-table[data-selected="true"] { outline: 3px solid rgba(11, 116, 110, .22); border-color: var(--accent); }
+.operations-focus-table[data-ready="true"] { box-shadow: 0 0 0 3px rgba(52, 116, 90, .20); }
+
+.operations-focus-attention,
+.operations-focus-table-control,
+.operations-focus-payment {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.operations-focus-new-party {
+  padding: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px auto;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.operations-focus-new-party input,
+.operations-focus-new-party .button {
+  min-height: 34px;
+}
+
+.operations-focus-queue-section {
+  border-bottom: 1px solid var(--line);
+}
+
+.operations-focus-queue-section > header {
+  min-height: 32px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+}
+
+.operations-focus-queue-section > header strong {
+  font-size: 10px;
+  letter-spacing: .02em;
+}
+
+.operations-focus-queue-section > header span {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.operations-focus-queue-section[data-kind="ready"] > header {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.operations-focus-queue-section article {
+  min-height: 51px;
+  padding: 7px 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #ebe7df;
+}
+
+.operations-focus-queue-section article:first-of-type { border-top: 0; }
+
+.operations-focus-queue-section article > div {
+  min-width: 0;
+}
+
+.operations-focus-queue-section article strong {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-focus-queue-section article small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-focus-queue-section article .button {
+  min-height: 30px;
+  padding: 4px 9px;
+  font-size: 9px;
+}
+
+.operations-focus-clear {
+  min-height: 180px;
+  padding: 24px;
+  display: grid;
+  place-content: center;
+  gap: 3px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.operations-focus-clear strong { color: var(--ink); font-size: 15px; }
+.operations-focus-clear span { font-size: 10px; }
+
+.operations-focus-utility {
+  margin-top: auto;
+  min-height: 38px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.operations-focus-utility strong { color: var(--ink); }
+
+.operations-focus-table-items {
+  display: grid;
+}
+
+.operations-focus-table-items > div {
+  min-height: 36px;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid #ebe7df;
+}
+
+.operations-focus-table-items span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-focus-table-items small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.operations-focus-table-checks {
+  padding: 8px 10px;
+  display: grid;
+  gap: 5px;
+}
+
+.operations-focus-table-checks > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.operations-focus-check-row {
+  min-height: 38px;
+  padding: 7px 9px;
+  display: flex;
+  justify-content: space-between;
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.operations-focus-check-row strong {
+  font-family: var(--font-mono);
+}
+
+.operations-focus-table-actions {
+  margin-top: auto;
+  padding: 9px 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.operations-focus-table-actions .button { width: 100%; min-height: 36px; }
+
+.operations-focus-payment {
+  padding-bottom: 10px;
+}
+
+.operations-focus-payment > .button,
+.operations-focus-pay-form {
+  margin: 10px;
+}
+
+.operations-focus-pay-form {
+  display: grid;
+  gap: 9px;
+}
+
+.operations-focus-pay-form .operations-payment-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.operations-focus-pay-form > .button { min-height: 42px; }
+
+@media (max-width: 1100px) {
+  .operations-focus-layout { grid-template-columns: minmax(0, 1fr) 350px; }
+}
+
+@media (max-width: 900px) {
+  .operations-focus-page { padding: 10px; }
+  .operations-focus-heading { align-items: flex-start; flex-direction: column; }
+  .operations-focus-heading-actions { width: 100%; flex-wrap: wrap; }
+  .operations-focus-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .operations-focus-layout { height: auto; min-height: 0; grid-template-columns: 1fr; }
+  .operations-focus-floor { min-height: 520px; }
+  .operations-focus-rail { max-height: none; }
+}
+/* === OPERATIONS 99 SERVICE BOARD END === */

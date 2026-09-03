@@ -770,11 +770,24 @@ export function OrderEntryPage() {
   const availableAddIngredients = useMemo(() => {
     const query = addSearch.trim().toLowerCase();
 
+    const offering = selectedItem
+      ? normalizedMenu?.offerings.find(
+          (candidate) => candidate.id === selectedItem.id,
+        ) ?? null
+      : null;
+
+    const allowedAddIngredientIds = new Set(
+      offering?.addCatalogs.flatMap((catalog) =>
+        catalog.options.map((option) => option.component.componentId),
+      ) ?? [],
+    );
+
     return customization.ingredients
       .filter(
         (ingredient) =>
           ingredient.isActive &&
           ingredient.isAddable &&
+          allowedAddIngredientIds.has(ingredient.id) &&
           !includedIngredientIds.has(ingredient.id) &&
           !choiceIngredientIds.has(ingredient.id) &&
           !selectedReplacementIngredientIds.has(ingredient.id) &&
@@ -786,6 +799,8 @@ export function OrderEntryPage() {
     choiceIngredientIds,
     customization.ingredients,
     includedIngredientIds,
+    normalizedMenu,
+    selectedItem?.id,
     selectedReplacementIngredientIds,
   ]);
 

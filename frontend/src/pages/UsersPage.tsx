@@ -15,6 +15,10 @@ import {
   updateUser,
 } from "../api/users";
 import { Drawer } from "../components/ui/Drawer";
+import {
+  applyDemoPreset,
+  type DemoPreset,
+} from "../api/dev";
 
 const ROLE_LABELS: Record<UserRoleCode, string> = {
   host: "Host",
@@ -49,6 +53,8 @@ export function UsersPage() {
   >([]);
   const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
+  const [demoBusy, setDemoBusy] = useState<DemoPreset | null>(null);
+  const [demoNotice, setDemoNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -249,6 +255,37 @@ export function UsersPage() {
     }
   }
 
+  async function runDemoPreset(
+    preset: DemoPreset,
+    label: string,
+  ) {
+    const confirmed = window.confirm(
+      `${label} will replace current development demo data. Continue?`,
+    );
+    if (!confirmed) return;
+
+    setDemoBusy(preset);
+    setError(null);
+    setDemoNotice(null);
+
+    try {
+      const result = await applyDemoPreset(preset);
+      const nextUsers = await getUsers();
+      setUsers(nextUsers.users);
+      setDemoNotice(
+        `${label} ready · ${result.users} users · ${result.tables} tables · ${result.activeParties} active parties · ${result.activeOrders} active orders`,
+      );
+    } catch (demoError) {
+      setError(
+        demoError instanceof Error
+          ? demoError.message
+          : "Unable to prepare demo data.",
+      );
+    } finally {
+      setDemoBusy(null);
+    }
+  }
+
   return (
     <main className="page">
       <header className="page-heading">
@@ -271,6 +308,59 @@ export function UsersPage() {
           Add User
         </button>
       </header>
+
+      {import.meta.env.DEV ? (
+        <section className="dev-demo-controls">
+          <header>
+            <div>
+              <p className="eyebrow">Development only</p>
+              <h2>Demo Data</h2>
+            </div>
+            <small>Each choice is deterministic and keeps the Lazy Jane’s menu.</small>
+          </header>
+
+          <div className="dev-demo-grid">
+            <button
+              type="button"
+              disabled={demoBusy !== null}
+              onClick={() => void runDemoPreset("admin-menu-only", "Admin + Menu Only")}
+            >
+              <strong>1 · Admin + Menu Only</strong>
+              <span>Deletes service data, rooms, tables, and non-admin staff.</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={demoBusy !== null}
+              onClick={() => void runDemoPreset("keep-floor-staff", "Keep Floor + Staff")}
+            >
+              <strong>2 · Keep Floor + Staff</strong>
+              <span>Clears parties, orders, checks, payments, kitchen, and drawer activity.</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={demoBusy !== null}
+              onClick={() => void runDemoPreset("wednesday-light", "Wednesday Morning · Light")}
+            >
+              <strong>3 · Wednesday Morning · Light</strong>
+              <span>Staff, rooms, tables, waiting guests, dine-in service, takeout, kitchen, check, and open drawer.</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={demoBusy !== null}
+              onClick={() => void runDemoPreset("sunday-busy", "Sunday Morning · Busy")}
+            >
+              <strong>4 · Sunday Morning · Busy</strong>
+              <span>Full staff, waiting list, occupied floor, mixed kitchen states, takeout, delivery, checks, and drawer.</span>
+            </button>
+          </div>
+
+          {demoBusy ? <p>Preparing demo…</p> : null}
+          {demoNotice ? <p className="notice notice--success">{demoNotice}</p> : null}
+        </section>
+      ) : null}
 
       {error && drawerMode === null ? (
         <p className="notice" data-variant="error">
