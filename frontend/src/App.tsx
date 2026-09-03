@@ -8,10 +8,11 @@ import { Can } from "./components/shared/Can";
 import { RequireRoles } from "./components/shared/RequireRoles";
 import { useAuth } from "./hooks/useAuth";
 import { AuthPage } from "./pages/AuthPage";
-import { HomePage } from "./pages/HomePage";
+import { OperationsPage } from "./pages/OperationsPage";
 import { KitchenBoardPage } from "./pages/KitchenBoardPage";
 import { MenuManagementPage } from "./pages/MenuManagementPage";
 import { OrderEntryPage } from "./pages/OrderEntryPage";
+import { PosPage } from "./pages/PosPage";
 import { UsersPage } from "./pages/UsersPage";
 
 export function App() {
@@ -41,6 +42,18 @@ export function App() {
     );
   }
 
+  const hasServiceRole = user.roles.some((role) =>
+    ["host", "server", "lead_server", "manager", "admin"].includes(role),
+  );
+  const hasKitchenRole = user.roles.some((role) =>
+    ["chef", "head_chef"].includes(role),
+  );
+  const landingPath = hasServiceRole
+    ? "/pos"
+    : hasKitchenRole
+      ? "/kitchen"
+      : null;
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -52,9 +65,19 @@ export function App() {
           className="app-nav"
           aria-label="Primary navigation"
         >
-          <NavLink to="/" end>
-            Operations
-          </NavLink>
+          <Can
+            roles={[
+              "host",
+              "server",
+              "lead_server",
+              "manager",
+              "admin",
+            ]}
+          >
+            <NavLink to="/pos">
+              POS
+            </NavLink>
+          </Can>
 
           <Can
             roles={[
@@ -72,6 +95,12 @@ export function App() {
           <Can roles={["chef", "head_chef", "manager", "admin"]}>
             <NavLink to="/kitchen">
               Kitchen
+            </NavLink>
+          </Can>
+
+          <Can roles={["manager", "admin"]}>
+            <NavLink to="/operations">
+              Operations
             </NavLink>
           </Can>
 
@@ -107,7 +136,34 @@ export function App() {
       <Routes>
         <Route
           path="/"
-          element={<HomePage />}
+          element={
+            landingPath ? (
+              <Navigate to={landingPath} replace />
+            ) : (
+              <main className="page">
+                <p className="loading-state">
+                  No workspace is assigned to this user.
+                </p>
+              </main>
+            )
+          }
+        />
+
+        <Route
+          path="/pos"
+          element={
+            <RequireRoles
+              roles={[
+                "host",
+                "server",
+                "lead_server",
+                "manager",
+                "admin",
+              ]}
+            >
+              <PosPage />
+            </RequireRoles>
+          }
         />
 
         <Route
@@ -133,6 +189,15 @@ export function App() {
               roles={["chef", "head_chef", "manager", "admin"]}
             >
               <KitchenBoardPage />
+            </RequireRoles>
+          }
+        />
+
+        <Route
+          path="/operations"
+          element={
+            <RequireRoles roles={["manager", "admin"]}>
+              <OperationsPage />
             </RequireRoles>
           }
         />

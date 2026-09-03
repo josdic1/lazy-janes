@@ -1,7 +1,6 @@
 import type {
   ChoiceOption,
   CreateOrderInput,
-  DiningTableOption,
   EffectiveChoiceSlot,
   FulfillmentType,
   Ingredient,
@@ -22,7 +21,7 @@ import type {
 } from "@lazy-janes/shared";
 import { activeMenuRules, resolveChoiceSlots } from "@lazy-janes/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   getMenuCustomizationCatalog,
   getMenuIngredientPopularity,
@@ -31,12 +30,7 @@ import {
   getNormalizedMenu,
 } from "../api/menu";
 import { createOrder, fireOrder } from "../api/orders";
-import {
-  createParty,
-  getDiningTables,
-  getParties,
-  seatParty,
-} from "../api/parties";
+import { getParties } from "../api/parties";
 
 type ChoiceSelection = {
   group: EffectiveChoiceSlot;
@@ -249,7 +243,6 @@ export function OrderEntryPage() {
   const [customization, setCustomization] =
     useState<MenuCustomizationCatalog>(EMPTY_CUSTOMIZATION);
   const [parties, setParties] = useState<PartyListItem[]>([]);
-  const [tables, setTables] = useState<DiningTableOption[]>([]);
   const [ruleClock, setRuleClock] = useState(() => new Date());
 
   useEffect(() => {
@@ -285,9 +278,6 @@ export function OrderEntryPage() {
   const [fulfillmentType, setFulfillmentType] =
     useState<FulfillmentType>("dine_in");
   const [selectedPartyId, setSelectedPartyId] = useState("");
-  const [newTableId, setNewTableId] = useState("");
-  const [partyName, setPartyName] = useState("");
-  const [guestCount, setGuestCount] = useState(2);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
@@ -325,13 +315,8 @@ export function OrderEntryPage() {
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
 
   async function refreshServiceContext() {
-    const [partyList, tableList] = await Promise.all([
-      getParties(),
-      getDiningTables(),
-    ]);
-
+    const partyList = await getParties();
     setParties(partyList);
-    setTables(tableList);
   }
 
   useEffect(() => {
@@ -345,14 +330,12 @@ export function OrderEntryPage() {
           normalizedOfferings,
           catalog,
           partyList,
-          tableList,
         ] = await Promise.all([
           getMenuItems(),
           getMenuTaxonomy(),
           getNormalizedMenu(),
           getMenuCustomizationCatalog(),
           getParties(),
-          getDiningTables(),
         ]);
 
         if (cancelled) {
@@ -364,7 +347,6 @@ export function OrderEntryPage() {
         setNormalizedMenu(normalizedOfferings);
         setCustomization(catalog);
         setParties(partyList);
-        setTables(tableList);
 
         if (
           requestedPartyId &&
@@ -596,15 +578,8 @@ export function OrderEntryPage() {
     };
   }
 
-  const availableTables = useMemo(
-    () => tables.filter((table) => !table.occupied),
-    [tables],
-  );
-
   const selectedParty =
     activeParties.find((party) => party.id === selectedPartyId) ?? null;
-  const selectedTable =
-    availableTables.find((table) => table.id === newTableId) ?? null;
 
   const ingredientsById = useMemo(
     () => new Map(customization.ingredients.map((ingredient) => [ingredient.id, ingredient])),
@@ -1618,26 +1593,7 @@ export function OrderEntryPage() {
       return selectedParty.id;
     }
 
-    if (!selectedTable) {
-      throw new Error("Choose an existing table or start a new table.");
-    }
-
-    const name = partyName.trim();
-
-    if (!name) {
-      throw new Error("Party name is required.");
-    }
-
-    const created = await createParty({
-      name,
-      guestCount,
-    });
-    await seatParty(created.id, { tableIds: [selectedTable.id] });
-    setSelectedPartyId(created.id);
-    setNewTableId("");
-    setPartyName("");
-    await refreshServiceContext();
-    return created.id;
+    throw new Error("Seat the party in POS before starting a dine-in order.");
   }
 
   async function submitOrder() {
@@ -1709,7 +1665,7 @@ export function OrderEntryPage() {
           fulfillmentType === "dine_in"
             ? selectedParty
               ? partyLabel(selectedParty)
-              : selectedTable?.label ?? "dine-in"
+              : "dine-in"
             : fulfillmentType === "takeout"
               ? "takeout"
               : "delivery";
@@ -1829,14 +1785,23 @@ export function OrderEntryPage() {
       </header>
 
       {fulfillmentType === "dine_in" ? (
-        <section className="service-context">
+        <section className="service-context service-context--seated-only">
           <div className="service-context-block">
-            <span className="service-context-label">Existing tables</span>
-            <div className="service-context-options">
-              {activeParties.length === 0 ? (
-                <span className="service-context-empty">None seated</span>
-              ) : (
-                activeParties.map((party) => (
+            <span className="service-context-label">Seated tables</span>
+
+            {activeParties.length === 0 ? (
+              <div className="service-context-no-seated">
+                <div>
+                  <strong>No seated tables</strong>
+                  <span>Seat a party from POS before starting a dine-in order.</span>
+                </div>
+                <Link className="button" data-variant="primary" to="/pos">
+                  Open POS
+                </Link>
+              </div>
+            ) : (
+              <div className="service-context-options">
+                {activeParties.map((party) => (
                   <button
                     type="button"
                     className="service-context-button"
@@ -1844,72 +1809,15 @@ export function OrderEntryPage() {
                     key={party.id}
                     onClick={() => {
                       setSelectedPartyId(party.id);
-                      setNewTableId("");
                       setError("");
                     }}
                   >
                     <strong>{partyLabel(party)}</strong>
                     <small>{party.guestCount} guests</small>
                   </button>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="service-context-block">
-            <span className="service-context-label">Start new table</span>
-            <div className="service-context-new">
-              <div className="service-context-options">
-                {availableTables.length === 0 ? (
-                  <span className="service-context-empty">No open tables</span>
-                ) : (
-                  availableTables.map((table) => (
-                    <button
-                      type="button"
-                      className="service-context-button"
-                      data-selected={newTableId === table.id}
-                      key={table.id}
-                      onClick={() => {
-                        setNewTableId(table.id);
-                        setSelectedPartyId("");
-                        setError("");
-                      }}
-                    >
-                      <strong>{table.label}</strong>
-                      <small>{table.sectionName} · seats {table.capacity}</small>
-                    </button>
-                  ))
-                )}
+                ))}
               </div>
-
-              <label className="service-party-name">
-                <span>Party name</span>
-                <input
-                  type="text"
-                  maxLength={80}
-                  placeholder="Required"
-                  required
-                  value={partyName}
-                  onChange={(event) => setPartyName(event.target.value)}
-                />
-              </label>
-
-              <label className="service-guest-count">
-                <span>Guests</span>
-                <input
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={guestCount}
-                  onChange={(event) => {
-                    const value = Number(event.target.value);
-                    if (Number.isInteger(value) && value > 0) {
-                      setGuestCount(value);
-                    }
-                  }}
-                />
-              </label>
-            </div>
+            )}
           </div>
         </section>
       ) : (
@@ -2464,9 +2372,7 @@ export function OrderEntryPage() {
                 {fulfillmentType === "dine_in"
                   ? selectedParty
                     ? partyLabel(selectedParty)
-                    : selectedTable
-                      ? selectedTable.label
-                      : "Dine In"
+                    : "Dine In"
                   : fulfillmentType === "takeout"
                     ? customerName.trim() || "Takeout"
                     : customerName.trim() || "Delivery"}
@@ -2584,14 +2490,19 @@ export function OrderEntryPage() {
               type="button"
               className="button service-fire-button"
               data-variant="primary"
-              disabled={cart.length === 0 || submitting || pendingOrder !== null}
+              disabled={
+                cart.length === 0 ||
+                submitting ||
+                pendingOrder !== null ||
+                (fulfillmentType === "dine_in" && !selectedParty)
+              }
               onClick={() => void submitOrder()}
             >
               {submitting ? "Sending…" : "Fire to Kitchen"}
             </button>
-            {fulfillmentType === "dine_in" && !selectedParty && !selectedTable ? (
+            {fulfillmentType === "dine_in" && !selectedParty ? (
               <small className="service-send-hint">
-                Choose a table before sending. You can build the order first.
+                Seat and select the party in POS before sending.
               </small>
             ) : null}
           </footer>

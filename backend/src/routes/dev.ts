@@ -12,6 +12,7 @@ import {
   setSessionCookie,
 } from "../auth/session.js";
 import { pool } from "../db/pool.js";
+import { restoreRitzFloor } from "../demo/ritzFloor.js";
 import { environment } from "../env.js";
 
 export const devRouter = Router();
@@ -358,55 +359,6 @@ async function ensureDemoUser(
   );
 
   return userId;
-}
-
-async function createDemoFloor(client: PoolClient) {
-  await client.query(`
-    TRUNCATE TABLE dining_tables, sections
-    RESTART IDENTITY CASCADE
-  `);
-
-  const main = await client.query<{ id: string }>(`
-    INSERT INTO sections (name, display_order)
-    VALUES ('Main Dining Room', 10)
-    RETURNING id
-  `);
-  const counter = await client.query<{ id: string }>(`
-    INSERT INTO sections (name, display_order)
-    VALUES ('Counter', 20)
-    RETURNING id
-  `);
-
-  const mainId = main.rows[0]?.id;
-  const counterId = counter.rows[0]?.id;
-  if (!mainId || !counterId) throw new Error("Unable to create demo floor");
-
-  const mainTables = [
-    ["1", 4, 10, 18], ["2", 4, 32, 18], ["3", 4, 54, 18], ["4", 4, 76, 18],
-    ["5", 2, 10, 60], ["6", 6, 32, 60], ["7", 4, 54, 60], ["8", 4, 76, 60],
-  ] as const;
-
-  for (const [label, capacity, floorX, floorY] of mainTables) {
-    await client.query(
-      `
-        INSERT INTO dining_tables (
-          section_id, label, capacity, floor_x, floor_y
-        ) VALUES ($1, $2, $3, $4, $5)
-      `,
-      [mainId, label, capacity, floorX, floorY],
-    );
-  }
-
-  for (const [label, floorX] of [["C1", 28], ["C2", 68]] as const) {
-    await client.query(
-      `
-        INSERT INTO dining_tables (
-          section_id, label, capacity, floor_x, floor_y
-        ) VALUES ($1, $2, 2, $3, 50)
-      `,
-      [counterId, label, floorX],
-    );
-  }
 }
 
 async function getMenuItems(client: PoolClient, names: string[]) {
@@ -821,7 +773,7 @@ async function openDemoDrawer(client: PoolClient, userId: string) {
 
 async function seedScenario(client: PoolClient, scenario: DemoScenario, adminUserId: string) {
   await resetToAdminAndMenu(client);
-  await createDemoFloor(client);
+  await restoreRitzFloor(client);
 
   const users = new Map<string, string>();
   for (const user of scenario.users) {
@@ -1012,8 +964,10 @@ devRouter.post(
       await client.query("BEGIN");
       if (preset === "admin-menu-only") {
         await resetToAdminAndMenu(client);
+        await restoreRitzFloor(client);
       } else if (preset === "keep-floor-staff") {
         await clearServiceData(client);
+        await restoreRitzFloor(client);
       } else if (preset === "wednesday-light") {
         await seedScenario(client, WEDNESDAY_LIGHT, adminUserId);
       } else {

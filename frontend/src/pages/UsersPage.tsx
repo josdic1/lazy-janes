@@ -323,19 +323,19 @@ export function UsersPage() {
             <button
               type="button"
               disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("admin-menu-only", "Admin + Menu Only")}
+              onClick={() => void runDemoPreset("admin-menu-only", "Admin + Menu + Ritz Floor")}
             >
-              <strong>1 · Admin + Menu Only</strong>
-              <span>Deletes service data, rooms, tables, and non-admin staff.</span>
+              <strong>1 · Admin + Menu + Ritz Floor</strong>
+              <span>Deletes service activity and non-admin staff, then restores the canonical Ritz floor.</span>
             </button>
 
             <button
               type="button"
               disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("keep-floor-staff", "Keep Floor + Staff")}
+              onClick={() => void runDemoPreset("keep-floor-staff", "Ritz Floor + Staff")}
             >
-              <strong>2 · Keep Floor + Staff</strong>
-              <span>Clears parties, orders, checks, payments, kitchen, and drawer activity.</span>
+              <strong>2 · Ritz Floor + Staff</strong>
+              <span>Clears service activity, keeps staff, and restores the canonical Ritz floor.</span>
             </button>
 
             <button
