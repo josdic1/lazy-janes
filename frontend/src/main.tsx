@@ -3,7 +3,11 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { AuthProvider } from "./auth/AuthContext";
+import { ToastHost } from "./components/ui/ToastHost";
+import { installMutationToasts } from "./lib/installMutationToasts";
 import "./styles.css";
+
+installMutationToasts();
 
 const root = document.getElementById("root");
 
@@ -16,6 +20,7 @@ createRoot(root).render(
     <BrowserRouter>
       <AuthProvider>
         <App />
+        <ToastHost />
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

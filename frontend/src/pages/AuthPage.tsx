@@ -13,6 +13,7 @@ import {
   getDevUsers,
   type DevUser,
 } from "../api/dev";
+import { BrandLoader } from "../components/ui/BrandLoader";
 
 type AuthPageProps = {
   onAuthenticated: (
@@ -184,15 +185,15 @@ export function AuthPage({
     : [];
 
   if (loading) {
-    return (
-      <main className="page">
-        <p className="loading-state">Loading…</p>
-      </main>
-    );
+    return <BrandLoader label="Opening Lazy Jane’s…" fullscreen />;
   }
 
   return (
     <main className="page auth-page">
+      <div className="auth-brand">
+        <img src="/lazy-janes-logo.svg" alt="Lazy Jane’s Diner" />
+      </div>
+
       <header className="page-heading">
         <p className="eyebrow">
           Lazy Jane’s / Access
