@@ -14,6 +14,8 @@ type WalkthroughStep = {
   title: string;
   body: string;
   roles: readonly string[];
+  devOnly?: boolean;
+  targetSelector?: string;
 };
 
 const ALL_STEPS: readonly WalkthroughStep[] = [
@@ -23,6 +25,7 @@ const ALL_STEPS: readonly WalkthroughStep[] = [
     title: "The restaurant lives here",
     body: "Use the floor to manage arrivals, waitlist, seating, table status, checks, and payment without leaving the live restaurant view.",
     roles: ["host", "server", "lead_server", "manager", "admin"],
+    targetSelector: '.app-nav a[href="/pos"]',
   },
   {
     route: "/orders/new",
@@ -30,13 +33,15 @@ const ALL_STEPS: readonly WalkthroughStep[] = [
     title: "Take the order",
     body: "Order Entry works from parties already seated in POS. Build the food, apply allowed customizations, then send it to the kitchen.",
     roles: ["server", "lead_server", "manager", "admin"],
+    targetSelector: '.app-nav a[href="/orders/new"]',
   },
   {
     route: "/kitchen",
     label: "Kitchen",
-    title: "Run food execution",
-    body: "Kitchen owns fired food. Move items through preparation and ready status here while the POS floor reflects the live result.",
+    title: "Run the kitchen",
+    body: "Kitchen is the food execution screen. Fired items arrive here, move to ready here, and the live POS reflects those changes immediately.",
     roles: ["chef", "head_chef", "manager", "admin"],
+    targetSelector: '.app-nav a[href="/kitchen"]',
   },
   {
     route: "/operations",
@@ -44,6 +49,16 @@ const ALL_STEPS: readonly WalkthroughStep[] = [
     title: "Manager controls stay separate",
     body: "Operations is for shift controls, cash drawer, completed activity, and floor configuration—not live table service.",
     roles: ["manager", "admin"],
+    targetSelector: '.app-nav a[href="/operations"]',
+  },
+  {
+    route: "/users",
+    label: "Demo Data",
+    title: "Load a realistic sample day",
+    body: "In development, Admin can reset to a clean Ritz floor or load Wednesday Morning · Light and Sunday Morning · Busy. Those presets seed staff, guests, tables, orders, kitchen states, checks, and register activity so the full workflow can be explored.",
+    roles: ["admin"],
+    devOnly: true,
+    targetSelector: ".dev-demo-controls",
   },
 ];
 
@@ -56,10 +71,17 @@ export function Walkthrough({
   const navigate = useNavigate();
   const [index, setIndex] = useState(0);
 
-  const steps = useMemo(
-    () => ALL_STEPS.filter((step) => step.roles.some((role) => roles.includes(role))),
-    [roles],
-  );
+  const steps = useMemo(() => {
+    const normalizedRoles = new Set(
+      roles.map((role) => role.trim().toLowerCase()),
+    );
+
+    return ALL_STEPS.filter(
+      (step) =>
+        (!step.devOnly || import.meta.env.DEV) &&
+        step.roles.some((role) => normalizedRoles.has(role)),
+    );
+  }, [roles]);
 
   useEffect(() => {
     if (open) setIndex(0);
@@ -72,9 +94,11 @@ export function Walkthrough({
 
     navigate(step.route);
 
-    const selector = `.app-nav a[href="${step.route}"]`;
+    const selector =
+      step.targetSelector ?? `.app-nav a[href="${step.route}"]`;
     const target = document.querySelector<HTMLElement>(selector);
     target?.setAttribute("data-walkthrough-highlight", "true");
+    target?.scrollIntoView({ block: "center", behavior: "smooth" });
 
     return () => {
       target?.removeAttribute("data-walkthrough-highlight");

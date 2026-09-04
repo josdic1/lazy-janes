@@ -310,7 +310,7 @@ export function UsersPage() {
       </header>
 
       {import.meta.env.DEV ? (
-        <section className="dev-demo-controls">
+        <section className="dev-demo-controls" data-walkthrough-demo="true">
           <header>
             <div>
               <p className="eyebrow">Development only</p>
