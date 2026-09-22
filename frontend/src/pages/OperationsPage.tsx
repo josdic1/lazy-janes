@@ -544,7 +544,10 @@ export function OperationsPage() {
               <div className="operations-manager-empty">No completed parties yet today.</div>
             ) : (
               completedParties.slice(0, 20).map((party) => (
-                <div key={party.id}>
+                <Link
+                  key={party.id}
+                  to={`/reports?mode=reporting&period=today&party=${party.id}`}
+                >
                   <span>
                     <strong>{partyLabel(party)}</strong>
                     <small>
@@ -552,7 +555,7 @@ export function OperationsPage() {
                     </small>
                   </span>
                   <time dateTime={completedAt(party)}>{clockTime(completedAt(party))}</time>
-                </div>
+                </Link>
               ))
             )}
           </div>
@@ -565,6 +568,7 @@ export function OperationsPage() {
           <h2>Admin Tools</h2>
         </div>
         <nav aria-label="Manager tools">
+          <Link to="/reports">Reports <span>→</span></Link>
           <Link to="/menu">Menu Management <span>→</span></Link>
           {user?.roles.includes("admin") ? (
             <Link to="/users">Users <span>→</span></Link>

@@ -29,6 +29,7 @@ import {
   seatParty,
   unseatParty,
 } from "../api/parties";
+import { deliverOrderItems } from "../api/orders";
 import { getCurrentDrawer } from "../api/register";
 import { getStackSnapshot } from "../api/stack";
 import { useAuth } from "../hooks/useAuth";
@@ -55,6 +56,34 @@ function money(value: number): string {
 function elapsed(iso: string): string {
   const milliseconds = Date.now() - new Date(iso).getTime();
   const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`;
+}
+
+function partyEventTime(
+  party: StackParty,
+  eventType: StackParty["events"][number]["eventType"],
+): string | null {
+  const matches = party.events.filter((event) => event.eventType === eventType);
+  return matches.length > 0 ? matches[matches.length - 1]!.occurredAt : null;
+}
+
+function seatedSince(party: StackParty): string {
+  return partyEventTime(party, "seated") ?? party.statusChangedAt;
+}
+
+function serviceSince(party: StackParty): string | null {
+  return partyEventTime(party, "service_started");
+}
+
+function durationBetween(startIso: string, endIso: string): string {
+  const milliseconds = Math.max(
+    0,
+    new Date(endIso).getTime() - new Date(startIso).getTime(),
+  );
+  const minutes = Math.floor(milliseconds / 60_000);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -162,7 +191,7 @@ function tableLiveState(party: StackParty | null): {
   return {
     state: "seated",
     badge: "SEATED",
-    detail: `${elapsed(party.arrivedAt)} at table`,
+    detail: `${elapsed(seatedSince(party))} at table`,
   };
 }
 
@@ -196,6 +225,15 @@ export function PosPage() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [, setClockTick] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(
+      () => setClockTick((value) => value + 1),
+      15_000,
+    );
+    return () => window.clearInterval(interval);
+  }, []);
 
   const roleSet = useMemo(() => new Set(user?.roles ?? []), [user]);
   const can = useCallback(
@@ -764,7 +802,7 @@ export function PosPage() {
                                   </span>
                                   <small>
                                     {party
-                                      ? `${party.guestCount} guests · ${elapsed(party.arrivedAt)}`
+                                      ? `${party.guestCount} guests · ${elapsed(seatedSince(party))} seated`
                                       : state.detail}
                                   </small>
                                 </>
@@ -813,7 +851,7 @@ export function PosPage() {
                           </span>
                           <small>
                             {party
-                              ? `${party.guestCount} guests · ${elapsed(party.arrivedAt)}`
+                              ? `${party.guestCount} guests · ${elapsed(seatedSince(party))} seated`
                               : state.detail}
                           </small>
                         </button>
@@ -833,7 +871,9 @@ export function PosPage() {
                 <span className="eyebrow">Table</span>
                 <h2>{selectedParty.tables.map((table) => table.label).join(" + ")}</h2>
                 <strong>{partyLabel(selectedParty)}</strong>
-                <small>{selectedParty.guestCount} guests · {elapsed(selectedParty.arrivedAt)}</small>
+                <small>
+                  {selectedParty.guestCount} guests · {elapsed(seatedSince(selectedParty))} seated
+                </small>
               </div>
               <button
                 type="button"
@@ -844,6 +884,31 @@ export function PosPage() {
                 ×
               </button>
             </header>
+
+            <section className="pos-live-timing">
+              <div>
+                <span>Wait</span>
+                <strong>
+                  {durationBetween(
+                    selectedParty.arrivedAt,
+                    partyEventTime(selectedParty, "seated") ??
+                      new Date().toISOString(),
+                  )}
+                </strong>
+              </div>
+              <div>
+                <span>Seated</span>
+                <strong>{elapsed(seatedSince(selectedParty))}</strong>
+              </div>
+              <div>
+                <span>Service</span>
+                <strong>
+                  {serviceSince(selectedParty)
+                    ? elapsed(serviceSince(selectedParty)!)
+                    : "Not started"}
+                </strong>
+              </div>
+            </section>
 
             <section className="pos-inspector-section">
               <div className="pos-inspector-section-title">
@@ -860,21 +925,45 @@ export function PosPage() {
               ) : (
                 selectedParty.orders
                   .filter((order) => order.cancelledAt === null)
-                  .map((order) => (
-                    <article className="pos-order" key={order.id}>
-                      <small>{elapsed(order.submittedAt)}</small>
-                      {order.items
-                        .filter((item) => item.status !== "voided")
-                        .map((item) => (
-                          <div key={item.id}>
-                            <span>{item.quantity > 1 ? `${item.quantity}× ` : ""}{item.itemName}</span>
-                            <span className="pos-item-status" data-status={item.status}>
-                              {statusLabel(item.status)}
-                            </span>
-                          </div>
-                        ))}
-                    </article>
-                  ))
+                  .map((order) => {
+                    const readyItems = order.items.filter(
+                      (item) => item.status === "ready",
+                    );
+
+                    return (
+                      <article className="pos-order" key={order.id}>
+                        <small>{elapsed(order.submittedAt)}</small>
+                        {order.items
+                          .filter((item) => item.status !== "voided")
+                          .map((item) => (
+                            <div key={item.id}>
+                              <span>{item.quantity > 1 ? `${item.quantity}× ` : ""}{item.itemName}</span>
+                              <span className="pos-item-status" data-status={item.status}>
+                                {statusLabel(item.status)}
+                              </span>
+                            </div>
+                          ))}
+                        {canServe && readyItems.length > 0 ? (
+                          <button
+                            type="button"
+                            className="operations-text-button"
+                            disabled={busyKey === `deliver-${order.id}`}
+                            onClick={() => void runAction(
+                              `deliver-${order.id}`,
+                              () => deliverOrderItems(order.id, {
+                                orderItemIds: readyItems.map((item) => item.id),
+                              }),
+                              "Order delivered.",
+                            )}
+                          >
+                            {busyKey === `deliver-${order.id}`
+                              ? "Delivering…"
+                              : `Deliver Ready · ${readyItems.length}`}
+                          </button>
+                        ) : null}
+                      </article>
+                    );
+                  })
               )}
             </section>
 

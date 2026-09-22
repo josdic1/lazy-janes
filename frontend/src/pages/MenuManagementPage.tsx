@@ -94,6 +94,7 @@ type ChoiceOptionDraft = {
   label: string;
   ingredientId: string | null;
   preparationSchemeId: string | null;
+  targetPreparationOptionId: string | null;
   isNoneOption: boolean;
   priceAdjustment: number;
   priceAdjustmentConfigured: boolean;
@@ -189,6 +190,7 @@ function choiceDraft(group: MenuChoiceGroup): ChoiceGroupDraft {
       label: option.label,
       ingredientId: option.ingredientId,
       preparationSchemeId: option.preparationSchemeId,
+      targetPreparationOptionId: option.targetPreparationOptionId,
       isNoneOption: option.isNoneOption,
       priceAdjustment: option.priceAdjustment,
       priceAdjustmentConfigured: option.priceAdjustmentConfigured,
@@ -770,6 +772,7 @@ export function MenuManagementPage() {
             label: "",
             ingredientId: null,
             preparationSchemeId: null,
+            targetPreparationOptionId: null,
             isNoneOption: false,
             priceAdjustment: 0,
             priceAdjustmentConfigured: false,
@@ -819,6 +822,7 @@ export function MenuManagementPage() {
                   label: "",
                   ingredientId: null,
                   preparationSchemeId: null,
+                  targetPreparationOptionId: null,
                   isNoneOption: false,
                   priceAdjustment: 0,
                   priceAdjustmentConfigured: false,
@@ -876,6 +880,7 @@ export function MenuManagementPage() {
         sortOrder: index,
       })),
       choiceGroups: choiceGroups.map((group, groupIndex) => ({
+        id: group.key,
         label: group.label.trim(),
         role: group.role,
         relationship: group.relationship ?? null,
@@ -883,9 +888,11 @@ export function MenuManagementPage() {
         maxSelections: group.maxSelections,
         sortOrder: groupIndex,
         options: group.options.map((option, optionIndex) => ({
+          id: option.key,
           label: option.label.trim(),
           ingredientId: option.ingredientId,
           preparationSchemeId: option.preparationSchemeId,
+          targetPreparationOptionId: option.targetPreparationOptionId,
           isNoneOption: option.isNoneOption,
           priceAdjustment: option.priceAdjustment,
           priceAdjustmentConfigured: option.priceAdjustmentConfigured,

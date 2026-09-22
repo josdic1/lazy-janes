@@ -313,7 +313,7 @@ describe("POST /api/orders", () => {
     }
   });
 
-  it("requires explicit item ADD permission and preserves unknown pricing", async () => {
+  it("allows any active ingredient as ADD and preserves unknown pricing", async () => {
     const userId = randomUUID();
     const menuItemId = randomUUID();
     const ingredientId = randomUUID();
@@ -322,7 +322,7 @@ describe("POST /api/orders", () => {
     try {
       const agent = await createAuthenticatedTestUser({
         userId,
-        displayName: "Global Add Pricing Test Server",
+        displayName: "Global Topping Search Test Server",
         roles: ["server"],
       });
 
@@ -336,7 +336,7 @@ describe("POST /api/orders", () => {
           )
           VALUES (
             $1,
-            'Global Add Pricing Item',
+            'Global Topping Search Item',
             (SELECT id FROM menu_categories ORDER BY sort_order, name LIMIT 1),
             10
           )
@@ -349,41 +349,14 @@ describe("POST /api/orders", () => {
           INSERT INTO ingredients (
             id,
             name,
+            is_active,
             is_addable,
             default_add_price,
             add_price_configured
           )
-          VALUES ($1, $2, true, 0, false)
+          VALUES ($1, $2, true, false, 0, false)
         `,
-        [ingredientId, `Global Add Ingredient ${ingredientId}`],
-      );
-
-      const blocked = await agent
-        .post("/api/orders")
-        .send({
-          fulfillmentType: "takeout",
-          items: [
-            {
-              menuItemId,
-              addedIngredientIds: [ingredientId],
-            },
-          ],
-        });
-
-      expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toContain("not configured for ADD");
-
-      await pool.query(
-        `
-          INSERT INTO menu_item_additions (
-            menu_item_id,
-            ingredient_id,
-            sort_order,
-            is_active
-          )
-          VALUES ($1, $2, 10, true)
-        `,
-        [menuItemId, ingredientId],
+        [ingredientId, `Searchable Topping ${ingredientId}`],
       );
 
       const response = await agent
@@ -434,10 +407,6 @@ describe("POST /api/orders", () => {
         await pool.query("DELETE FROM orders WHERE id = $1", [orderId]);
       }
 
-      await pool.query(
-        "DELETE FROM menu_item_additions WHERE menu_item_id = $1",
-        [menuItemId],
-      );
       await pool.query("DELETE FROM menu_items WHERE id = $1", [menuItemId]);
       await pool.query("DELETE FROM ingredients WHERE id = $1", [ingredientId]);
       await deleteAuthenticatedTestUser(userId);

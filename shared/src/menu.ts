@@ -553,9 +553,11 @@ const itemIngredientReplacementInputSchema = z.object({
 });
 
 const choiceOptionInputSchema = z.object({
+  id: idSchema,
   label: nameSchema,
   ingredientId: idSchema.nullable().default(null),
   preparationSchemeId: idSchema.nullable().default(null),
+  targetPreparationOptionId: idSchema.nullable().default(null),
   isNoneOption: z.boolean().default(false),
   priceAdjustment: priceAdjustmentSchema.default(0),
   priceAdjustmentConfigured: z.boolean().default(false),
@@ -565,6 +567,7 @@ const choiceOptionInputSchema = z.object({
 
 const choiceGroupInputSchema = z
   .object({
+    id: idSchema,
     label: nameSchema,
     role: componentRoleSchema.default("other"),
     relationship: componentRelationshipSchema.nullable().default(null),
@@ -653,6 +656,26 @@ export const replaceMenuItemCustomizationInputSchema = z
     choiceGroups: z.array(choiceGroupInputSchema),
   })
   .superRefine((configuration, context) => {
+    const choiceGroupIds = configuration.choiceGroups.map((group) => group.id);
+    if (new Set(choiceGroupIds).size !== choiceGroupIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "A choice group can only appear once on an item",
+        path: ["choiceGroups"],
+      });
+    }
+
+    const choiceOptionIds = configuration.choiceGroups.flatMap((group) =>
+      group.options.map((option) => option.id),
+    );
+    if (new Set(choiceOptionIds).size !== choiceOptionIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "A choice option can only appear once on an item",
+        path: ["choiceGroups"],
+      });
+    }
+
     const ingredientIds = new Set(
       configuration.ingredients.map((ingredient) => ingredient.ingredientId),
     );

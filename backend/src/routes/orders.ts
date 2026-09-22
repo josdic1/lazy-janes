@@ -509,17 +509,25 @@ ordersRouter.post(
                   false AS can_extra,
                   0::numeric AS extra_price,
                   false AS extra_price_configured,
-                  addition.price_adjustment AS default_add_price,
-                  addition.price_configured AS add_price_configured,
+                  COALESCE(
+                    addition.price_adjustment,
+                    ingredient.default_add_price
+                  ) AS default_add_price,
+                  CASE
+                    WHEN addition.ingredient_id IS NOT NULL
+                      THEN addition.price_configured
+                    ELSE ingredient.add_price_configured
+                  END AS add_price_configured,
                   NULL::uuid AS preparation_scheme_id
-                FROM menu_item_additions addition
-                JOIN ingredients ingredient
-                  ON ingredient.id = addition.ingredient_id
-                WHERE addition.menu_item_id = $1
-                  AND addition.is_active = true
-                  AND ingredient.is_active = true
+                FROM ingredients ingredient
+                LEFT JOIN menu_item_additions addition
+                  ON addition.menu_item_id = $1
+                 AND addition.ingredient_id = ingredient.id
+                 AND addition.is_active = true
+                WHERE ingredient.is_active = true
                 ORDER BY
-                  addition.sort_order,
+                  CASE WHEN addition.ingredient_id IS NULL THEN 1 ELSE 0 END,
+                  COALESCE(addition.sort_order, ingredient.sort_order),
                   lower(ingredient.name),
                   ingredient.id
               `,
@@ -751,7 +759,7 @@ ordersRouter.post(
           if (!ingredient || !ingredient.is_active) {
             await client.query("ROLLBACK");
             response.status(409).json({
-              error: "One or more added ingredients are not configured for ADD",
+              error: "One or more added ingredients are unavailable",
             });
             return;
           }

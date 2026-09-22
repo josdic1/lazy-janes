@@ -707,9 +707,6 @@ export function OrderEntryPage() {
     customization,
     unavailableChoiceOptionIds,
   ]);
-  // The INCLUDED section is the item's standard recipe.
-  // Never hide a standard ingredient merely because a choice group also references it.
-  // Choice groups describe decisions; they do not redefine what the base dish contains.
   const selectedItemIngredients = selectedItem
     ? ingredientsForItem(selectedItem.id)
     : [];
@@ -765,37 +762,63 @@ export function OrderEntryPage() {
     [selectedItemAdditions],
   );
 
-  const configuredAddIngredients = useMemo(() => {
-    const allowedAddIngredientIds = new Set(
-      selectedItemAdditions.map((addition) => addition.ingredientId),
-    );
+  const searchableAddIngredients = useMemo(
+    () =>
+      customization.ingredients
+        .filter(
+          (ingredient) =>
+            ingredient.isActive &&
+            !includedIngredientIds.has(ingredient.id) &&
+            !choiceIngredientIds.has(ingredient.id) &&
+            !selectedReplacementIngredientIds.has(ingredient.id),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [
+      choiceIngredientIds,
+      customization.ingredients,
+      includedIngredientIds,
+      selectedReplacementIngredientIds,
+    ],
+  );
 
-    return customization.ingredients
-      .filter(
+  const configuredAddIngredients = useMemo(
+    () =>
+      searchableAddIngredients.filter(
         (ingredient) =>
-          ingredient.isActive &&
-          allowedAddIngredientIds.has(ingredient.id) &&
-          !includedIngredientIds.has(ingredient.id) &&
-          !choiceIngredientIds.has(ingredient.id) &&
-          !selectedReplacementIngredientIds.has(ingredient.id),
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [
-    choiceIngredientIds,
-    customization.ingredients,
-    includedIngredientIds,
-    selectedItemAdditions,
-    selectedReplacementIngredientIds,
-  ]);
+          ingredient.isAddable ||
+          itemAdditionByIngredientId.has(ingredient.id),
+      ),
+    [itemAdditionByIngredientId, searchableAddIngredients],
+  );
 
   const availableAddIngredients = useMemo(() => {
     const query = addSearch.trim().toLowerCase();
 
-    return configuredAddIngredients.filter(
-      (ingredient) =>
-        query === "" || ingredient.name.toLowerCase().includes(query),
+    if (query === "") {
+      return configuredAddIngredients;
+    }
+
+    return searchableAddIngredients.filter((ingredient) =>
+      ingredient.name.toLowerCase().includes(query),
     );
-  }, [addSearch, configuredAddIngredients]);
+  }, [addSearch, configuredAddIngredients, searchableAddIngredients]);
+
+  function addPriceFor(ingredient: Ingredient): {
+    amount: number;
+    configured: boolean;
+  } {
+    const itemAddition = itemAdditionByIngredientId.get(ingredient.id);
+
+    return itemAddition
+      ? {
+          amount: itemAddition.priceAdjustment,
+          configured: itemAddition.priceConfigured,
+        }
+      : {
+          amount: ingredient.defaultAddPrice,
+          configured: ingredient.addPriceConfigured,
+        };
+  }
 
   const currentIngredientPopularity = selectedItem
     ? ingredientPopularityByItem[selectedItem.id] ?? []
@@ -1208,7 +1231,14 @@ export function OrderEntryPage() {
     const ingredient = customization.ingredients.find(
       (candidate) => candidate.id === ingredientId,
     );
-    if (!ingredient?.isAddable) return;
+    if (
+      !ingredient?.isActive ||
+      includedIngredientIds.has(ingredientId) ||
+      choiceIngredientIds.has(ingredientId) ||
+      selectedReplacementIngredientIds.has(ingredientId)
+    ) {
+      return;
+    }
 
     const selecting = !addedIngredientIds.includes(ingredientId);
 
@@ -1352,7 +1382,17 @@ export function OrderEntryPage() {
       extraIngredientIds.includes(ingredient.ingredientId),
     );
     const addedIngredients = addedIngredientIds
-      .map((id) => ingredientsById.get(id))
+      .map((id) => {
+        const ingredient = ingredientsById.get(id);
+        if (!ingredient) return undefined;
+
+        const pricing = addPriceFor(ingredient);
+        return {
+          ...ingredient,
+          defaultAddPrice: pricing.amount,
+          addPriceConfigured: pricing.configured,
+        };
+      })
       .filter((ingredient): ingredient is Ingredient => ingredient !== undefined);
     const replacements: ReplacementSelection[] = Object.entries(replacementIngredientIdBySource)
       .map(([sourceIngredientId, replacementIngredientId]) => {
@@ -1987,8 +2027,8 @@ export function OrderEntryPage() {
                 <section className="service-customizer-section">
                   <div className="service-customizer-section-heading">
                     <div>
-                      <span>On it</span>
-                      <small>Defaults · tap only what changes</small>
+                      <span>Included</span>
+                      <small>Leave alone, or choose NIX / SIDE / ADD MORE</small>
                     </div>
                   </div>
 
@@ -2040,7 +2080,7 @@ export function OrderEntryPage() {
                               disabled={!canRemove}
                               onClick={() => toggleRemove(ingredient.ingredientId)}
                             >
-                              NO
+                              NIX
                             </button>
                             {canSide ? (
                               <button
@@ -2057,7 +2097,7 @@ export function OrderEntryPage() {
                                 data-selected={extra}
                                 onClick={() => toggleExtra(ingredient.ingredientId)}
                               >
-                                EXTRA{
+                                ADD MORE{
                                   extraPricePolicy?.configured
                                     ? (extraPricePolicy.amount ?? 0) > 0
                                       ? ` +${money(extraPricePolicy.amount ?? 0)}`
@@ -2173,20 +2213,29 @@ export function OrderEntryPage() {
                 const selectedCount = group.options.filter((option) =>
                   selectedChoiceOptionIds.includes(option.id),
                 ).length;
+                const instruction =
+                  group.maxSelections === 1
+                    ? required
+                      ? "Choose 1"
+                      : "Optional · choose 1 or leave blank"
+                    : required
+                      ? `Choose ${group.minSelections}${
+                          group.maxSelections > group.minSelections
+                            ? `–${group.maxSelections}`
+                            : ""
+                        }`
+                      : `Optional · choose up to ${group.maxSelections}`;
 
                 return (
                   <section className="service-customizer-section service-choice-group" key={group.id}>
                     <div className="service-customizer-section-heading">
                       <div>
                         <span>{group.label}</span>
-                        <small>
-                          {required ? "Required" : "Optional"}
-                          {group.maxSelections && group.maxSelections > 1
-                            ? ` · up to ${group.maxSelections}`
-                            : ""}
-                        </small>
+                        <small>{instruction}</small>
                       </div>
-                      {required ? <strong>{selectedCount}/{group.minSelections}</strong> : null}
+                      {selectedCount > 0 ? (
+                        <strong>{selectedCount} selected</strong>
+                      ) : null}
                     </div>
                     <div className="service-choice-options">
                       {group.options.map((option) => {
@@ -2198,18 +2247,29 @@ export function OrderEntryPage() {
                               option.id,
                             )
                           : null;
+                        const priceText =
+                          price?.configured === false || price === null
+                            ? "PRICE TBD"
+                            : (price.amount ?? 0) === 0
+                              ? ""
+                              : priceDelta(price.amount ?? 0, true);
+
                         return (
                           <div className="service-choice-option-node" key={option.id}>
                             <button
                               type="button"
+                              aria-pressed={selected}
                               data-selected={selected}
                               onClick={() => toggleChoice(group, option.id)}
                             >
-                              <span>{option.label}</span>
-                              <small>{priceDelta(
-                                price?.amount ?? 0,
-                                price?.configured ?? false,
-                              )}</small>
+                              <span>{selected ? `✓ ${option.label}` : option.label}</span>
+                              <small>
+                                {selected
+                                  ? priceText
+                                    ? `SELECTED · ${priceText}`
+                                    : "SELECTED"
+                                  : priceText || "Choose"}
+                              </small>
                             </button>
                             {preparationControls(
                               option.preparationSchemeId,
@@ -2224,23 +2284,16 @@ export function OrderEntryPage() {
                 );
               })}
 
-              {configuredAddIngredients.length > 0 ||
+              {searchableAddIngredients.length > 0 ||
               addedIngredientIds.length > 0 ? (
-              <details
-                className="service-customizer-section service-additions"
-                onToggle={(event) => {
-                  if (event.currentTarget.open) {
-                    window.setTimeout(() => addSearchInputRef.current?.focus(), 0);
-                  }
-                }}
-              >
-                <summary className="service-additions-summary">
+                <section className="service-customizer-section service-additions">
+                  <div className="service-additions-summary">
                   <strong>
                     Toppings{addedIngredientIds.length > 0
                       ? ` · ${addedIngredientIds.length}`
                       : ""}
                   </strong>
-                </summary>
+                  </div>
 
                 <div className="service-additions-body">
                   {addedIngredientIds.length > 0 ? (
@@ -2268,28 +2321,26 @@ export function OrderEntryPage() {
                     ref={addSearchInputRef}
                     className="service-add-search"
                     type="search"
-                    placeholder="Search toppings…"
+                    placeholder="Search any topping or ingredient…"
                     value={addSearch}
                     onChange={(event) => setAddSearch(event.target.value)}
                   />
 
-                  {addSearch.trim().length === 1 ? (
-                    <div className="service-add-hint">Type one more letter.</div>
-                  ) : null}
-
-                  {addSearch.trim().length >= 2 ? (
-                    availableAddIngredients.length === 0 ? (
-                      <div className="service-add-empty">No matching toppings.</div>
-                    ) : (
-                      <div className="service-add-subsection">
-                        <div className="service-add-grid">
-                          {alphabeticalAddIngredients.slice(0, 10).map((ingredient) => {
+                  {addSearch.trim() === "" &&
+                  configuredAddIngredients.length > 0 ? (
+                    <div className="service-add-subsection">
+                      <div className="service-add-subheading">Suggested</div>
+                      <div className="service-add-grid">
+                        {[...popularAddIngredients, ...alphabeticalAddIngredients]
+                          .slice(0, 10)
+                          .map((ingredient) => {
                             const selected = addedIngredientIds.includes(ingredient.id);
+                            const pricing = addPriceFor(ingredient);
 
                             return (
                               <label
                                 data-selected={selected}
-                                data-configured={itemAdditionByIngredientId.get(ingredient.id)?.priceConfigured ?? false}
+                                data-configured={pricing.configured}
                                 key={ingredient.id}
                               >
                                 <input
@@ -2299,14 +2350,45 @@ export function OrderEntryPage() {
                                 />
                                 <span>{ingredient.name}</span>
                                 <small>
-                                  {itemAdditionByIngredientId.get(ingredient.id)
-                                    ?.priceConfigured
-                                    ? (itemAdditionByIngredientId.get(ingredient.id)
-                                        ?.priceAdjustment ?? 0) > 0
-                                      ? `+${money(
-                                          itemAdditionByIngredientId.get(ingredient.id)
-                                            ?.priceAdjustment ?? 0,
-                                        )}`
+                                  {pricing.configured
+                                    ? pricing.amount > 0
+                                      ? `+${money(pricing.amount)}`
+                                      : "NO CHARGE"
+                                    : "PRICE TBD"}
+                                </small>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {addSearch.trim().length > 0 ? (
+                    availableAddIngredients.length === 0 ? (
+                      <div className="service-add-empty">No matching toppings.</div>
+                    ) : (
+                      <div className="service-add-subsection">
+                        <div className="service-add-grid">
+                          {alphabeticalAddIngredients.slice(0, 10).map((ingredient) => {
+                            const selected = addedIngredientIds.includes(ingredient.id);
+                            const pricing = addPriceFor(ingredient);
+
+                            return (
+                              <label
+                                data-selected={selected}
+                                data-configured={pricing.configured}
+                                key={ingredient.id}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => toggleAdd(ingredient.id)}
+                                />
+                                <span>{ingredient.name}</span>
+                                <small>
+                                  {pricing.configured
+                                    ? pricing.amount > 0
+                                      ? `+${money(pricing.amount)}`
                                       : "NO CHARGE"
                                     : "PRICE TBD"}
                                 </small>
@@ -2318,9 +2400,8 @@ export function OrderEntryPage() {
                     )
                   ) : null}
                 </div>
-              </details>
+                </section>
               ) : null}
-
 
               <div className="service-customizer-footer">
                 <input

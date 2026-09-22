@@ -603,7 +603,6 @@ menuRouter.get("/:itemId/ingredient-popularity", async (request, response) => {
         JOIN ingredients ingredient
           ON ingredient.id = change.ingredient_id
          AND ingredient.is_active = true
-         AND ingredient.is_addable = true
         CROSS JOIN order_total
         GROUP BY change.ingredient_id, order_total.order_count
       `,
@@ -638,7 +637,6 @@ menuRouter.get("/:itemId/ingredient-popularity", async (request, response) => {
         JOIN ingredients ingredient
           ON ingredient.id = change.ingredient_id
          AND ingredient.is_active = true
-         AND ingredient.is_addable = true
         CROSS JOIN order_total
         GROUP BY change.ingredient_id, order_total.order_count
       `,
@@ -984,15 +982,92 @@ menuRouter.put(
         }
       }
 
-      await client.query(
-        "DELETE FROM menu_item_ingredients WHERE menu_item_id = $1",
-        [item.id],
-      );
-      await client.query(
-        "DELETE FROM menu_choice_groups WHERE menu_item_id = $1",
-        [item.id],
-      );
+      const targetPreparationOptionIds = new Set<string>();
+      for (const group of input.data.choiceGroups) {
+        for (const option of group.options) {
+          if (option.targetPreparationOptionId) {
+            targetPreparationOptionIds.add(option.targetPreparationOptionId);
+          }
+        }
+      }
 
+      if (targetPreparationOptionIds.size > 0) {
+        const activePreparationOptions = await client.query<{ id: string }>(
+          `
+            SELECT id
+            FROM preparation_options
+            WHERE id = ANY($1::uuid[])
+              AND is_active = true
+          `,
+          [Array.from(targetPreparationOptionIds)],
+        );
+        if (activePreparationOptions.rowCount !== targetPreparationOptionIds.size) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "One or more target preparation options are unavailable",
+          });
+          return;
+        }
+      }
+
+      const incomingGroupIds = input.data.choiceGroups.map((group) => group.id);
+      const incomingOptionGroupById = new Map<string, string>();
+      for (const group of input.data.choiceGroups) {
+        for (const option of group.options) {
+          incomingOptionGroupById.set(option.id, group.id);
+        }
+      }
+      const incomingOptionIds = Array.from(incomingOptionGroupById.keys());
+
+      if (incomingGroupIds.length > 0) {
+        const existingGroups = await client.query<{
+          id: string;
+          menu_item_id: string;
+        }>(
+          `
+            SELECT id, menu_item_id
+            FROM menu_choice_groups
+            WHERE id = ANY($1::uuid[])
+          `,
+          [incomingGroupIds],
+        );
+        if (existingGroups.rows.some((group) => group.menu_item_id !== item.id)) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "A choice group belongs to a different menu item",
+          });
+          return;
+        }
+      }
+
+      if (incomingOptionIds.length > 0) {
+        const existingOptions = await client.query<{
+          id: string;
+          choice_group_id: string;
+        }>(
+          `
+            SELECT id, choice_group_id
+            FROM menu_choice_options
+            WHERE id = ANY($1::uuid[])
+          `,
+          [incomingOptionIds],
+        );
+        if (
+          existingOptions.rows.some(
+            (option) =>
+              incomingOptionGroupById.get(option.id) !== option.choice_group_id,
+          )
+        ) {
+          await client.query("ROLLBACK");
+          response.status(409).json({
+            error: "An existing choice option cannot be moved to another group",
+          });
+          return;
+        }
+      }
+
+      // Components have a stable composite identity: item + ingredient. Update
+      // them in place so unrelated menu truth is not destroyed on every save.
       for (const ingredient of input.data.ingredients) {
         await client.query(
           `
@@ -1016,6 +1091,20 @@ menuRouter.put(
               $1, $2, $3, $4, $5, $6, $7, $8,
               $9, $10, $11, $12, $13, $14
             )
+            ON CONFLICT (menu_item_id, ingredient_id) DO UPDATE SET
+              role = EXCLUDED.role,
+              umo_role = EXCLUDED.umo_role,
+              relationship = EXCLUDED.relationship,
+              preparation_scheme_id = EXCLUDED.preparation_scheme_id,
+              can_remove = EXCLUDED.can_remove,
+              can_side = EXCLUDED.can_side,
+              can_extra = EXCLUDED.can_extra,
+              can_replace = EXCLUDED.can_replace,
+              replacement_options_configured = EXCLUDED.replacement_options_configured,
+              extra_price = EXCLUDED.extra_price,
+              extra_price_configured = EXCLUDED.extra_price_configured,
+              sort_order = EXCLUDED.sort_order,
+              updated_at = now()
           `,
           [
             item.id,
@@ -1049,6 +1138,16 @@ menuRouter.put(
               sort_order
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (
+              menu_item_id,
+              source_ingredient_id,
+              replacement_ingredient_id
+            ) DO UPDATE SET
+              preparation_scheme_id = EXCLUDED.preparation_scheme_id,
+              price_adjustment = EXCLUDED.price_adjustment,
+              price_adjustment_configured = EXCLUDED.price_adjustment_configured,
+              sort_order = EXCLUDED.sort_order,
+              updated_at = now()
           `,
           [
             item.id,
@@ -1062,10 +1161,98 @@ menuRouter.put(
         );
       }
 
+      const desiredReplacementKeys = new Set(
+        input.data.replacements.map(
+          (replacement) =>
+            `${replacement.sourceIngredientId}:${replacement.replacementIngredientId}`,
+        ),
+      );
+      const existingReplacements = await client.query<{
+        source_ingredient_id: string;
+        replacement_ingredient_id: string;
+      }>(
+        `
+          SELECT source_ingredient_id, replacement_ingredient_id
+          FROM menu_item_ingredient_replacements
+          WHERE menu_item_id = $1
+        `,
+        [item.id],
+      );
+      for (const replacement of existingReplacements.rows) {
+        const key = `${replacement.source_ingredient_id}:${replacement.replacement_ingredient_id}`;
+        if (!desiredReplacementKeys.has(key)) {
+          await client.query(
+            `
+              DELETE FROM menu_item_ingredient_replacements
+              WHERE menu_item_id = $1
+                AND source_ingredient_id = $2
+                AND replacement_ingredient_id = $3
+            `,
+            [
+              item.id,
+              replacement.source_ingredient_id,
+              replacement.replacement_ingredient_id,
+            ],
+          );
+        }
+      }
+
+      const incomingIngredientIds = input.data.ingredients.map(
+        (ingredient) => ingredient.ingredientId,
+      );
+      await client.query(
+        `
+          DELETE FROM menu_item_ingredients
+          WHERE menu_item_id = $1
+            AND NOT (ingredient_id = ANY($2::uuid[]))
+        `,
+        [item.id, incomingIngredientIds],
+      );
+
+      // Choice groups/options are referenced by rules, constraints, and live
+      // semantics. Keep their IDs stable and delete only entities the manager
+      // actually removed from the draft.
+      await client.query(
+        `
+          DELETE FROM menu_choice_options
+          WHERE choice_group_id IN (
+            SELECT id
+            FROM menu_choice_groups
+            WHERE menu_item_id = $1
+              AND id = ANY($2::uuid[])
+          )
+            AND NOT (id = ANY($3::uuid[]))
+        `,
+        [item.id, incomingGroupIds, incomingOptionIds],
+      );
+
+      await client.query(
+        `
+          DELETE FROM menu_choice_groups
+          WHERE menu_item_id = $1
+            AND NOT (id = ANY($2::uuid[]))
+        `,
+        [item.id, incomingGroupIds],
+      );
+
+      if (incomingGroupIds.length > 0) {
+        await client.query(
+          `
+            UPDATE menu_choice_groups
+            SET label = '__lazy_janes_edit__' || id::text,
+                updated_at = now()
+            WHERE menu_item_id = $1
+              AND id = ANY($2::uuid[])
+          `,
+          [item.id, incomingGroupIds],
+        );
+      }
+
       for (const group of input.data.choiceGroups) {
-        const groupResult = await client.query<{ id: string }>(
+        await client.query(
           `
             INSERT INTO menu_choice_groups (
+              id,
               menu_item_id,
               label,
               role,
@@ -1074,10 +1261,18 @@ menuRouter.put(
               max_selections,
               sort_order
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (id) DO UPDATE SET
+              label = EXCLUDED.label,
+              role = EXCLUDED.role,
+              relationship = EXCLUDED.relationship,
+              min_selections = EXCLUDED.min_selections,
+              max_selections = EXCLUDED.max_selections,
+              sort_order = EXCLUDED.sort_order,
+              updated_at = now()
           `,
           [
+            group.id,
             item.id,
             group.label,
             group.role,
@@ -1087,33 +1282,57 @@ menuRouter.put(
             group.sortOrder,
           ],
         );
+      }
 
-        const groupId = groupResult.rows[0]?.id;
-        if (!groupId) {
-          throw new Error("Choice group insert returned no record");
-        }
+      if (incomingOptionIds.length > 0) {
+        await client.query(
+          `
+            UPDATE menu_choice_options
+            SET label = '__lazy_janes_edit__' || id::text,
+                updated_at = now()
+            WHERE id = ANY($1::uuid[])
+          `,
+          [incomingOptionIds],
+        );
+      }
 
+      for (const group of input.data.choiceGroups) {
         for (const option of group.options) {
           await client.query(
             `
               INSERT INTO menu_choice_options (
+                id,
                 choice_group_id,
                 label,
                 ingredient_id,
                 preparation_scheme_id,
+                target_preparation_option_id,
                 is_none_option,
                 price_adjustment,
                 price_adjustment_configured,
                 sort_order,
                 is_default
               )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              ON CONFLICT (id) DO UPDATE SET
+                label = EXCLUDED.label,
+                ingredient_id = EXCLUDED.ingredient_id,
+                preparation_scheme_id = EXCLUDED.preparation_scheme_id,
+                target_preparation_option_id = EXCLUDED.target_preparation_option_id,
+                is_none_option = EXCLUDED.is_none_option,
+                price_adjustment = EXCLUDED.price_adjustment,
+                price_adjustment_configured = EXCLUDED.price_adjustment_configured,
+                sort_order = EXCLUDED.sort_order,
+                is_default = EXCLUDED.is_default,
+                updated_at = now()
             `,
             [
-              groupId,
+              option.id,
+              group.id,
               option.label,
               option.ingredientId,
               option.preparationSchemeId,
+              option.targetPreparationOptionId,
               option.isNoneOption,
               option.priceAdjustment,
               option.priceAdjustmentConfigured,

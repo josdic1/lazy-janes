@@ -16,6 +16,7 @@ import { MenuManagementPage } from "./pages/MenuManagementPage";
 import { OperationsPage } from "./pages/OperationsPage";
 import { OrderEntryPage } from "./pages/OrderEntryPage";
 import { PosPage } from "./pages/PosPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { UsersPage } from "./pages/UsersPage";
 
 function walkthroughStorageKey(userId: string): string {
@@ -107,6 +108,10 @@ export function App() {
           </Can>
 
           <Can roles={["manager", "admin"]}>
+            <NavLink to="/reports">Reports</NavLink>
+          </Can>
+
+          <Can roles={["manager", "admin"]}>
             <NavLink to="/menu">Menu Management</NavLink>
           </Can>
 
@@ -182,6 +187,15 @@ export function App() {
           element={
             <RequireRoles roles={["manager", "admin"]}>
               <OperationsPage />
+            </RequireRoles>
+          }
+        />
+
+        <Route
+          path="/reports"
+          element={
+            <RequireRoles roles={["manager", "admin"]}>
+              <ReportsPage />
             </RequireRoles>
           }
         />
