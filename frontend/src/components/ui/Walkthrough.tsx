@@ -14,7 +14,6 @@ type WalkthroughStep = {
   title: string;
   body: string;
   roles: readonly string[];
-  devOnly?: boolean;
   targetSelector?: string;
 };
 
@@ -55,9 +54,8 @@ const ALL_STEPS: readonly WalkthroughStep[] = [
     route: "/users",
     label: "Demo Data",
     title: "Load a realistic sample day",
-    body: "In development, Admin can reset to a clean Ritz floor or load Wednesday Morning · Light and Sunday Morning · Busy. Those presets seed staff, guests, tables, orders, kitchen states, checks, and register activity so the full workflow can be explored.",
+    body: "Admin can load realistic sample scenarios that seed staff, guests, tables, orders, kitchen states, checks, and register activity so the full workflow can be explored.",
     roles: ["admin"],
-    devOnly: true,
     targetSelector: ".dev-demo-controls",
   },
 ];
@@ -76,10 +74,8 @@ export function Walkthrough({
       roles.map((role) => role.trim().toLowerCase()),
     );
 
-    return ALL_STEPS.filter(
-      (step) =>
-        (!step.devOnly || import.meta.env.DEV) &&
-        step.roles.some((role) => normalizedRoles.has(role)),
+    return ALL_STEPS.filter((step) =>
+      step.roles.some((role) => normalizedRoles.has(role)),
     );
   }, [roles]);
 

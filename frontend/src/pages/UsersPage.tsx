@@ -75,9 +75,7 @@ export function UsersPage() {
       try {
         const [result, demoStatus] = await Promise.all([
           getUsers(),
-          import.meta.env.DEV
-            ? getDemoStatus()
-            : Promise.resolve({ activeRun: null }),
+          getDemoStatus(),
         ]);
 
         if (!cancelled) {
@@ -354,98 +352,95 @@ export function UsersPage() {
         </button>
       </header>
 
-      {import.meta.env.DEV ? (
-        <section className="dev-demo-controls" data-walkthrough-demo="true">
-          <header>
-            <div>
-              <p className="eyebrow">Development only</p>
-              <h2>Demo Data</h2>
-            </div>
-            <small>Deterministic scenarios using your real menu and workflows.</small>
-          </header>
+      <section className="dev-demo-controls" data-walkthrough-demo="true">
+        <header>
+          <div>
+            <p className="eyebrow">Sample data</p>
+            <h2>Demo Data</h2>
+          </div>
+          <small>Deterministic scenarios using your real menu and workflows.</small>
+        </header>
 
-          <div className="dev-demo-toolbar">
-            <label>
-              <span>Scenario ends</span>
-              <input
-                type="date"
-                value={demoAnchorDate}
+        <div className="dev-demo-toolbar">
+          <label>
+            <span>Scenario ends</span>
+            <input
+              type="date"
+              value={demoAnchorDate}
+              disabled={demoBusy !== null || clearingDemo}
+              onChange={(event) => setDemoAnchorDate(event.target.value)}
+            />
+          </label>
+          {demoRun ? (
+            <div className="dev-demo-active">
+              <span>Active demo</span>
+              <strong>{demoRun.label}</strong>
+              <small>{demoRun.rangeStart} → {demoRun.rangeEnd}</small>
+              <button
+                type="button"
+                className="button"
+                data-variant="danger"
                 disabled={demoBusy !== null || clearingDemo}
-                onChange={(event) => setDemoAnchorDate(event.target.value)}
-              />
-            </label>
-            {demoRun ? (
-              <div className="dev-demo-active">
-                <span>Active demo</span>
-                <strong>{demoRun.label}</strong>
-                <small>{demoRun.rangeStart} → {demoRun.rangeEnd}</small>
-                <button
-                  type="button"
-                  className="button"
-                  data-variant="danger"
-                  disabled={demoBusy !== null || clearingDemo}
-                  onClick={() => void removeDemoData()}
-                >
-                  {clearingDemo ? "Clearing…" : "Clear Demo Data"}
-                </button>
-              </div>
-            ) : (
-              <p>No active demo scenario. Genuine records are left in place.</p>
-            )}
-          </div>
+                onClick={() => void removeDemoData()}
+              >
+                {clearingDemo ? "Clearing…" : "Clear Demo Data"}
+              </button>
+            </div>
+          ) : (
+            <p>No active demo scenario. Genuine records are left in place.</p>
+          )}
+        </div>
 
-          <div className="dev-demo-grid">
-            <button
-              type="button"
-              disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
-              onClick={() => void runDemoPreset("slow-day", "Slow Day")}
-            >
-              <strong>Slow Day</strong>
-              <span>Light completed sales plus a small live floor, kitchen queue, takeout, checks, and register activity.</span>
-            </button>
+        <div className="dev-demo-grid">
+          <button
+            type="button"
+            disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
+            onClick={() => void runDemoPreset("slow-day", "Slow Day")}
+          >
+            <strong>Slow Day</strong>
+            <span>Light completed sales plus a small live floor, kitchen queue, takeout, checks, and register activity.</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
-              onClick={() => void runDemoPreset("mildly-busy-day", "Mildly Busy Day")}
-            >
-              <strong>Mildly Busy Day</strong>
-              <span>A believable normal shift with mixed dine-in, takeout, delivery, kitchen states, and payments.</span>
-            </button>
+          <button
+            type="button"
+            disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
+            onClick={() => void runDemoPreset("mildly-busy-day", "Mildly Busy Day")}
+          >
+            <strong>Mildly Busy Day</strong>
+            <span>A believable normal shift with mixed dine-in, takeout, delivery, kitchen states, and payments.</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
-              onClick={() => void runDemoPreset("very-busy-day", "Very Busy Day")}
-            >
-              <strong>Very Busy Day</strong>
-              <span>A packed floor, waiting list, heavy kitchen queue, off-premise orders, checks, and sales history.</span>
-            </button>
+          <button
+            type="button"
+            disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
+            onClick={() => void runDemoPreset("very-busy-day", "Very Busy Day")}
+          >
+            <strong>Very Busy Day</strong>
+            <span>A packed floor, waiting list, heavy kitchen queue, off-premise orders, checks, and sales history.</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
-              onClick={() => void runDemoPreset("busy-week", "Busy Week")}
-            >
-              <strong>Busy Week</strong>
-              <span>Seven dated shifts with weekday variation, a weekend peak, completed sales, and today’s live service.</span>
-            </button>
+          <button
+            type="button"
+            disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
+            onClick={() => void runDemoPreset("busy-week", "Busy Week")}
+          >
+            <strong>Busy Week</strong>
+            <span>Seven dated shifts with weekday variation, a weekend peak, completed sales, and today’s live service.</span>
+          </button>
 
-            <button
-              type="button"
-              disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
-              onClick={() => void runDemoPreset("busy-month", "Busy Month")}
-            >
-              <strong>Busy Month</strong>
-              <span>Thirty dated shifts for reports, trends, payments, operational history, and a live final day.</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={demoBusy !== null || clearingDemo || !demoAnchorDate}
+            onClick={() => void runDemoPreset("busy-month", "Busy Month")}
+          >
+            <strong>Busy Month</strong>
+            <span>Thirty dated shifts for reports, trends, payments, operational history, and a live final day.</span>
+          </button>
+        </div>
 
-          {demoBusy ? <p>Preparing demo…</p> : null}
-          {demoNotice ? <p className="notice notice--success">{demoNotice}</p> : null}
-        </section>
-      ) : null}
-
+        {demoBusy ? <p>Preparing demo…</p> : null}
+        {demoNotice ? <p className="notice notice--success">{demoNotice}</p> : null}
+      </section>
       {error && drawerMode === null ? (
         <p className="notice" data-variant="error">
           {error}

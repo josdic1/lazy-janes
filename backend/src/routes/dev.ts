@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction, type Request, type Response } from "express";
 import { createSessionToken, hashSessionToken } from "../auth/security.js";
 import {
   getAuthenticatedUser,
@@ -34,15 +34,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unable to manage demo data";
 }
 
-devRouter.use((_request, response, next) => {
+function requireDevelopment(
+  _request: Request,
+  response: Response,
+  next: NextFunction,
+) {
   if (environment.NODE_ENV !== "development") {
     response.status(404).json({ error: "Not found" });
     return;
   }
   next();
-});
+}
 
-devRouter.get("/users", async (_request, response) => {
+devRouter.get("/users", requireDevelopment, async (_request, response) => {
   const result = await pool.query<{
     id: string;
     display_name: string;
@@ -72,7 +76,7 @@ devRouter.get("/users", async (_request, response) => {
   );
 });
 
-devRouter.post("/login", async (request, response) => {
+devRouter.post("/login", requireDevelopment, async (request, response) => {
   const userId = typeof request.body?.userId === "string" ? request.body.userId : "";
   if (!/^[0-9a-f-]{36}$/i.test(userId)) {
     response.status(400).json({ error: "Invalid development user" });
