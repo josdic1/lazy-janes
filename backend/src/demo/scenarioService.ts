@@ -34,7 +34,7 @@ const PRESET_DEFINITIONS: Record<DemoPreset, PresetDefinition> = {
   "slow-week": {
     label: "Slow Week",
     days: 7,
-    averageCompletedSales: 12,
+    averageCompletedSales: 6,
     activeParties: 3,
     waitingParties: 1,
     activeStandaloneOrders: 1,
@@ -58,7 +58,7 @@ const PRESET_DEFINITIONS: Record<DemoPreset, PresetDefinition> = {
   "busy-week": {
     label: "Busy Week",
     days: 7,
-    averageCompletedSales: 42,
+    averageCompletedSales: 14,
     activeParties: 10,
     waitingParties: 4,
     activeStandaloneOrders: 3,
