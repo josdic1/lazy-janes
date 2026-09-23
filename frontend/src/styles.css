@@ -7222,3 +7222,9 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   .admin-seed-grid { grid-template-columns: 1fr; }
 }
 /* === ADMIN SEED DATA END === */
+
+/* AUTH — stable viewport positioning */
+.auth-page {
+  place-content: start center;
+  padding-top: 42px;
+}
