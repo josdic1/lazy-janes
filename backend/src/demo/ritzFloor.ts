@@ -1,11 +1,14 @@
 import { RITZ_FLOOR_SECTIONS } from "@lazy-janes/shared";
 import type { PoolClient } from "pg";
 
-export async function restoreRitzFloor(client: PoolClient): Promise<void> {
-  await client.query(`
-    TRUNCATE TABLE dining_tables, sections
-    RESTART IDENTITY CASCADE
-  `);
+export type RitzFloorLoadResult = {
+  loaded: boolean;
+  sections: number;
+  tables: number;
+};
+
+async function insertRitzFloor(client: PoolClient): Promise<RitzFloorLoadResult> {
+  let tableCount = 0;
 
   for (const section of RITZ_FLOOR_SECTIONS) {
     const inserted = await client.query<{ id: string }>(
@@ -36,6 +39,43 @@ export async function restoreRitzFloor(client: PoolClient): Promise<void> {
         `,
         [sectionId, table.label, table.capacity, table.floorX, table.floorY],
       );
+      tableCount += 1;
     }
   }
+
+  return {
+    loaded: true,
+    sections: RITZ_FLOOR_SECTIONS.length,
+    tables: tableCount,
+  };
+}
+
+export async function preloadRitzFloor(
+  client: PoolClient,
+): Promise<RitzFloorLoadResult> {
+  const current = await client.query<{ sections: number; tables: number }>(`
+    SELECT
+      (SELECT count(*)::int FROM sections) AS sections,
+      (SELECT count(*)::int FROM dining_tables) AS tables
+  `);
+  const row = current.rows[0]!;
+
+  if (row.sections > 0 || row.tables > 0) {
+    return {
+      loaded: false,
+      sections: row.sections,
+      tables: row.tables,
+    };
+  }
+
+  return insertRitzFloor(client);
+}
+
+export async function restoreRitzFloor(client: PoolClient): Promise<void> {
+  await client.query(`
+    TRUNCATE TABLE dining_tables, sections
+    RESTART IDENTITY CASCADE
+  `);
+
+  await insertRitzFloor(client);
 }

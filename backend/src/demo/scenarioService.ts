@@ -4,6 +4,7 @@ import { restoreRitzFloor } from "./ritzFloor.js";
 
 export const DEMO_PRESETS = [
   "slow-day",
+  "slow-week",
   "mildly-busy-day",
   "very-busy-day",
   "busy-week",
@@ -27,6 +28,14 @@ const PRESET_DEFINITIONS: Record<DemoPreset, PresetDefinition> = {
     days: 1,
     averageCompletedSales: 10,
     activeParties: 2,
+    waitingParties: 1,
+    activeStandaloneOrders: 1,
+  },
+  "slow-week": {
+    label: "Slow Week",
+    days: 7,
+    averageCompletedSales: 12,
+    activeParties: 3,
     waitingParties: 1,
     activeStandaloneOrders: 1,
   },
@@ -275,13 +284,45 @@ async function ensureDemoUser(
   return userId;
 }
 
-async function ensureDemoUsers(client: PoolClient): Promise<DemoUsers> {
+export const DEMO_STAFF = [
+  { key: "host", displayName: "Demo Mia Host", roles: ["host"] },
+  { key: "server", displayName: "Demo Josh Server", roles: ["server"] },
+  { key: "kitchen", displayName: "Demo Rosa Kitchen", roles: ["chef"] },
+  { key: "manager", displayName: "Demo Casey Manager", roles: ["manager"] },
+] as const;
+
+export async function ensureDemoUsers(client: PoolClient): Promise<DemoUsers> {
   return {
-    host: await ensureDemoUser(client, "Demo Mia Host", ["host"]),
-    server: await ensureDemoUser(client, "Demo Josh Server", ["server"]),
-    kitchen: await ensureDemoUser(client, "Demo Rosa Kitchen", ["chef"]),
-    manager: await ensureDemoUser(client, "Demo Casey Manager", ["manager"]),
+    host: await ensureDemoUser(client, DEMO_STAFF[0].displayName, [...DEMO_STAFF[0].roles]),
+    server: await ensureDemoUser(client, DEMO_STAFF[1].displayName, [...DEMO_STAFF[1].roles]),
+    kitchen: await ensureDemoUser(client, DEMO_STAFF[2].displayName, [...DEMO_STAFF[2].roles]),
+    manager: await ensureDemoUser(client, DEMO_STAFF[3].displayName, [...DEMO_STAFF[3].roles]),
   };
+}
+
+async function loadDemoUsers(client: PoolClient): Promise<DemoUsers> {
+  const names = DEMO_STAFF.map((staff) => staff.displayName);
+  const result = await client.query<{ id: string; display_name: string }>(
+    `
+      SELECT id, display_name
+      FROM users
+      WHERE is_active = true
+        AND is_demo = true
+        AND display_name = ANY($1::text[])
+    `,
+    [names],
+  );
+  const byName = new Map(result.rows.map((row) => [row.display_name, row.id]));
+  const host = byName.get(DEMO_STAFF[0].displayName);
+  const server = byName.get(DEMO_STAFF[1].displayName);
+  const kitchen = byName.get(DEMO_STAFF[2].displayName);
+  const manager = byName.get(DEMO_STAFF[3].displayName);
+  if (!host || !server || !kitchen || !manager) {
+    throw Object.assign(new Error("Demo staff must be preloaded before sample activity"), {
+      statusCode: 409,
+    });
+  }
+  return { host, server, kitchen, manager };
 }
 
 async function loadMenu(client: PoolClient): Promise<MenuItem[]> {
@@ -1048,6 +1089,7 @@ export async function createDemoRun(
     anchorDate: string;
     replaceActive: boolean;
     createdByUserId: string;
+    useExistingFoundation?: boolean;
   },
 ): Promise<DemoRunStatus> {
   await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [SCENARIO_LOCK]);
@@ -1069,10 +1111,20 @@ export async function createDemoRun(
     [input.preset, input.anchorDate, rangeStart, input.createdByUserId],
   );
   const runId = inserted.rows[0]!.id;
-  await ensureFloor(client);
-  const users = await ensureDemoUsers(client);
+  let users: DemoUsers;
+  if (input.useExistingFoundation) {
+    users = await loadDemoUsers(client);
+  } else {
+    await ensureFloor(client);
+    users = await ensureDemoUsers(client);
+  }
   const menu = await loadMenu(client);
   const tables = await loadTables(client);
+  if (tables.length === 0) {
+    throw Object.assign(new Error("Demo data needs at least one configured dining table"), {
+      statusCode: 409,
+    });
+  }
   const random = createRandom(`${input.preset}:${input.anchorDate}`);
 
   for (let offset = 0; offset < definition.days; offset += 1) {

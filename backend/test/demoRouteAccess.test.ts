@@ -7,39 +7,21 @@ import {
 } from "./helpers/auth.js";
 
 const adminUserId = randomUUID();
-const secondaryAdminUserId = randomUUID();
 
 afterAll(async () => {
   await deleteAuthenticatedTestUser(adminUserId).catch(() => undefined);
-  await deleteAuthenticatedTestUser(secondaryAdminUserId).catch(() => undefined);
   await pool.end();
 });
 
-describe("demo route access", () => {
-  it("keeps admin demo controls available outside development", async () => {
+describe("development route access", () => {
+  it("keeps development demo routes unavailable outside development", async () => {
     const agent = await createAuthenticatedTestUser({
       userId: adminUserId,
-      displayName: "Demo Route Admin",
+      displayName: `Development Route Admin ${adminUserId.slice(0, 8)}`,
       roles: ["admin"],
     });
 
-    const response = await agent.post("/api/dev/demo/not-a-real-preset");
-
-    expect(response.status).toBe(400);
-    expect(response.body).toEqual({ error: "Unknown demo preset" });
-  });
-
-  it("keeps development login unavailable outside development", async () => {
-    const agent = await createAuthenticatedTestUser({
-      userId: secondaryAdminUserId,
-      displayName: "Temporary Admin",
-      roles: ["admin"],
-    });
-
-    const response = await agent.post("/api/dev/login").send({
-      userId: adminUserId,
-    });
-
+    const response = await agent.post("/api/dev/demo/admin-menu-only");
     expect(response.status).toBe(404);
   });
 });

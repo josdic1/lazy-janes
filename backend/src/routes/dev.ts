@@ -838,11 +838,8 @@ async function summary(client: PoolClient) {
   };
 }
 
-devRouter.use((request, response, next) => {
-  const isAdminDemoRequest =
-    request.method === "POST" && /^\/demo\/[^/]+$/.test(request.path);
-
-  if (environment.NODE_ENV !== "development" && !isAdminDemoRequest) {
+devRouter.use((_request, response, next) => {
+  if (environment.NODE_ENV !== "development") {
     response.status(404).json({ error: "Not found" });
     return;
   }
@@ -954,6 +951,7 @@ devRouter.post(
   requireAuthenticatedUser,
   requireRole("admin"),
   async (request, response) => {
+    assertDevelopment();
     const preset = request.params.preset as DemoPreset;
     if (!["admin-menu-only", "keep-floor-staff", "wednesday-light", "sunday-busy"].includes(preset)) {
       response.status(400).json({ error: "Unknown demo preset" });

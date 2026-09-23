@@ -16,9 +16,12 @@ import {
 } from "../api/users";
 import { Drawer } from "../components/ui/Drawer";
 import {
-  applyDemoPreset,
-  type DemoPreset,
-} from "../api/dev";
+  clearAllExceptAdmin,
+  loadSampleActivity,
+  preloadAdminData,
+  type AdminPreloadKind,
+  type AdminSamplePreset,
+} from "../api/adminData";
 
 const ROLE_LABELS: Record<UserRoleCode, string> = {
   host: "Host",
@@ -53,8 +56,8 @@ export function UsersPage() {
   >([]);
   const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
-  const [demoBusy, setDemoBusy] = useState<DemoPreset | null>(null);
-  const [demoNotice, setDemoNotice] = useState<string | null>(null);
+  const [seedBusy, setSeedBusy] = useState<string | null>(null);
+  const [seedNotice, setSeedNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,35 +258,57 @@ export function UsersPage() {
     }
   }
 
-  async function runDemoPreset(
-    preset: DemoPreset,
-    label: string,
+  async function refreshUsers() {
+    const nextUsers = await getUsers();
+    setUsers(nextUsers.users);
+  }
+
+  function browserDate(): string {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 10);
+  }
+
+  async function runSeedAction(
+    key: string,
+    work: () => Promise<{ message: string }>,
   ) {
+    setSeedBusy(key);
+    setError(null);
+    setSeedNotice(null);
+
+    try {
+      const result = await work();
+      await refreshUsers();
+      setSeedNotice(result.message);
+    } catch (seedError) {
+      setError(
+        seedError instanceof Error
+          ? seedError.message
+          : "Unable to update project data.",
+      );
+    } finally {
+      setSeedBusy(null);
+    }
+  }
+
+  async function resetProjectData() {
     const confirmed = window.confirm(
-      `${label} will replace current development demo data. Continue?`,
+      "Clear ALL Except Admin permanently deletes menu, staff, tables, orders, payments, reports/history, and sample data. Your current Admin login is kept. Continue?",
     );
     if (!confirmed) return;
 
-    setDemoBusy(preset);
-    setError(null);
-    setDemoNotice(null);
+    await runSeedAction("reset", clearAllExceptAdmin);
+  }
 
-    try {
-      const result = await applyDemoPreset(preset);
-      const nextUsers = await getUsers();
-      setUsers(nextUsers.users);
-      setDemoNotice(
-        `${label} ready · ${result.users} users · ${result.tables} tables · ${result.activeParties} active parties · ${result.activeOrders} active orders`,
-      );
-    } catch (demoError) {
-      setError(
-        demoError instanceof Error
-          ? demoError.message
-          : "Unable to prepare demo data.",
-      );
-    } finally {
-      setDemoBusy(null);
-    }
+  async function preload(kind: AdminPreloadKind) {
+    await runSeedAction(`preload-${kind}`, () => preloadAdminData(kind));
+  }
+
+  async function loadSample(preset: AdminSamplePreset) {
+    await runSeedAction(`sample-${preset}`, () =>
+      loadSampleActivity(preset, browserDate()),
+    );
   }
 
   return (
@@ -309,58 +334,110 @@ export function UsersPage() {
         </button>
       </header>
 
-      {(
-        <section className="dev-demo-controls" data-walkthrough-demo="true">
-          <header>
-            <div>
-              <p className="eyebrow">Admin only</p>
-              <h2>Demo Data</h2>
-            </div>
-            <small>Each choice is deterministic and keeps the Lazy Jane’s menu.</small>
-          </header>
+      <section className="admin-seed-controls" data-walkthrough-demo="true">
+        <header>
+          <div>
+            <p className="eyebrow">Admin only</p>
+            <h2>Seed Data</h2>
+          </div>
+          <small>Start empty, then load only what you need.</small>
+        </header>
 
-          <div className="dev-demo-grid">
+        <div className="admin-seed-section">
+          <div className="admin-seed-section-heading">
+            <strong>Reset</strong>
+            <span>Return to a true empty project.</span>
+          </div>
+          <div className="admin-seed-grid admin-seed-grid--reset">
             <button
               type="button"
-              disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("admin-menu-only", "Admin + Menu + Ritz Floor")}
+              data-variant="danger"
+              disabled={seedBusy !== null}
+              onClick={() => void resetProjectData()}
             >
-              <strong>1 · Admin + Menu + Ritz Floor</strong>
-              <span>Deletes service activity and non-admin staff, then restores the canonical Ritz floor.</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("keep-floor-staff", "Ritz Floor + Staff")}
-            >
-              <strong>2 · Ritz Floor + Staff</strong>
-              <span>Clears service activity, keeps staff, and restores the canonical Ritz floor.</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("wednesday-light", "Wednesday Morning · Light")}
-            >
-              <strong>3 · Wednesday Morning · Light</strong>
-              <span>Staff, rooms, tables, waiting guests, dine-in service, takeout, kitchen, check, and open drawer.</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={demoBusy !== null}
-              onClick={() => void runDemoPreset("sunday-busy", "Sunday Morning · Busy")}
-            >
-              <strong>4 · Sunday Morning · Busy</strong>
-              <span>Full staff, waiting list, occupied floor, mixed kitchen states, takeout, delivery, checks, and drawer.</span>
+              <strong>Clear ALL Except Admin</strong>
+              <span>Deletes all project data and keeps only your current Admin account.</span>
             </button>
           </div>
+        </div>
 
-          {demoBusy ? <p>Preparing demo…</p> : null}
-          {demoNotice ? <p className="notice notice--success">{demoNotice}</p> : null}
-        </section>
-      )}
+        <div className="admin-seed-section">
+          <div className="admin-seed-section-heading">
+            <strong>Preload</strong>
+            <span>Load the foundation independently.</span>
+          </div>
+          <div className="admin-seed-grid">
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void preload("menu")}
+            >
+              <strong>Menu</strong>
+              <span>Canonical Lazy Jane’s menu and menu composition data.</span>
+            </button>
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void preload("staff")}
+            >
+              <strong>Staff</strong>
+              <span>Four sample staff accounts for host, server, kitchen, and manager.</span>
+            </button>
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void preload("tables")}
+            >
+              <strong>Tables</strong>
+              <span>Canonical Ritz floor, rooms, and tables.</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="admin-seed-section">
+          <div className="admin-seed-section-heading">
+            <strong>Populate Demo</strong>
+            <span>One click loads Menu, Staff, Tables, and the selected sample activity.</span>
+          </div>
+          <div className="admin-seed-grid">
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void loadSample("slow-day")}
+            >
+              <strong>Slow Day</strong>
+              <span>Light sales, a small live floor, kitchen work, checks, and register activity.</span>
+            </button>
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void loadSample("very-busy-day")}
+            >
+              <strong>Busy Day</strong>
+              <span>A packed floor, waiting list, kitchen queue, payments, and live service.</span>
+            </button>
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void loadSample("slow-week")}
+            >
+              <strong>Slow Week</strong>
+              <span>Seven quieter days for reports and trends, ending with today’s live service.</span>
+            </button>
+            <button
+              type="button"
+              disabled={seedBusy !== null}
+              onClick={() => void loadSample("busy-week")}
+            >
+              <strong>Busy Week</strong>
+              <span>Seven busier days with a weekend peak, completed sales, and live service.</span>
+            </button>
+          </div>
+        </div>
+
+        {seedBusy ? <p>Working…</p> : null}
+        {seedNotice ? <p className="notice notice--success">{seedNotice}</p> : null}
+      </section>
 
       {error && drawerMode === null ? (
         <p className="notice" data-variant="error">

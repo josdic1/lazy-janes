@@ -1,4 +1,5 @@
 import express from "express";
+import { adminDataRouter } from "./routes/adminData.js";
 import { authRouter } from "./routes/auth.js";
 import { checksRouter } from "./routes/checks.js";
 import { devRouter } from "./routes/dev.js";
@@ -23,6 +24,7 @@ export function createApp() {
     });
   });
 
+  app.use("/api/admin-data", adminDataRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/checks", checksRouter);
   app.use("/api/dev", devRouter);

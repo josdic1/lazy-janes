@@ -10,6 +10,7 @@ function requestPath(input: RequestInfo | URL): string {
 function successMessage(method: string, path: string): string | null {
   if (path.startsWith("/api/auth")) return null;
   if (path === "/api/dev/login") return null;
+  if (path.startsWith("/api/admin-data/")) return "Seed data updated.";
   if (path.startsWith("/api/dev/demo/")) return "Demo data loaded.";
 
   if (path === "/api/parties" && method === "POST") return "Party added to the waitlist.";

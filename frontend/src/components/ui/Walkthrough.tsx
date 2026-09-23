@@ -52,11 +52,11 @@ const ALL_STEPS: readonly WalkthroughStep[] = [
   },
   {
     route: "/users",
-    label: "Demo Data",
-    title: "Load a realistic sample day",
-    body: "Admin can load realistic sample scenarios that seed staff, guests, tables, orders, kitchen states, checks, and register activity so the full workflow can be explored.",
+    label: "Seed Data",
+    title: "Reset or populate a complete demo",
+    body: "Admin can clear back to one Admin account, preload Menu, Staff, or Tables independently, or populate a complete Slow/Busy day or week in one click.",
     roles: ["admin"],
-    targetSelector: ".dev-demo-controls",
+    targetSelector: ".admin-seed-controls",
   },
 ];
 
