@@ -121,6 +121,21 @@ const CUSTOMER_NAMES = [
   "Alex", "Avery", "Cameron", "Casey", "Jamie", "Jordan", "Morgan", "Riley",
 ];
 
+function uniquePartyNames(
+  random: () => number,
+  count: number,
+): string[] {
+  if (count > PARTY_NAMES.length) {
+    throw new Error("Not enough unique demo party names");
+  }
+
+  const available = [...PARTY_NAMES];
+  return Array.from({ length: count }, () => {
+    const index = Math.floor(random() * available.length);
+    return available.splice(index, 1)[0]!;
+  });
+}
+
 function dateOnly(value: Date | string): string {
   if (typeof value === "string") return value.slice(0, 10);
   return value.toISOString().slice(0, 10);
@@ -857,11 +872,12 @@ async function createActiveSnapshot(
   const activeCount = Math.min(definition.activeParties, freeTables.length);
   const waitingCount = definition.waitingParties + (definition.activeParties - activeCount);
   const now = date === todayDate() ? new Date() : atTime(date, 13, 0);
+  const livePartyNames = uniquePartyNames(random, waitingCount + activeCount);
 
   for (let index = 0; index < waitingCount; index += 1) {
     const arrivedAt = new Date(now.getTime() - (2 + index * 3) * 60_000);
     const partyId = await createPartyRoot(
-      client, runId, `${choose(PARTY_NAMES, random)} Waiting ${index + 1}`,
+      client, runId, livePartyNames[index]!,
       2 + Math.floor(random() * 5), "waiting", arrivedAt, users.host, null,
     );
     await createPartyEvents(client, partyId, users.host, arrivedAt, null, null, null);
@@ -874,7 +890,7 @@ async function createActiveSnapshot(
     const submittedAt = new Date(seatedAt.getTime() + 5 * 60_000);
     const partyStatus = index % 5 === 0 ? "seated" : "in_service";
     const partyId = await createPartyRoot(
-      client, runId, `${choose(PARTY_NAMES, random)} Active ${index + 1}`,
+      client, runId, livePartyNames[waitingCount + index]!,
       2 + Math.floor(random() * 4), partyStatus, arrivedAt, users.host, null,
     );
     await createPartyEvents(
