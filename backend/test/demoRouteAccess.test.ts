@@ -23,10 +23,10 @@ describe("demo route access", () => {
       roles: ["admin"],
     });
 
-    const response = await agent.get("/api/dev/demo");
+    const response = await agent.post("/api/dev/demo/not-a-real-preset");
 
-    expect(response.status).toBe(200);
-    expect(response.body).toHaveProperty("activeRun");
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Unknown demo preset" });
   });
 
   it("keeps development login unavailable outside development", async () => {
