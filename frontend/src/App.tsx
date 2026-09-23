@@ -20,7 +20,7 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { UsersPage } from "./pages/UsersPage";
 
 function walkthroughStorageKey(userId: string): string {
-  return `lazy-janes.walkthrough.v1.${userId}`;
+  return `lazy-janes.walkthrough.v2.${userId}`;
 }
 
 export function App() {
