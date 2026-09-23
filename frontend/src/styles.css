@@ -7228,3 +7228,13 @@ td small { display: block; max-width: 680px; margin-top: 4px; color: var(--muted
   place-content: start center;
   padding-top: 42px;
 }
+
+/* DEMO LOGIN — part of the authentication experience */
+.dev-login-switcher {
+  position: static;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  max-height: none;
+  margin-top: 12px;
+}
