@@ -52,7 +52,7 @@ export function AuthPage({
 
         setRequiresSetup(setup.requiresSetup);
 
-        if (import.meta.env.DEV && !setup.requiresSetup) {
+        if (!setup.requiresSetup) {
           try {
             const users = await getDevUsers();
             if (!cancelled) setDevUsers(users);
@@ -155,8 +155,7 @@ export function AuthPage({
     }
   }
 
-  const devGroups = import.meta.env.DEV
-    ? [
+  const devGroups = [
         {
           label: "Admins",
           users: devUsers.filter((user) => user.roles.includes("admin")),
@@ -181,8 +180,7 @@ export function AuthPage({
               ),
           ),
         },
-      ].filter((group) => group.users.length > 0)
-    : [];
+  ].filter((group) => group.users.length > 0);
 
   if (loading) {
     return <BrandLoader label="Opening Lazy Jane’s…" fullscreen />;
@@ -302,11 +300,11 @@ export function AuthPage({
         </form>
       )}
 
-      {import.meta.env.DEV && !requiresSetup && devGroups.length > 0 ? (
+      {!requiresSetup && devGroups.length > 0 ? (
         <aside className="dev-login-switcher" aria-label="Development login">
           <header>
-            <strong>DEV LOGIN</strong>
-            <small>Live database users · development only</small>
+            <strong>DEMO LOGIN</strong>
+            <small>Choose any active user · role access preserved</small>
           </header>
 
           {devGroups.map((group) => (

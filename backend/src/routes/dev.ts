@@ -838,11 +838,19 @@ async function summary(client: PoolClient) {
   };
 }
 
-devRouter.use((_request, response, next) => {
-  if (environment.NODE_ENV !== "development") {
+devRouter.use((request, response, next) => {
+  const isDemoLoginRoute =
+    request.path === "/users" || request.path === "/login";
+
+  const allowed =
+    environment.NODE_ENV === "development" ||
+    (environment.DEMO_LOGIN && isDemoLoginRoute);
+
+  if (!allowed) {
     response.status(404).json({ error: "Not found" });
     return;
   }
+
   next();
 });
 

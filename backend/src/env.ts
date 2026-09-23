@@ -20,6 +20,10 @@ const environmentSchema = z.object({
   PIN_PEPPER: z
     .string()
     .min(32, "PIN_PEPPER must contain at least 32 characters"),
+  DEMO_LOGIN: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 });
 
 const environment = environmentSchema.parse({
